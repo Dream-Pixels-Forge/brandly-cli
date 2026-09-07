@@ -5,6 +5,10 @@
 [![PyPI version](https://img.shields.io/pypi/v/brandly-cli.svg)](https://pypi.org/project/brandly-cli/)
 [![Python >=3.10](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-303_passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
+[![Lint](https://img.shields.io/badge/lint-ruff_clean-brightgreen.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
+[![CI](https://github.com/Dream-Pixels-Forge/brandly-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli/actions)
+[![GitHub stars](https://img.shields.io/github/stars/Dream-Pixels-Forge/brandly-cli?style=social)](https://github.com/Dream-Pixels-Forge/brandly-cli/stargazers)
 
 ---
 
@@ -19,6 +23,24 @@ Brandly is an **autonomous video production pipeline** that turns product ideas 
 - **Director orchestrator** — an autonomous agent that guides the entire production process
 - **Credit budgeting** — track spend per phase against a project budget
 - **Style presets** — avoid AI slop with photorealistic, cinematic, editorial, commercial, and documentary presets
+
+### v0.3.0 New Features
+
+| Feature | Description |
+|---------|-------------|
+| **Stitch** | Multi-shot video assembly with transitions (fade, dissolve, wipe, slide) and color grading |
+| **Export Platforms** | Platform-optimized exports for TikTok, Instagram, YouTube, Facebook |
+| **Thumbnails** | AI-generated thumbnails with text overlays and platform-specific sizing |
+| **Dubbing** | Multi-language video dubbing via MiniMax TTS (10 languages) |
+| **Beat Sync** | Music-reactive editing with beat detection |
+| **Auto-Director** | Script-to-video pipeline automation |
+| **Trends** | Trending format research database (5 categories) |
+| **Analyzer** | Video performance prediction with scoring |
+| **Templates** | Reusable project configurations |
+| **Webhook** | CI/CD integration with job queue |
+| **Sharing** | Cloud export with pluggable providers |
+
+---
 
 ## Installation
 
@@ -78,24 +100,39 @@ brandly director                # Shows Director prompt for AI tools
 ```bash
 # Image generation
 brandly image --prompt "product on marble surface, studio lighting" \
-              --style-preset cinematic
+               --style-preset cinematic
 
 # Video generation
 brandly video <project-id> --prompt "sleek wireless earbuds rotating" \
-               --duration 5 --wait
+             --duration 5 --wait
 
 # Audio generation
 brandly music --prompt "upbeat electronic background music" --duration 30
 brandly tts "Welcome to SuperWidget Pro"
 ```
 
-### 4. Export
+### 4. Export & Share
 
 ```bash
-brandly export <project-id>
+# Export for platforms
+brandly export <project-id> --platforms tiktok youtube
+
+# Generate thumbnails
+brandly thumbnail <project-id>
+
+# Stitch clips together
+brandly stitch clip1.mp4 clip2.mp4 --transition fade
+
+# Dub to another language
+brandly voice-match input.mp4 --source en --target es
+
+# Share to cloud
+brandly share output.mp4 --provider local
 ```
 
 ## CLI Reference
+
+### Project Management
 
 | Command | Description |
 |---------|-------------|
@@ -104,21 +141,51 @@ brandly export <project-id>
 | `brandly list` | List all projects |
 | `brandly run <id>` | Run the next pipeline phase |
 | `brandly approve <id> <phase>` | Approve a phase and advance |
-| `brandly estimate` | Estimate credit cost |
+| `brandly cancel / pause / resume <id>` | Control project state |
+| `brandly cost <id>` | Show cost summary |
+| `brandly record-cost <id> <phase> <action> <credits>` | Record credit spend |
+
+### Media Generation
+
+| Command | Description |
+|---------|-------------|
 | `brandly image` | Generate an image via Agnes AI |
 | `brandly video <id>` | Generate a video via Agnes AI |
 | `brandly music` | Generate background music via MiniMax Audio |
 | `brandly tts <text>` | Generate voiceover via TTS |
 | `brandly voices` | List available TTS voices |
+
+### Post-Production
+
+| Command | Description |
+|---------|-------------|
+| `brandly stitch <clips...>` | Multi-shot video assembly with transitions |
+| `brandly export <id> --platforms <p>` | Export for specific platforms |
+| `brandly thumbnail <id>` | Generate thumbnails from video |
+| `brandly voice-match <video> --source <lang> --target <lang>` | Dub video to another language |
+| `brandly beat-sync <video> <audio>` | Cut video to match beat timestamps |
+| `brandly analyze <video>` | Predict video performance metrics |
+| `brandly share <file>` | Upload to cloud for sharing |
+
+### Intelligence
+
+| Command | Description |
+|---------|-------------|
+| `brandly trend <category>` | Research trending video formats |
+| `brandly template list` | List available templates |
+| `brandly template use <name>` | Create project from template |
 | `brandly validate <id>` | Run virality validation |
 | `brandly progress <id>` | Show detailed progress |
-| `brandly export <id>` | Export project artifacts |
-| `brandly cost <id>` | Show cost summary |
-| `brandly record-cost <id> <phase> <action> <credits>` | Record credit spend |
-| `brandly memory` | View/update user preferences |
-| `brandly cancel / pause / resume <id>` | Control project state |
 | `brandly director` | Show Director agent prompt |
+
+### System
+
+| Command | Description |
+|---------|-------------|
+| `brandly estimate` | Estimate credit cost |
+| `brandly memory` | View/update user preferences |
 | `brandly config` | Show configuration |
+| `brandly webhook` | Start webhook server (CI/CD) |
 
 ## Pipeline Phases
 
@@ -192,6 +259,7 @@ brandly director
 │       └── artifacts/
 │           └── {phase}/      # Phase outputs (.md, .json)
 ├── user-preferences.json     # Liked/disliked hooks, style prefs
+└── templates/                # Custom saved templates
 ```
 
 Generated media is stored in:
@@ -208,8 +276,15 @@ pip install -e ".[dev]"
 # Run tests
 pytest
 
+# Run tests with coverage
+pytest --cov=src/brandly_cli
+
 # Lint
 ruff check src/
+ruff check src/ --fix
+
+# Syntax check
+python -m py_compile src/brandly_cli/*.py
 
 # Build
 python -m build

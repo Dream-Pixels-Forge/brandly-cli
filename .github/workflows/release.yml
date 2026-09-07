@@ -1,4 +1,4 @@
-name: Publish to PyPI
+name: Release to PyPI
 
 on:
   release:
@@ -29,5 +29,5 @@ jobs:
       - name: Build package
         run: python -m build
 
-      - name: Publish to PyPI
+      - name: Release to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

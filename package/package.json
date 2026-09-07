@@ -1,0 +1,48 @@
+{
+  "name": "@byteplus/ark-cli",
+  "version": "1.0.24",
+  "description": "BytePlus Ark command-line interface",
+  "bin": {
+    "arkcli": "scripts/run.js"
+  },
+  "files": [
+    "scripts/run.js",
+    "scripts/postinstall.js",
+    "manifest.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "arkcli": {
+    "product": "arkcli-bp",
+    "teaAppId": 1044680,
+    "teaUrl": "https://sgali-mcs.byteoversea.com/list"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/byteplus-sdk/ark-cli.git"
+  },
+  "homepage": "https://github.com/byteplus-sdk/ark-cli#readme",
+  "bugs": {
+    "url": "https://github.com/byteplus-sdk/ark-cli/issues"
+  }
+}

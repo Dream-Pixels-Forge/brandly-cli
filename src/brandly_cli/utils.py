@@ -1,0 +1,530 @@
+"""Utility helpers for brandly-cli."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any
+
+
+def generate_project_id() -> str:
+    """Generate a human-readable project ID from slug + timestamp.
+
+    Examples:
+        samsung-s26-campaign
+        pepsi-summer-vibes-001
+    """
+    from datetime import datetime, timezone
+
+    # Generate base slug from timestamp
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return f"project-{ts}"
+
+
+def generate_readable_id(name: str) -> str:
+    """Generate a human-readable ID from a project name.
+
+    Examples:
+        "Samsung S26 Flagship Campaign" → "samsung-s26-flagship-campaign"
+        "Pepsi Summer Vibes" → "pepsi-summer-vibes"
+    """
+    slug = generate_project_slug(name)
+    # Check if slug already exists, append counter if needed
+    return slug
+
+
+def generate_project_slug(name: str) -> str:
+    """Generate a human-readable slug from a project name.
+
+    Examples:
+        "Pepsi Summer Vibes"       → "pepsi-summer-vibes"
+        "Nike Air Max Campaign"    → "nike-air-max-campaign"
+        "TechProduct 3000 Launch"  → "techproduct-3000-launch"
+    """
+    import re
+
+    slug = name.lower().strip()
+    # Replace spaces and dashes with single hyphens
+    slug = re.sub(r"[\s]+", "-", slug)
+    # Remove unsafe characters
+    slug = re.sub(r"[^a-z0-9\-]", "", slug)
+    # Collapse multiple hyphens
+    slug = re.sub(r"-{2,}", "-", slug)
+    # Strip leading/trailing hyphens
+    slug = slug.strip("-")
+    return slug or "project"
+
+
+def is_valid_project_id(id_str: str) -> bool:
+    """Validate a project ID (slug or timestamp-based).
+
+    Rejects:
+    - Empty strings
+    - Path traversal characters (/, \\, ..)
+    - Drive-relative paths (e.g. ``C:foo``)
+    - Reserved Windows device names
+    """
+    import re
+
+    if not id_str:
+        return False
+    # Reject path traversal
+    if ".." in id_str or "/" in id_str or "\\" in id_str:
+        return False
+    # Reject drive-relative paths (Windows: C:foo, D:bar, etc.)
+    if len(id_str) >= 2 and id_str[1] == ":" and id_str[0].isalpha():
+        return False
+    # Reject NUL byte and control characters
+    if any(ord(c) < 0x20 for c in id_str):
+        return False
+    # Reject reserved Windows device names (case-insensitive)
+    reserved = {
+        "con", "prn", "aux", "nul",
+        "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+        "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    }
+    if id_str.lower().split(".")[0] in reserved:
+        return False
+    # Accept either slug format (samsung-s26-campaign) or timestamp format (project-20260831-230500)
+    return bool(re.match(r"^[a-z0-9\-]+$", id_str, re.IGNORECASE))
+
+
+def now_iso() -> str:
+    return datetime_iso()
+
+
+# alias for internal use
+_now_iso = now_iso
+
+
+def datetime_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def ellipsize(text: str, max_len: int = 80) -> str:
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."
+
+
+def human_size(bytes_val: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if bytes_val < 1024:
+            return f"{bytes_val:.1f} {unit}"
+        bytes_val /= 1024
+    return f"{bytes_val:.1f} TB"
+
+
+def human_duration(ms: int) -> str:
+    seconds = ms / 1000
+    minutes, secs = divmod(int(seconds), 60)
+    hours, mins = divmod(minutes, 60)
+    if hours > 0:
+        return f"{hours}h {mins}m"
+    if minutes > 0:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def load_env(default_path: str | None = None) -> None:
+    """Load .env file if present."""
+    try:
+        from dotenv import load_dotenv
+
+        paths = (
+            [default_path]
+            if default_path
+            else [".env", os.path.join(Path.home(), ".brandly", ".env")]
+        )
+        for p in paths:
+            if p and os.path.isfile(p):
+                load_dotenv(p)
+                return
+        load_dotenv()
+    except ImportError:
+        pass
+
+
+def get_brandly_dir(root: str | Path | None = None) -> Path:
+    """Return the .brandly directory inside the working root."""
+    base = Path(root) if root else Path.cwd()
+    return base / ".brandly"
+
+
+def write_atomic(path: Path | str, content: str) -> None:
+    """Write content to path atomically (temp + rename)."""
+    import tempfile
+
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=p.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, p)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def read_json(path: Path | str) -> dict[str, Any]:
+    p = Path(path)
+    if not p.exists():
+        return {}
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def write_json(path: Path | str, data: dict[str, Any]) -> None:
+    write_atomic(path, json.dumps(data, indent=2, ensure_ascii=False))
+
+
+# ---------------------------------------------------------------------------
+# File I / O helpers
+# ---------------------------------------------------------------------------
+
+
+async def download_file(url: str, dest_path: Path) -> Path:
+    """Download a file from url to dest_path (creates parent dirs). Returns dest_path."""
+    import httpx
+
+    dest = Path(dest_path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    async with httpx.AsyncClient(timeout=300) as client:
+        resp = await client.get(url, follow_redirects=True)
+        resp.raise_for_status()
+        dest.write_bytes(resp.content)
+    return dest
+
+
+def sanitize_filename(name: str, max_len: int = 80) -> str:
+    """Remove characters unsafe for filenames."""
+    import re
+
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name)
+    name = name.strip(" ._")
+    return name[:max_len] or "file"
+
+
+# ---------------------------------------------------------------------------
+# Pre-generation documentation
+# ---------------------------------------------------------------------------
+
+
+def write_generation_plan(
+    project_id: str,
+    asset_type: str,
+    *,
+    root: Path | None = None,
+    prompt: str,
+    model: str,
+    style: str,
+    extra_config: dict[str, Any] | None = None,
+) -> Path:
+    """Write a generation plan BEFORE attempting API calls.
+
+    Creates: {root}/.brandly/projects/{id}/docs/plan_{asset_type}_{timestamp}.md
+
+    This ensures we have a record of what we INTENDED to generate,
+    even if the API call fails.
+    """
+    from datetime import datetime, timezone
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    base = Path(root) if root else Path.cwd()
+    docs_dir = base / ".brandly" / "projects" / project_id / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+
+    config = extra_config or {}
+
+    md_content = f"""# Generation Plan: {asset_type.title()}
+
+**Project:** {project_id}
+**Planned:** {datetime_iso()}
+**Status:** PENDING
+
+## Configuration
+
+| Parameter | Value |
+|-----------|-------|
+| Model | {model} |
+| Style | {style} |
+| Asset Type | {asset_type} |
+"""
+
+    # Add extra config
+    for key, value in config.items():
+        md_content += f"| {key.title()} | {value} |\n"
+
+    md_content += f"""
+## Prompt
+
+```
+{prompt}
+```
+
+## Notes
+
+- Plan written before API call
+- Will be updated with results after generation
+- Use this to track generation intent vs actual output
+"""
+
+    plan_path = docs_dir / f"plan_{asset_type}_{ts}.md"
+    plan_path.write_text(md_content, encoding="utf-8")
+
+    return plan_path
+
+
+# ---------------------------------------------------------------------------
+# Generation documentation
+# ---------------------------------------------------------------------------
+
+
+def write_generation_doc(
+    project_id: str,
+    asset_type: str,
+    output_path: Path,
+    *,
+    root: Path | None = None,
+    prompt: str,
+    model: str,
+    style: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> Path:
+    """Write a generation document (JSON + Markdown) for user reference.
+
+    Creates:
+    - {root}/.brandly/projects/{id}/docs/{type}_{timestamp}.json
+    - {root}/.brandly/projects/{id}/docs/{type}_{timestamp}.md
+
+    Also updates any pending plan files for this asset type.
+    """
+    from datetime import datetime, timezone
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    base = Path(root) if root else Path.cwd()
+    docs_dir = base / ".brandly" / "projects" / project_id / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build metadata
+    doc_meta = {
+        "project_id": project_id,
+        "asset_type": asset_type,
+        "model": model,
+        "style": style or "default",
+        "prompt": prompt,
+        "output_file": str(output_path),
+        "output_size_bytes": output_path.stat().st_size if output_path.exists() else 0,
+        "generated_at": datetime_iso(),
+        "status": "completed",
+        "metadata": metadata or {},
+    }
+    _file_size = int(doc_meta["output_size_bytes"])  # type: ignore[call-overload]
+
+    # Write JSON doc
+    json_path = docs_dir / f"{asset_type}_{ts}.json"
+    write_json(json_path, doc_meta)
+
+    # Write Markdown doc
+    md_path = docs_dir / f"{asset_type}_{ts}.md"
+    md_content = f"""# {asset_type.title()} Generation Record
+
+**Project:** {project_id}
+**Generated:** {datetime_iso()}
+**Model:** {model}
+**Style:** {style or "default"}
+**Status:** ✓ Completed
+
+## Prompt
+
+```
+{prompt}
+```
+
+## Output
+
+- **File:** `{output_path}`
+- **Size:** {human_size(_file_size)}
+
+## Metadata
+
+```json
+{json.dumps(metadata or {}, indent=2)}
+```
+"""
+    md_path.write_text(md_content, encoding="utf-8")
+
+    # Update any pending plans
+    _update_plans(project_id, asset_type, output_path, doc_meta)
+
+    return json_path
+
+
+def _update_plans(
+    project_id: str,
+    asset_type: str,
+    output_path: Path,
+    result_meta: dict[str, Any],
+    root: Path | None = None,
+) -> None:
+    """Update any pending plan files to mark them completed."""
+    base = Path(root) if root else Path.cwd()
+    docs_dir = base / ".brandly" / "projects" / project_id / "docs"
+    if not docs_dir.exists():
+        return
+
+    for plan_file in docs_dir.glob(f"plan_{asset_type}_*.md"):
+        try:
+            content = plan_file.read_text(encoding="utf-8")
+            # Replace PENDING status with COMPLETED
+            content = content.replace("**Status:** PENDING", "**Status:** ✓ COMPLETED")
+            content = content.replace("**Status:** pending", "**Status:** ✓ completed")
+            # Append result info
+            content += (
+                f"\n\n## Result\n\n"
+                f"- **Output:** `{output_path}`\n"
+                f"- **Generated:** {result_meta.get('generated_at', 'unknown')}\n"
+            )
+            plan_file.write_text(content, encoding="utf-8")
+        except Exception:
+            pass  # Don't fail if plan update has issues
+
+
+# ---------------------------------------------------------------------------
+# Sheet reference management
+# ---------------------------------------------------------------------------
+
+
+def find_skills_directory(root: Path | None = None) -> Path:
+    """Find the skills directory in the project.
+
+    Checks multiple locations:
+    1. ./skills/ (project-local)
+    2. ~/.qwen/skills/ (user-level)
+    3. ~/.agents/skills/ (agents directory)
+    """
+    candidates = [
+        Path("./skills"),
+        Path(root / "skills") if root else Path("./skills"),
+        Path.home() / ".qwen" / "skills",
+        Path.home() / ".agents" / "skills",
+    ]
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_dir():
+            return candidate.resolve()
+    return Path(".").resolve() / "skills"
+
+
+def load_sheet_reference(skill_name: str, root: Path | None = None) -> dict[str, Any] | None:
+    """Load a sheet reference from the skills directory.
+
+    Args:
+        skill_name: Name of the skill (e.g., 'brandly-vehicle-sheet')
+        root: Project root directory
+
+    Returns:
+        Dictionary with sheet data or None if not found
+    """
+    skills_dir = find_skills_directory(root)
+    skill_path = skills_dir / skill_name
+
+    if not skill_path.exists():
+        return None
+
+    result: dict[str, Any] = {
+        "skill_name": skill_name,
+        "sheet_data": {},
+        "references": {},
+    }
+
+    # Read SKILL.md for structure
+    skill_md = skill_path / "SKILL.md"
+    if skill_md.exists():
+        content = skill_md.read_text(encoding="utf-8")
+        result["sheet_data"]["structure"] = content
+
+    # Load reference files
+    refs_dir = skill_path / "references"
+    if refs_dir.exists():
+        for ref_file in refs_dir.glob("*.md"):
+            ref_name = ref_file.stem
+            ref_content = ref_file.read_text(encoding="utf-8")
+            result["references"][ref_name] = ref_content
+
+    return result
+
+
+def detect_project_artifacts(project_id: str, root: Path | None = None) -> dict[str, list[str]]:
+    """Detect existing artifacts in a project that can be used as references.
+
+    Looks for:
+    - Image files in artifacts/images/
+    - Any saved reference images
+
+    Args:
+        project_id: Project ID
+        root: Project root directory
+
+    Returns:
+        Dictionary mapping artifact type to list of file paths
+    """
+    base = Path(root) if root else Path.cwd()
+    brandly_dir = base / ".brandly" / "projects" / project_id
+    result: dict[str, list[str]] = {
+        "images": [],
+    }
+
+    # Find image artifacts
+    images_dir = brandly_dir / "artifacts" / "images"
+    if images_dir.exists():
+        for img in images_dir.glob("*.{png,jpg,jpeg}"):
+            result["images"].append(str(img))
+
+    # Find any other images in the project
+    docs_dir = brandly_dir / "docs"
+    if docs_dir.exists():
+        for doc in docs_dir.glob("*.png"):
+            if str(doc) not in result["images"]:
+                result["images"].append(str(doc))
+
+    return result
+
+
+def get_reference_image_urls(project_id: str, root: Path | None = None) -> list[str]:
+    """Get URLs/paths for reference images from a project.
+
+    Returns absolute paths that can be used as reference.
+    """
+    artifacts = detect_project_artifacts(project_id, root)
+    return artifacts.get("images", [])
+
+
+# ---------------------------------------------------------------------------
+# Async FFmpeg runner for subprocess operations
+# ---------------------------------------------------------------------------
+
+async def async_run_ffmpeg(cmd: list[str]) -> tuple[int, str]:
+    """Run an FFmpeg command asynchronously.
+
+    Args:
+        cmd: FFmpeg command and arguments.
+
+    Returns:
+        Tuple of (returncode, stderr output).
+    """
+    import asyncio
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    return proc.returncode, stderr.decode()

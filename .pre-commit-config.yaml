@@ -1,0 +1,17 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-lint
+        name: ruff-lint
+        entry: python3 -m ruff check src/
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest
+        entry: python3 -m pytest tests/ -v --tb=short
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true

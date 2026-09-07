@@ -1,5 +1,9 @@
 # Brandly CLI
 
+<p align="center">
+  <img src="assets/banner.png" alt="Brandly CLI Banner" width="100%">
+</p>
+
 > **AI product video orchestrator** — add image, video, and sound generation capability to any AI tool (OpenCode, Codex, Qwen Code, Claude Code, etc.) via a CLI and Director agent.
 
 [![PyPI version](https://img.shields.io/pypi/v/brandly-cli.svg)](https://pypi.org/project/brandly-cli/)
@@ -24,18 +28,18 @@ Brandly is an **autonomous video production pipeline** that turns product ideas 
 - **Credit budgeting** — track spend per phase against a project budget
 - **Style presets** — avoid AI slop with photorealistic, cinematic, editorial, commercial, and documentary presets
 
-### v0.3.0 New Features
+### v0.3.1 New Features
 
 | Feature | Description |
 |---------|-------------|
-| **Stitch** | Multi-shot video assembly with transitions (fade, dissolve, wipe, slide) and color grading |
+| **Stitch** | Multi-shot video assembly with transitions (fade, dissolve) and color grading |
 | **Export Platforms** | Platform-optimized exports for TikTok, Instagram, YouTube, Facebook |
-| **Thumbnails** | AI-generated thumbnails with text overlays and platform-specific sizing |
-| **Dubbing** | Multi-language video dubbing via MiniMax TTS (10 languages) |
+| **Thumbnails** | Keyframe extraction with text overlays |
+| **Dubbing** | Multi-language video dubbing via MiniMax TTS |
 | **Beat Sync** | Music-reactive editing with beat detection |
 | **Auto-Director** | Script-to-video pipeline automation |
-| **Trends** | Trending format research database (5 categories) |
-| **Analyzer** | Video performance prediction with scoring |
+| **Trends** | Trending format research database |
+| **Analyzer** | Video performance prediction & scoring |
 | **Templates** | Reusable project configurations |
 | **Webhook** | CI/CD integration with job queue |
 | **Sharing** | Cloud export with pluggable providers |
@@ -51,14 +55,11 @@ pip install brandly-cli
 ### Configure API Keys
 
 ```bash
-# Agnes AI (image + video generation)
 export AGNES_API_KEY="your-agnes-api-key"
-
-# MiniMax Audio (music + TTS)
 export MINIMAX_API_KEY="your-minimax-api-key"
 ```
 
-Or create a `.env` file in your project root:
+Or create a `.env` file:
 
 ```dotenv
 AGNES_API_KEY=your_key_here
@@ -84,50 +85,30 @@ brandly init \
 ### 2. Run the Pipeline
 
 ```bash
-# Check cost estimate first
 brandly estimate --style cinematic --shots 5
-
-# Run each phase
-brandly run <project-id>        # Start the current phase
-brandly approve <project-id> <phase>  # Approve and advance
-
-# Or run the full pipeline at once
-brandly director                # Shows Director prompt for AI tools
+brandly run <project-id>
+brandly approve <project-id> <phase>
+brandly director
 ```
 
-### 3. Generate Media Directly
+### 3. Generate Media
 
 ```bash
-# Image generation
-brandly image --prompt "product on marble surface, studio lighting" \
-               --style-preset cinematic
-
-# Video generation
-brandly video <project-id> --prompt "sleek wireless earbuds rotating" \
-             --duration 5 --wait
-
-# Audio generation
-brandly music --prompt "upbeat electronic background music" --duration 30
+brandly image --prompt "product on marble surface" --style-preset cinematic
+brandly video <project-id> --prompt "sleek earbuds rotating" --duration 5
+brandly music --prompt "upbeat electronic" --duration 30
 brandly tts "Welcome to SuperWidget Pro"
 ```
 
 ### 4. Export & Share
 
 ```bash
-# Export for platforms
 brandly export <project-id> --platforms tiktok youtube
-
-# Generate thumbnails
 brandly thumbnail <project-id>
-
-# Stitch clips together
 brandly stitch clip1.mp4 clip2.mp4 --transition fade
-
-# Dub to another language
 brandly voice-match input.mp4 --source en --target es
-
-# Share to cloud
-brandly share output.mp4 --provider local
+brandly analyze video.mp4
+brandly share output.mp4
 ```
 
 ## CLI Reference
@@ -141,9 +122,7 @@ brandly share output.mp4 --provider local
 | `brandly list` | List all projects |
 | `brandly run <id>` | Run the next pipeline phase |
 | `brandly approve <id> <phase>` | Approve a phase and advance |
-| `brandly cancel / pause / resume <id>` | Control project state |
 | `brandly cost <id>` | Show cost summary |
-| `brandly record-cost <id> <phase> <action> <credits>` | Record credit spend |
 
 ### Media Generation
 
@@ -151,162 +130,32 @@ brandly share output.mp4 --provider local
 |---------|-------------|
 | `brandly image` | Generate an image via Agnes AI |
 | `brandly video <id>` | Generate a video via Agnes AI |
-| `brandly music` | Generate background music via MiniMax Audio |
+| `brandly music` | Generate background music |
 | `brandly tts <text>` | Generate voiceover via TTS |
-| `brandly voices` | List available TTS voices |
 
 ### Post-Production
 
 | Command | Description |
 |---------|-------------|
-| `brandly stitch <clips...>` | Multi-shot video assembly with transitions |
+| `brandly stitch <clips...>` | Multi-shot video assembly |
 | `brandly export <id> --platforms <p>` | Export for specific platforms |
-| `brandly thumbnail <id>` | Generate thumbnails from video |
-| `brandly voice-match <video> --source <lang> --target <lang>` | Dub video to another language |
-| `brandly beat-sync <video> <audio>` | Cut video to match beat timestamps |
-| `brandly analyze <video>` | Predict video performance metrics |
-| `brandly share <file>` | Upload to cloud for sharing |
+| `brandly thumbnail <id>` | Generate thumbnails |
+| `brandly voice-match <video> --source <lang> --target <lang>` | Dub video |
+| `brandly beat-sync <video> <audio>` | Cut video to beats |
+| `brandly analyze <video>` | Predict performance metrics |
+| `brandly share <file>` | Upload for cloud sharing |
 
 ### Intelligence
 
 | Command | Description |
 |---------|-------------|
-| `brandly trend <category>` | Research trending video formats |
-| `brandly template list` | List available templates |
+| `brandly trend <category>` | Research trending formats |
+| `brandly template list` | List templates |
 | `brandly template use <name>` | Create project from template |
 | `brandly validate <id>` | Run virality validation |
-| `brandly progress <id>` | Show detailed progress |
 | `brandly director` | Show Director agent prompt |
 
-### System
-
-| Command | Description |
-|---------|-------------|
-| `brandly estimate` | Estimate credit cost |
-| `brandly memory` | View/update user preferences |
-| `brandly config` | Show configuration |
-| `brandly webhook` | Start webhook server (CI/CD) |
-
-## Pipeline Phases
-
-```
-init → trends → concept → script → asset → audio → re_edit → validate → publish → done
-```
-
-Each phase has a corresponding agent prompt that defines the task for the AI orchestrator:
-
-| Phase | Agent | Purpose |
-|-------|-------|---------|
-| `init` | — | Project initialization |
-| `trends` | trends_agent | Research viral formats for the product category |
-| `concept` | concept_agent | Create 3 video concepts using STAMP framework |
-| `script` | script_agent | Write shot-by-shot script with 8-Layer prompts |
-| `asset` | asset_agent | Select models and generate visual assets |
-| `audio` | audio_agent | Generate music, SFX, and voiceover |
-| `re_edit` | script_agent | Review and refine the script |
-| `validate` | validation_agent | Run virality scoring (requires Higgsfield MCP) |
-| `publish` | publish_agent | Generate platform-specific metadata |
-| `done` | — | Pipeline complete |
-
-## Video Styles
-
-| Style | Credits (base) | Best For |
-|-------|---------------|----------|
-| `cinematic` | 250 | Premium brand stories |
-| `ugc` | 150 | User-generated content style |
-| `montage` | 200 | Fast-paced highlight reels |
-| `multi_shot` | 300 | Complex multi-scene videos |
-| `continuous` | 200 | Single-take seamless shots |
-| `unboxing` | 180 | Product reveal videos |
-| `lifestyle` | 170 | Contextual product usage |
-| `collage_motion_graphic` | 350 | Animated collage sequences |
-| `brand_short_video` | 280 | Short-form brand content |
-| `explainer_video` | 400 | Educational/instructional |
-
-## Style Presets (Avoid AI Slop)
-
-| Preset | Description |
-|--------|-------------|
-| `photorealistic` | Camera/lens/grain, natural skin texture |
-| `editorial` | Magazine look, studio lighting |
-| `cinematic` | Anamorphic, film grade, teal & orange |
-| `commercial` | Product photography, clean studio |
-| `documentary` | Photojournalism, available light |
-
-## Director Mode
-
-The **Director** is an autonomous orchestrator agent. When invoked by an AI tool, it:
-
-1. Gathers product info (name, idea, style, budget, platforms)
-2. Creates a project via `brandly init`
-3. Runs the pipeline phase by phase
-4. Checks virality, manages budget, and exports final assets
-
-To use it with any AI tool, copy the output of:
-
-```bash
-brandly director
-```
-
-## Project Structure
-
-```
-.brandly/
-├── projects/
-│   └── {project-id}/
-│       ├── project.json      # Project state
-│       ├── cost.json         # Credit spend log
-│       └── artifacts/
-│           └── {phase}/      # Phase outputs (.md, .json)
-├── user-preferences.json     # Liked/disliked hooks, style prefs
-└── templates/                # Custom saved templates
-```
-
-Generated media is stored in:
-- `imagen/{project-id}/` — generated images
-- `videgen/{project-id}/` — generated videos
-- `audgen/{project-id}/` — generated audio
-
-## Development
-
-```bash
-# Install in development mode
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Run tests with coverage
-pytest --cov=src/brandly_cli
-
-# Lint
-ruff check src/
-ruff check src/ --fix
-
-# Syntax check
-python -m py_compile src/brandly_cli/*.py
-
-# Build
-python -m build
-```
-
-## Integration with AI Tools
-
-### OpenCode
-
-Add to `.opencode/package.json`:
-```json
-{ "dependencies": { "brandly": "github:Dream-Pixels-Forge/brandly-plugin" } }
-```
-
-Register in `opencode.json`:
-```json
-{ "$schema": "https://opencode.ai/config.json", "plugin": ["brandly"] }
-```
-
-### Codex / Qwen Code / Claude Code
-
-Use the CLI directly — all commands are designed to be called by agent subprocesses. The Director prompt provides the orchestration logic.
+---
 
 ## License
 

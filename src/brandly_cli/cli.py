@@ -2598,6 +2598,9 @@ def _ffprobe_available() -> bool:
 @click.option("-n", "--count", default=1,
               type=click.IntRange(1, 9), help="Number of images to generate")
 @click.option("--subject", default=None, help="Subject reference image URL for i2i generation")
+@click.option("--seed", default=None, type=int, help="Seed for reproducible generations")
+@click.option("--style", "style_setting", default=None,
+              help="Art style for image-01-live (e.g. cinematic, anime, oil-painting)")
 @click.option("-o", "--output", type=click.Choice(["table", "json"]), default="table")
 async def minimax_image(
     prompt: str,
@@ -2607,12 +2610,16 @@ async def minimax_image(
     height: int | None,
     count: int,
     subject: str | None,
+    seed: int | None,
+    style_setting: str | None,
     output: str,
 ) -> None:
     """Generate images using MiniMax API."""
     subject_ref = None
     if subject:
         subject_ref = [{"type": "character", "image_file": subject}]
+
+    style_obj = {"style": style_setting} if style_setting else None
 
     result = await minimax_generate_image(
         prompt,
@@ -2622,6 +2629,8 @@ async def minimax_image(
         height=height,
         n=count,
         subject_reference=subject_ref,
+        seed=seed,
+        image_style_setting=style_obj,
     )
 
     if output == "json":

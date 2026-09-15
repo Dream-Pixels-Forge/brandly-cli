@@ -50,12 +50,15 @@ async def generate_image(
     response_format: str = "url",
     n: int = 1,
     subject_reference: list[dict[str, str]] | None = None,
+    seed: int | None = None,
+    image_style_setting: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Generate image(s) via MiniMax API.
 
     Args:
         prompt: Text description of the image (max 1500 chars).
-        model: Model ID — "image-01" or "image-01-live".
+        model: Model ID — "image-01" (base) or "image-01-live" (adds art-style
+            control via image_style_setting).
         aspect_ratio: One of 1:1, 16:9, 4:3, 3:2, 2:3, 3:4, 9:16, 21:9.
         width: Image width in px (512-2048, divisible by 8). Required with height.
         height: Image height in px. Required with width.
@@ -63,6 +66,9 @@ async def generate_image(
         n: Number of images to generate (1-9).
         subject_reference: List of subject reference dicts for i2i.
             [{"type": "character", "image_file": "<url>"}]
+        seed: Optional integer seed for reproducibility (same prompt -> same take).
+        image_style_setting: Optional art-style settings for image-01-live, e.g.
+            {"style": "cinematic", "strength": 0.5}. Ignored for base image-01.
     """
     body: dict[str, Any] = {
         "model": model,
@@ -76,6 +82,10 @@ async def generate_image(
         body["height"] = height
     if subject_reference:
         body["subject_reference"] = subject_reference
+    if seed is not None:
+        body["seed"] = seed
+    if image_style_setting and "live" in model:
+        body["image_style_setting"] = image_style_setting
 
     async def _request() -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=120) as client:

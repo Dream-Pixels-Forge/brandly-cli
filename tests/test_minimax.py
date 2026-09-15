@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from brandly_cli import dubbing
-from brandly_cli.minimax_client import create_video_task
+from brandly_cli.minimax_client import create_video_task, generate_image
 
 
 @pytest.fixture(autouse=True)
@@ -101,6 +101,67 @@ class TestDubbingTts:
         with patch("brandly_cli.dubbing._ffmpeg_available", return_value=False):
             result = _run(dubbing.dub_video(src, "en", "es", transcript="bonjour"))
         assert "error" in result
+
+
+class TestMinimaxImageSeedAndStyle:
+    def test_seed_forwarded_to_body(self) -> None:
+        cap: dict[str, Any] = {}
+
+        async def fake_post(*args: Any, **kwargs: Any) -> Any:
+            cap["json"] = kwargs.get("json")
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {"id": "i", "data": {"image_urls": []}}
+            resp.raise_for_status.return_value = None
+            return resp
+
+        client = AsyncMock()
+        client.post = fake_post
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        with patch("brandly_cli.minimax_client.httpx.AsyncClient", return_value=ctx):
+            _run(generate_image("a cat", seed=42))
+        assert cap["json"]["seed"] == 42
+
+    def test_live_style_forwarded_only_for_live_model(self) -> None:
+        cap: dict[str, Any] = {}
+
+        async def fake_post(*args: Any, **kwargs: Any) -> Any:
+            cap["json"] = kwargs.get("json")
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {"id": "i", "data": {"image_urls": []}}
+            resp.raise_for_status.return_value = None
+            return resp
+
+        client = AsyncMock()
+        client.post = fake_post
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("brandly_cli.minimax_client.httpx.AsyncClient", return_value=ctx):
+            _run(
+                generate_image(
+                    "a cat",
+                    model="image-01-live",
+                    image_style_setting={"style": "cinematic"},
+                )
+            )
+        assert cap["json"]["image_style_setting"] == {"style": "cinematic"}
+
+        # non-live model must NOT forward the style setting
+        cap.clear()
+        with patch("brandly_cli.minimax_client.httpx.AsyncClient", return_value=ctx):
+            _run(
+                generate_image(
+                    "a cat",
+                    model="image-01",
+                    image_style_setting={"style": "cinematic"},
+                )
+            )
+        assert "image_style_setting" not in cap["json"]
 
 
 if __name__ == "__main__":  # pragma: no cover

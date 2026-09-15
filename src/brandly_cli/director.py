@@ -139,7 +139,7 @@ class DirectorConfig:
         self.default_budget = default_budget
         self.default_shots = default_shots
         self.pm = ProjectManager(self.root)
-        self.ct = CostTracker(self.root / ".brandly" / "projects")
+        self.ct = CostTracker(self.root / ".brandly")
         self.mem = UserPreferences(self.root)
 
 

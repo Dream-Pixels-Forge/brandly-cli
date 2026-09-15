@@ -16,7 +16,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from brandly_cli import __version__
+from brandly_cli import __version__, layout
 from brandly_cli.agent_tools import get_builtin_tools
 from brandly_cli.agnes_client import (
     agent_tool_loop,
@@ -150,12 +150,22 @@ def _save_artifact(
     *,
     root: Path,
     prompt_hint: str = "",
+    category: str | None = None,
 ) -> Path | None:
     """Download a generated asset and save it under
-    .brandly/projects/{id}/artifacts/{type_label}/{timestamp}_{hash}.{ext}."""
+    .brandly/{project_id}/{images|videos|audio}/{category}/.
+
+    ``category`` routes the file into a sub-folder (e.g. 'scenes' for video,
+    'soundtrack' for music). Omit it to use the 'general' default.
+    """
     if not url:
         return None
-    artifacts_dir = root / ".brandly" / "projects" / project_id / "artifacts" / type_label
+    proj_dir = layout.project_dir(root, project_id)
+    if type_label == "refs":
+        artifacts_dir = layout.refs_dir(proj_dir)
+    else:
+        media_category = category if category else "general"
+        artifacts_dir = layout.media_dir(proj_dir, type_label, media_category)
     ext = Path(url.split("?")[0]).suffix or (".mp3" if type_label == "audio" else "")
     if not ext:
         ext = ".bin"
@@ -367,7 +377,7 @@ def list_projects(ctx: click.Context) -> None:
 def _check_budget(ctx: click.Context, project_id: str) -> None:
     """Warn if project budget has been exceeded."""
     root = _get_root(ctx)
-    ct = CostTracker(root / ".brandly" / "projects")
+    ct = CostTracker(root / ".brandly")
     try:
         summary = asyncio.run(ct.get_summary(project_id))
         if summary["total"] >= summary["budget"] and summary["budget"] > 0:
@@ -716,7 +726,7 @@ def reference(
     key asset (object, character, location, etc.) across all subsequent
     `brandly video` generations. Should be the FIRST generation step.
 
-    The generated image is saved to .brandly/projects/<id>/artifacts/images/
+    The generated image is saved to .brandly/<project_id>/refs/
     with the prefix `reference_<subject_type>_*` and is auto-detected by
     `brandly video` (auto-injected as the strongest reference image).
     """
@@ -779,7 +789,7 @@ def reference(
     except Exception as e:
         console.print(f"[red]Error generating reference: {e}[/red]")
         if project_id:
-            docs_dir = root / ".brandly" / "projects" / project_id / "docs"
+            docs_dir = layout.docs_dir(layout.project_dir(root, project_id), "tmp")
             docs_dir.mkdir(parents=True, exist_ok=True)
             fail_doc = (
                 docs_dir
@@ -802,28 +812,29 @@ def reference(
 
     from brandly_cli.utils import write_generation_doc
 
+    # Primary references live in refs/ — the identity-locking folder.
     saved = _save_artifact(
         url,
         project_id,
-        "images",
+        "refs",
         root=root,
         prompt_hint=f"reference_{subject_type}_{subject}",
     )
     if saved:
-        # Rename the saved file to reference_<subject_type>_<timestamp>.<ext>
+        # Rename to a stable reference_<subject_type>_<timestamp>.<ext>
         timestamp = now_iso().replace(":", "-").replace(".", "_")
         ext = saved.suffix or ".png"
-        new_name = f"reference_{subject_type}_{timestamp}{ext}"
-        new_path = saved.parent / new_name
+        new_path = saved.parent / f"reference_{subject_type}_{timestamp}{ext}"
         try:
             saved.rename(new_path)
         except OSError:
-            new_path = saved  # fall back to original name if rename fails
-        console.print(f"[green]✓ Reference image saved:[/green] {new_path}")
+            new_path = saved  # fall back to the original name if rename fails
+        saved = new_path
+        console.print(f"[green]✓ Reference image saved:[/green] {saved}")
         write_generation_doc(
             project_id,
             "reference",
-            new_path,
+            saved,
             root=root,
             prompt=prompt,
             model=model,
@@ -842,7 +853,7 @@ def reference(
             "subject_type": subject_type,
             "skill": subject_skill,
             "subject": subject,
-            "image_path": str(new_path),
+            "image_path": str(saved),
             "source_url": url,
             "generated_at": now_iso(),
             "model": model,
@@ -997,7 +1008,7 @@ def image(
             # Update plan to show failure
             from brandly_cli.utils import write_generation_doc
 
-            docs_dir = Path(f".brandly/projects/{project_id}/docs")
+            docs_dir = layout.docs_dir(layout.project_dir(root, project_id), "tmp")
             docs_dir.mkdir(parents=True, exist_ok=True)
             fail_doc = docs_dir / f"image_fail_{now_iso().replace(':', '-').replace('.', '_')}.md"
             fail_doc.write_text(
@@ -1345,7 +1356,14 @@ def video(
         # Always save video to disk if URL exists
         if url:
             root = _get_root(ctx)
-            saved = _save_artifact(url, project_id, "videos", root=root, prompt_hint=prompt)
+            saved = _save_artifact(
+                url,
+                project_id,
+                "videos",
+                root=root,
+                prompt_hint=prompt,
+                category="scenes",
+            )
             if saved:
                 console.print(f"  Saved → {saved}")
                 # Write generation document
@@ -1480,7 +1498,9 @@ def music(
         # Save to disk
         pid = project_id or ""
         root = _get_root(ctx)
-        saved = _save_artifact(url, pid, "audio", root=root, prompt_hint=prompt)
+        saved = _save_artifact(
+            url, pid, "audio", root=root, prompt_hint=prompt, category="soundtrack"
+        )
         if saved:
             console.print(f"  Saved → {saved}")
     _print_json(result)
@@ -1520,7 +1540,14 @@ def tts(
         # Save to disk
         pid = project_id or ""
         root = _get_root(ctx)
-        saved = _save_artifact(url, pid, "audio", root=root, prompt_hint=text[:60])
+        saved = _save_artifact(
+            url,
+            pid,
+            "audio",
+            root=root,
+            prompt_hint=text[:60],
+            category="voiceover",
+        )
         if saved:
             console.print(f"  Saved → {saved}")
     _print_json(result)
@@ -1676,7 +1703,7 @@ def memory(ctx: click.Context, action: str, hook: str | None) -> None:
     "--output",
     "-o",
     default=None,
-    help="Output directory (default: .brandly/projects/{id}/export/)",
+    help="Output directory (default: .brandly/{id}/export/)",
 )
 @click.pass_context
 def export(ctx: click.Context, project_id: str, output: str | None) -> None:
@@ -1691,18 +1718,22 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
         console.print(f"[red]Project not found: {project_id}[/red]")
         sys.exit(1)
 
-    out_dir = Path(output) if output else root / ".brandly" / "projects" / project_id / "export"
+    proj_dir = layout.resolve_project_dir(root, project_id)
+    out_dir = Path(output) if output else proj_dir / "export"
 
-    # Files in the project root that are bookkeeping, not user-facing artifacts.
-    # These are excluded from the export.
-    internal_files = {"project.json", "cost.json"}
+    # Bookkeeping files at the project root are excluded from the export
+    # by only scanning the user-facing top folders (refs/images/videos/audio/docs).
 
     artifact_count = 0
     media_count = 0
-    media_exts = {".png", ".jpg", ".jpeg", ".mp4", ".webm", ".mp3", ".wav", ".mpga"}
+    media_exts = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mp3", ".wav", ".mpga"}
+    # User-facing media + docs + refs live in these top folders of the project dir.
     for search_dir in [
-        root / ".brandly" / "projects" / project_id / "artifacts",
-        root / ".brandly" / "projects" / project_id,
+        proj_dir / "refs",
+        proj_dir / "images",
+        proj_dir / "videos",
+        proj_dir / "audio",
+        proj_dir / "docs",
     ]:
         if not search_dir.exists():
             continue
@@ -1715,11 +1746,8 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
                 continue
             except ValueError:
                 pass
-            # Skip bookkeeping files at the project root
-            if f.parent == root / ".brandly" / "projects" / project_id and f.name in internal_files:
-                continue
             ext = f.suffix.lower()
-            rel = f.relative_to(search_dir)
+            rel = f.relative_to(proj_dir)
             dest = out_dir / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             import shutil
@@ -1775,7 +1803,7 @@ def cost(ctx: click.Context, project_id: str) -> None:
         console.print("[red]Invalid project ID format.[/red]")
         sys.exit(1)
     root = _get_root(ctx)
-    ct = CostTracker(root / ".brandly" / "projects")
+    ct = CostTracker(root / ".brandly")
     try:
         summary = asyncio.run(ct.get_summary(project_id))
     except FileNotFoundError:
@@ -1803,7 +1831,7 @@ def record_cost(ctx: click.Context, project_id: str, phase: str, action: str, cr
     if not proj:
         console.print(f"[red]Project not found: {project_id}[/red]")
         sys.exit(1)
-    ct = CostTracker(root / ".brandly" / "projects")
+    ct = CostTracker(root / ".brandly")
     try:
         result = asyncio.run(
             ct.record_spend(project_id, phase, action, credits, budget_credits=proj.budget)
@@ -2882,7 +2910,14 @@ def ark_image(
         # Save first URL to disk
         if urls and ctx.obj.get("root"):
             root = Path(ctx.obj["root"])
-            saved = _save_artifact(urls[0], "ark", "images", root=root, prompt_hint=prompt)
+            saved = _save_artifact(
+                urls[0],
+                "ark",
+                "images",
+                root=root,
+                prompt_hint=prompt,
+                category="general",
+            )
             if saved:
                 console.print(f"  Saved → {saved}")
     else:
@@ -2967,7 +3002,9 @@ def ark_video(
         console.print(f"[green]✓ Video ready:[/green] {url or 'no URL'}")
         if url:
             root = _get_root(ctx)
-            saved = _save_artifact(url, project_id, "videos", root=root, prompt_hint=prompt)
+            saved = _save_artifact(
+                url, project_id, "videos", root=root, prompt_hint=prompt, category="scenes"
+            )
             if saved:
                 console.print(f"  Saved → {saved}")
 
@@ -3078,15 +3115,16 @@ def export_platforms(project_id, platforms, output, root):
 
     if not platforms:
         platforms = ("tiktok", "youtube_standard")
-    proj_dir = Path(root or ".") / ".brandly" / "projects" / project_id
+    proj_dir = layout.resolve_project_dir(Path(root or "."), project_id)
     if not proj_dir.exists():
         console.print(f"[red]Project not found: {project_id}[/red]")
         sys.exit(1)
-    video_file = next(proj_dir.glob("*.mp4"), None)
+    videos_root = proj_dir / "videos"
+    video_file = next((videos_root.rglob("*.mp4")), None)
     if not video_file:
         console.print("[yellow]No video found in project[/yellow]")
         sys.exit(1)
-    out_dir = Path(output) if output else proj_dir / "exports"
+    out_dir = Path(output) if output else proj_dir / "export"
     for platform in platforms:
         console.print(f"Exporting for [bold]{platform}[/bold]...")
         result = asyncio.run(export_for_platform(video_file, platform, out_dir, root=root))
@@ -3104,12 +3142,13 @@ def export_platforms(project_id, platforms, output, root):
 def thumbnail(project_id: str, count: int, style: str, root: str | None) -> None:
     """Generate thumbnails from project video."""
     from brandly_cli.thumbnails import generate_thumbnails
-    proj_dir = Path(root or ".") / ".brandly" / "projects" / project_id
-    video_file = next(proj_dir.glob("*.mp4"), None)
+    proj_dir = layout.resolve_project_dir(Path(root or "."), project_id)
+    videos_root = proj_dir / "videos"
+    video_file = next((videos_root.rglob("*.mp4")), None)
     if not video_file:
         console.print(f"[red]No video found in project: {project_id}[/red]")
         sys.exit(1)
-    output_dir = proj_dir / "thumbnails"
+    output_dir = layout.media_dir(proj_dir, "images", "general")
     result = asyncio.run(
         generate_thumbnails(
             video_file, output_dir, count=count, style_preset=style,

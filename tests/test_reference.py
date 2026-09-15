@@ -20,8 +20,8 @@ from brandly_cli.utils import generate_project_id
 
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
-    """Return the .brandly/projects path under a fresh temp root."""
-    return tmp_path / ".brandly" / "projects"
+    """Return the .brandly root (new layout: projects at .brandly/{id}/)."""
+    return tmp_path / ".brandly"
 
 
 @pytest.fixture
@@ -224,10 +224,10 @@ def test_reference_generates_image_and_saves_metadata(
 
     # _save_artifact tries real network — mock it to return a deterministic path
     def fake_save(url, project_id, kind, root=None, prompt_hint=""):  # noqa: ANN001
-        images_dir = root / ".brandly" / "projects" / project_id / "artifacts" / "images"
-        images_dir.mkdir(parents=True, exist_ok=True)
+        refs_dir = root / ".brandly" / project_id / "refs"
+        refs_dir.mkdir(parents=True, exist_ok=True)
         target = (
-            images_dir
+            refs_dir
             / f"images_reference-{prompt_hint.replace(' ', '_')[:30]}.png"
         )
         target.write_bytes(b"\x89PNG\r\n\x1a\nfake")
@@ -269,8 +269,8 @@ def test_reference_generates_image_and_saves_metadata(
     assert "Nike Air Max 1" in proj_data["primary_reference"]["subject"]
 
     # Reference image file must exist
-    images_dir = project_dir / pid / "artifacts" / "images"
-    ref_files = list(images_dir.glob("reference_object_*.png"))
+    refs_dir = project_dir / pid / "refs"
+    ref_files = list(refs_dir.glob("reference_object_*.png"))
     assert len(ref_files) >= 1
     assert all(f.stat().st_size > 0 for f in ref_files)
 
@@ -299,7 +299,7 @@ def test_reference_image_api_failure_writes_fail_doc(
         )
 
     assert result.exit_code == 1
-    docs_dir = project_dir / pid / "docs"
+    docs_dir = project_dir / pid / "docs" / "tmp"
     fail_docs = list(docs_dir.glob("reference_fail_*.md"))
     assert len(fail_docs) == 1
     assert "Service Unavailable" in fail_docs[0].read_text()
@@ -323,9 +323,9 @@ def test_anchor_alias_forwards_to_reference(
     }
 
     def fake_save(url, project_id, kind, root=None, prompt_hint=""):  # noqa: ANN001
-        images_dir = root / ".brandly" / "projects" / project_id / "artifacts" / "images"
-        images_dir.mkdir(parents=True, exist_ok=True)
-        target = images_dir / f"images_{prompt_hint.replace(' ', '_')[:30]}.png"
+        refs_dir = root / ".brandly" / project_id / "refs"
+        refs_dir.mkdir(parents=True, exist_ok=True)
+        target = refs_dir / f"images_{prompt_hint.replace(' ', '_')[:30]}.png"
         target.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         return target
 
@@ -419,9 +419,9 @@ def test_video_picks_up_primary_reference(
     """When project has primary_reference metadata, video uses it as first ref."""
     pid = generate_project_id()
     # Write project WITH primary_reference metadata and a real reference image
-    images_dir = project_dir / pid / "artifacts" / "images"
-    images_dir.mkdir(parents=True, exist_ok=True)
-    ref_file = images_dir / "reference_object_2026-01-01_000000.png"
+    refs_dir = project_dir / pid / "refs"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+    ref_file = refs_dir / "reference_object_2026-01-01_000000.png"
     ref_file.write_bytes(b"\x89PNG\r\n\x1a\nfake reference")
     _write_project(
         project_dir,

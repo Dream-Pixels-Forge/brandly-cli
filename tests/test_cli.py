@@ -24,8 +24,8 @@ def runner(tmp_path: Path):
 
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
-    """Return the .brandly/projects path."""
-    return tmp_path / ".brandly" / "projects"
+    """Return the .brandly root (new layout: projects stored at .brandly/{id}/)."""
+    return tmp_path / ".brandly"
 
 
 def test_version(runner: CliRunner) -> None:
@@ -300,7 +300,7 @@ def test_export_with_artifacts(runner: CliRunner, project_dir: Path) -> None:
         )
     )
     # Create a fake image artifact
-    img_dir = project_dir / pid / "artifacts" / "images"
+    img_dir = project_dir / pid / "images" / "general"
     img_dir.mkdir(parents=True, exist_ok=True)
     img_file = img_dir / "test.png"
     img_file.write_bytes(b"\x89PNG\r\n\x1a\nfake")

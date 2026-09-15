@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from brandly_cli import layout
+
 
 def generate_project_id() -> str:
     """Generate a human-readable project ID from slug + timestamp.
@@ -229,7 +231,7 @@ def write_generation_plan(
 ) -> Path:
     """Write a generation plan BEFORE attempting API calls.
 
-    Creates: {root}/.brandly/projects/{id}/docs/plan_{asset_type}_{timestamp}.md
+    Creates: {root}/.brandly/{id}/docs/plan/plan_{asset_type}_{timestamp}.md
 
     This ensures we have a record of what we INTENDED to generate,
     even if the API call fails.
@@ -238,7 +240,9 @@ def write_generation_plan(
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     base = Path(root) if root else Path.cwd()
-    docs_dir = base / ".brandly" / "projects" / project_id / "docs"
+    docs_dir = layout.docs_dir(
+        layout.resolve_project_dir(base, project_id), "plan"
+    )
     docs_dir.mkdir(parents=True, exist_ok=True)
 
     config = extra_config or {}
@@ -301,8 +305,8 @@ def write_generation_doc(
     """Write a generation document (JSON + Markdown) for user reference.
 
     Creates:
-    - {root}/.brandly/projects/{id}/docs/{type}_{timestamp}.json
-    - {root}/.brandly/projects/{id}/docs/{type}_{timestamp}.md
+    - {root}/.brandly/{id}/docs/tmp/{type}_{timestamp}.json
+    - {root}/.brandly/{id}/docs/tmp/{type}_{timestamp}.md
 
     Also updates any pending plan files for this asset type.
     """
@@ -310,7 +314,9 @@ def write_generation_doc(
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     base = Path(root) if root else Path.cwd()
-    docs_dir = base / ".brandly" / "projects" / project_id / "docs"
+    docs_dir = layout.docs_dir(
+        layout.resolve_project_dir(base, project_id), "tmp"
+    )
     docs_dir.mkdir(parents=True, exist_ok=True)
 
     # Build metadata
@@ -376,11 +382,11 @@ def _update_plans(
 ) -> None:
     """Update any pending plan files to mark them completed."""
     base = Path(root) if root else Path.cwd()
-    docs_dir = base / ".brandly" / "projects" / project_id / "docs"
-    if not docs_dir.exists():
+    plan_dir = layout.docs_dir(layout.resolve_project_dir(base, project_id), "plan")
+    if not plan_dir.exists():
         return
 
-    for plan_file in docs_dir.glob(f"plan_{asset_type}_*.md"):
+    for plan_file in plan_dir.glob(f"plan_{asset_type}_*.md"):
         try:
             content = plan_file.read_text(encoding="utf-8")
             # Replace PENDING status with COMPLETED
@@ -476,23 +482,22 @@ def detect_project_artifacts(project_id: str, root: Path | None = None) -> dict[
         Dictionary mapping artifact type to list of file paths
     """
     base = Path(root) if root else Path.cwd()
-    brandly_dir = base / ".brandly" / "projects" / project_id
+    proj_dir = layout.resolve_project_dir(base, project_id)
     result: dict[str, list[str]] = {
         "images": [],
     }
 
-    # Find image artifacts
-    images_dir = brandly_dir / "artifacts" / "images"
-    if images_dir.exists():
-        for img in images_dir.glob("*.{png,jpg,jpeg}"):
-            result["images"].append(str(img))
+    # New layout: reference images live in refs/ and images/.
+    for img in layout.discover_images(proj_dir):
+        result["images"].append(str(img))
 
-    # Find any other images in the project
-    docs_dir = brandly_dir / "docs"
-    if docs_dir.exists():
-        for doc in docs_dir.glob("*.png"):
-            if str(doc) not in result["images"]:
-                result["images"].append(str(doc))
+    # Back-compat: legacy artifacts/images/ + docs/*.png trees.
+    legacy = layout.legacy_project_dir(base, project_id)
+    for base_dir in (legacy / "artifacts" / "images", legacy / "docs"):
+        if base_dir.exists():
+            for img in base_dir.glob("*.{png,jpg,jpeg}"):
+                if str(img) not in result["images"]:
+                    result["images"].append(str(img))
 
     return result
 

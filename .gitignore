@@ -48,3 +48,5 @@ skills_output/
 
 # Pre-commit
 .pre-commit-cache/
+.agnes/
+debates/

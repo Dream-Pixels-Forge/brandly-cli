@@ -27,7 +27,7 @@ def _ffmpeg_available() -> bool:
         return False
 
 
-async def _run_ffmpeg(cmd: list[str]) -> tuple[bytes, bytes, int]:
+async def _run_ffmpeg(cmd: list[str]) -> tuple[bytes, bytes, int | None]:
     """Execute an FFmpeg command and return (stdout, stderr, returncode)."""
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -208,7 +208,7 @@ async def generate_thumbnails(
         thumbnails.append(entry)
 
         for platform, (pw, ph) in PLATFORM_SIZES.items():
-            resized = img.resize((pw, ph), Image.LANCZOS)
+            resized = img.resize((pw, ph), Image.Resampling.LANCZOS)
             out_path = output_dir / f"thumb_{platform}.jpg"
             resized.convert("RGB").save(out_path, "JPEG", quality=90)
             thumbnails.append({
@@ -248,7 +248,7 @@ def _draw_text_overlay(
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/freefont/FreeSansBold.ttf", fw)
         except OSError:
-            font = ImageFont.load_default()
+            font = ImageFont.load_default()  # type: ignore[assignment]
 
     bbox = draw.textbbox((0, 0), text, font=font)
     text_w = bbox[2] - bbox[0]

@@ -103,7 +103,7 @@ async def share_file(
             base_dir = Path(root) / ".brandly" / "shares"
         else:
             base_dir = Path.cwd() / ".brandly" / "shares"
-        p = LocalShareProvider(base_dir)
+        p: ShareProvider = LocalShareProvider(base_dir)
     elif provider == "s3":
         p = S3ShareProvider("default-bucket")
     else:

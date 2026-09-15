@@ -510,7 +510,7 @@ def get_reference_image_urls(project_id: str, root: Path | None = None) -> list[
 # Async FFmpeg runner for subprocess operations
 # ---------------------------------------------------------------------------
 
-async def async_run_ffmpeg(cmd: list[str]) -> tuple[int, str]:
+async def async_run_ffmpeg(cmd: list[str]) -> tuple[int | None, str]:
     """Run an FFmpeg command asynchronously.
 
     Args:

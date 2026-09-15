@@ -29,5 +29,15 @@ jobs:
       - name: Build package
         run: python -m build
 
+      - name: Check build
+        run: python -m twine check dist/*
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.event.release.tag_name }}
+          path: dist/
+          if-no-files-found: error
+
       - name: Release to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

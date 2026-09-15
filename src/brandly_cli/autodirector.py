@@ -32,7 +32,7 @@ def parse_script(script: str) -> list[dict[str, str]]:
             content = scene_text[len(lines[0]):].strip()
 
         scenes.append({
-            "index": i,
+            "index": str(i),
             "title": title,
             "text": content,
             "full": scene_text,

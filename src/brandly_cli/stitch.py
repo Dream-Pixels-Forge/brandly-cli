@@ -210,7 +210,7 @@ async def stitch_videos(
     return _result(output, clips, transitions_applied, color_grade)
 
 
-async def _run(cmd: list[str]) -> tuple[int, str]:
+async def _run(cmd: list[str]) -> tuple[int | None, str]:
     """Run an FFmpeg command, returning (returncode, stderr)."""
     proc = await asyncio.create_subprocess_exec(
         *cmd,

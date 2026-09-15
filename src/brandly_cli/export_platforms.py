@@ -80,7 +80,7 @@ def _ffprobe_available() -> bool:
         return False
 
 
-async def _run_ffmpeg(cmd: list[str]) -> tuple[int, str]:
+async def _run_ffmpeg(cmd: list[str]) -> tuple[int | None, str]:
     """Run FFmpeg command and return (returncode, stderr)."""
     proc = await asyncio.create_subprocess_exec(
         *cmd,

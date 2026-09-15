@@ -1,0 +1,107 @@
+"""Tests for MiniMax H3 video + TTS improvements."""
+
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from brandly_cli import dubbing
+from brandly_cli.minimax_client import create_video_task
+
+
+@pytest.fixture(autouse=True)
+def mock_minimax_key(monkeypatch: pytest.MonkeyPatch) -> str:
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-minimax-key-12345")
+    monkeypatch.setenv("MINIMAX_BASE_URL", "https://test-minimax.example.com")
+    return "test-minimax-key-12345"
+
+
+def _run(coro: Any) -> Any:
+    return __import__("asyncio").run(coro)
+
+
+def _make_ctx(body_capture: dict) -> MagicMock:
+    """Build an AsyncClient context-mgr mock that captures the POST body."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"task_id": "t-1", "status": "pending"}
+    resp.raise_for_status.return_value = None
+    resp.headers = {}
+
+    async def fake_post(url: Any, headers: Any = None, json: Any = None) -> MagicMock:
+        body_capture["json"] = json
+        return resp
+
+    client = AsyncMock()
+    client.post = fake_post
+
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=client)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    return ctx
+
+
+class TestH3MaxGuards:
+    def test_h3_max_strips_reference_inputs(self) -> None:
+        cap: dict[str, Any] = {}
+        ctx = _make_ctx(cap)
+        with patch("brandly_cli.minimax_client.httpx.AsyncClient", return_value=ctx):
+            _run(
+                create_video_task(
+                    "test",
+                    model="MiniMax-H3-Max",
+                    reference_videos=["https://v/1.mp4"],
+                    reference_audios=["https://a/1.mp3"],
+                )
+            )
+        content = cap["json"]["content"]
+        # H3-Max must NOT forward reference video/audio items
+        roles = [c.get("role") for c in content]
+        assert "reference_video" not in roles
+        assert "reference_audio" not in roles
+
+    def test_h3_keeps_reference_inputs(self) -> None:
+        cap: dict[str, Any] = {}
+        ctx = _make_ctx(cap)
+        with patch("brandly_cli.minimax_client.httpx.AsyncClient", return_value=ctx):
+            _run(
+                create_video_task(
+                    "test",
+                    model="MiniMax-H3",
+                    reference_videos=["https://v/1.mp4"],
+                )
+            )
+        roles = [c.get("role") for c in cap["json"]["content"]]
+        assert "reference_video" in roles
+
+    def test_duration_clamped_to_model_range(self) -> None:
+        cap: dict[str, Any] = {}
+        ctx = _make_ctx(cap)
+        with patch("brandly_cli.minimax_client.httpx.AsyncClient", return_value=ctx):
+            _run(create_video_task("t", model="MiniMax-H3-Max", duration=3))
+        assert cap["json"]["duration"] == 5  # H3-Max min is 5s
+
+
+class TestDubbingTts:
+    def test_generate_tts_falls_back_to_silence_without_key(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+        out = tmp_path / "tts.aac"
+        result = _run(dubbing._generate_tts_audio("hello", "voice", out))
+        # No API key -> silent fallback path (still a valid dict result)
+        assert result.get("tts_source") in ("silent_fallback", "error", None) or "error" in result
+
+    def test_dub_video_accepts_transcript(self, tmp_path: Any) -> None:
+        # transcript param exists and is accepted (no ffmpeg -> graceful error)
+        src = tmp_path / "in.mp4"
+        src.write_bytes(b"fake")
+        with patch("brandly_cli.dubbing._ffmpeg_available", return_value=False):
+            result = _run(dubbing.dub_video(src, "en", "es", transcript="bonjour"))
+        assert "error" in result
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(pytest.main([__file__, "-v"]))

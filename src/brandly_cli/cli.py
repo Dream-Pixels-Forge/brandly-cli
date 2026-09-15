@@ -17,11 +17,14 @@ from rich.panel import Panel
 from rich.table import Table
 
 from brandly_cli import __version__
+from brandly_cli.agent_tools import get_builtin_tools
 from brandly_cli.agnes_client import (
+    agent_tool_loop,
     cancel_job,
     create_video_task,
     generate_image,
     list_jobs,
+    list_text_models,
     poll_video,
 )
 from brandly_cli.ark_client import (
@@ -1488,13 +1491,24 @@ def music(
     help="Voice ID (e.g. English_Insightful_Speaker)",
 )
 @click.option("--speed", default=1.0, help="Speech speed (0.5–2.0)")
+@click.option("--vol", default=1.0, help="Volume (0.1-2.0)")
+@click.option("--pitch", default=0, type=click.IntRange(-12, 12),
+              help="Pitch shift in semitones (-12 to 12)")
+@click.option("--emotion", default=None,
+              help="Emotion tag: happy, sad, angry, fearful, neutral")
 @click.pass_context
 def tts(
-    ctx: click.Context, project_id: str | None, text: str, model: str, voice_id: str, speed: float
+    ctx: click.Context, project_id: str | None, text: str, model: str, voice_id: str,
+    speed: float, vol: float, pitch: int, emotion: str | None,
 ) -> None:
     """Generate voiceover via MiniMax TTS."""
     console.print(f"[dim]Generating TTS ({model}, voice={voice_id})...[/dim]")
-    result = asyncio.run(generate_tts(text, model=model, voice_id=voice_id, speed=speed))
+    result = asyncio.run(
+        generate_tts(
+            text, model=model, voice_id=voice_id, speed=speed,
+            vol=vol, pitch=pitch, emotion=emotion,
+        )
+    )
     url = result.get("url") or ""
     if url:
         console.print(f"[green]✓ Voiceover generated:[/green] {url}")
@@ -2136,6 +2150,75 @@ def job_cancel(video_id: str) -> None:
         console.print(f"[green]✓ Job {video_id} cancelled successfully.[/green]")
     else:
         console.print(f"[red]✗ Failed to cancel job: {result.get('error', 'unknown error')}[/red]")
+
+
+# ---------------------------------------------------------------------------
+# agnes-chat — Agnes text/agent tool-calling
+# ---------------------------------------------------------------------------
+
+
+@cli.command(name="agnes-chat")
+@click.argument("prompt")
+@click.option("--model", default="agnes-2.5-flash",
+              help="Agnes text model (2.5-flash, 2.0-flash, 1.5-flash)")
+@click.option("--tools", is_flag=True,
+              help="Enable built-in tools (projects, jobs, models, image gen)")
+@click.option("--list-models", "list_models_flag", is_flag=True,
+              help="List available Agnes text models and exit")
+@click.option("--list-tools", "list_tools_flag", is_flag=True,
+              help="List built-in agent tools and exit")
+@click.option("-o", "--output", type=click.Choice(["text", "json"]), default="text")
+def agnes_chat(
+    prompt: str,
+    model: str,
+    tools: bool,
+    list_models_flag: bool,
+    list_tools_flag: bool,
+    output: str,
+) -> None:
+    """Chat with an Agnes AI text model, optionally as a tool-calling agent.
+
+    With --tools the model can call built-in tools (list_projects, get_project,
+    list_jobs, generate_image, list_models) and reason over their results in a
+    multi-turn agent loop. Requires AGNES_API_KEY.
+    """
+    if list_models_flag:
+        for m in list_text_models():
+            console.print(
+                f"  [bold]{m['id']}[/bold]  ctx={m['context']} out={m['max_output']}"
+            )
+            console.print(f"    [dim]{m['use']}[/dim]")
+        return
+
+    if list_tools_flag:
+        from brandly_cli.agent_tools import describe_tools
+
+        for name, spec in describe_tools().items():
+            console.print(f"  [bold]{name}[/bold] - {spec['description']}")
+        return
+
+    tool_specs = get_builtin_tools() if tools else None
+    messages = [{"role": "user", "content": prompt}]
+
+    if tool_specs:
+        result = asyncio.run(agent_tool_loop(messages, tool_specs, model=model))
+        if output == "json":
+            _print_json(result)
+            return
+        iterations = result.get("iterations", 1)
+        console.print(
+            f"[bold]Agnes agent: {model}[/bold]  ({iterations} iteration(s))"
+        )
+        console.print(result.get("content") or "(no content)")
+    else:
+        from brandly_cli.agnes_client import chat_completion
+
+        data = asyncio.run(chat_completion(messages, model=model))
+        if output == "json":
+            _print_json(data)
+            return
+        msg = (data.get("choices") or [{}])[0].get("message") or {}
+        console.print(msg.get("content") or "(no content)")
 
 
 # ---------------------------------------------------------------------------

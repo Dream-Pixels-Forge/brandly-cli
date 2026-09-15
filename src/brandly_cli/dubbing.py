@@ -104,22 +104,16 @@ def _resolve_output(video_path: Path, target_lang: str, root: Path | None) -> Pa
 
 
 # ---------------------------------------------------------------------------
-# MiniMax TTS stub
+# MiniMax TTS (real call with silent fallback)
 # ---------------------------------------------------------------------------
 
-async def _generate_tts_audio(
+
+async def _silent_tts_fallback(
     text: str,
     voice_id: str,
     output_path: Path,
 ) -> dict[str, Any]:
-    """Generate TTS audio via MiniMax API (stub — no real API call).
-
-    TODO: Implement real MiniMax TTS integration when the API endpoint is stable.
-          Replace this stub with an actual httpx request to the MiniMax TTS service.
-    """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    # Stub: generate a silent audio file matching expected duration
-    # In production this would call the MiniMax TTS API and stream the result
+    """Generate a silent AAC file as a last-resort fallback (no API available)."""
     cmd = [
         "ffmpeg", "-y", "-f", "lavfi",
         "-i", "anullsrc=r=44100:cl=mono",
@@ -140,9 +134,85 @@ async def _generate_tts_audio(
         "text_length": len(text),
         "audio_path": str(output_path),
         "duration_seconds": _get_duration(output_path),
+        "tts_source": "silent_fallback",
     }
 
 
+async def _real_minimax_tts(
+    text: str,
+    voice_id: str,
+    api_key: str,
+    output_path: Path,
+    model: str = "speech-2.8-hd",
+) -> dict[str, Any] | None:
+    """Call the real MiniMax T2A endpoint; return None on any failure."""
+    import httpx
+
+    from brandly_cli.audio_client import MINIMAX_BASE_URL
+
+    body = {
+        "model": model,
+        "text": text,
+        "stream": False,
+        "output_format": "url",
+        "voice_setting": {"voice_id": voice_id, "speed": 1.0},
+        "audio_setting": {
+            "sample_rate": 32000,
+            "bitrate": 128000,
+            "format": "mp3",
+            "channel": 1,
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{MINIMAX_BASE_URL}/t2a_v2", headers=headers, json=body
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        audio = (data.get("data") or {}).get("audio", "")
+        if not audio:
+            return None
+        async with httpx.AsyncClient(timeout=120) as client:
+            dl = await client.get(audio)
+            dl.raise_for_status()
+            output_path.write_bytes(dl.content)
+        return {
+            "voice_id": voice_id,
+            "text_length": len(text),
+            "audio_path": str(output_path),
+            "duration_seconds": _get_duration(output_path),
+            "tts_source": "minimax",
+        }
+    except Exception:
+        return None
+
+
+async def _generate_tts_audio(
+    text: str,
+    voice_id: str,
+    output_path: Path,
+    model: str = "speech-2.8-hd",
+) -> dict[str, Any]:
+    """Generate TTS audio via MiniMax, falling back to silence when unavailable.
+
+    Uses the real MiniMax T2A endpoint when MINIMAX_API_KEY is set and the call
+    succeeds; otherwise produces a silent AAC file so the downstream FFmpeg mux
+    still works.
+    """
+    import os
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    api_key = os.getenv("MINIMAX_API_KEY", "")
+    if api_key and text.strip():
+        result = await _real_minimax_tts(text, voice_id, api_key, output_path, model)
+        if result is not None:
+            return result
+    return await _silent_tts_fallback(text, voice_id, output_path)
 # ---------------------------------------------------------------------------
 # Core dubbing pipeline
 # ---------------------------------------------------------------------------
@@ -155,6 +225,7 @@ async def dub_video(
     voice_style: str = "professional",
     output_path: Path | None = None,
     root: Path | None = None,
+    transcript: str | None = None,
 ) -> dict[str, Any]:
     """Dub a video to a target language while preserving timing.
 
@@ -232,7 +303,11 @@ async def dub_video(
     #       we use a placeholder text for testing.
     #       The transcription/translation step is intentionally left as a stub
     #       until the upstream speech-to-text service is integrated.
-    translated_text = f"[dubbed_to_{target_lang}]"  # placeholder
+    translated_text = (
+        transcript
+        if transcript is not None
+        else f"[dubbed_to_{target_lang}]"  # placeholder label
+    )
 
     # Stage 3: Generate TTS audio via MiniMax
     voice_id = LANGUAGES[target_lang][1]

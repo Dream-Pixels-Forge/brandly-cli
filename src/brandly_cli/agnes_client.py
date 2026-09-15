@@ -527,3 +527,242 @@ async def cancel_job(video_id: str) -> dict[str, Any]:
     except Exception as e:
         console.print(f"[red]Error cancelling job: {e}[/red]")
         return {"video_id": video_id, "status": "error", "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Model catalog (Agnes text / image / video)
+# ---------------------------------------------------------------------------
+
+# Agnes text models are OpenAI-compatible: same base URL, /v1/chat/completions.
+# The 2.5-flash model is recommended for tool calling / agent workflows
+# (512K context, tool-calling support). 2.0-flash (256K) is the fallback.
+AGNES_TEXT_MODELS: tuple[str, ...] = (
+    "agnes-2.5-flash",
+    "agnes-2.0-flash",
+    "agnes-1.5-flash",
+)
+DEFAULT_TEXT_MODEL = "agnes-2.5-flash"
+
+
+def list_text_models() -> list[dict[str, str]]:
+    """Return the catalog of Agnes text/agent models with their specs.
+
+    Mirrors the public model catalog (2026.07.30) so the CLI can surface them
+    without a network round-trip.
+    """
+    return [
+        {
+            "id": "agnes-2.5-flash",
+            "context": "512K",
+            "max_output": "65.5K",
+            "use": "tool calling, coding, agent workflows, multimodal",
+        },
+        {
+            "id": "agnes-2.0-flash",
+            "context": "256K",
+            "max_output": "64K",
+            "use": "coding, reasoning, agents, vision input, tool calling",
+        },
+        {
+            "id": "agnes-1.5-flash",
+            "context": "256K",
+            "max_output": "64K",
+            "use": "fast chat, low-latency content, simple multimodal",
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Chat completion + tool calling (OpenAI-compatible /v1/chat/completions)
+# ---------------------------------------------------------------------------
+
+async def chat_completion(
+    messages: list[dict[str, Any]],
+    *,
+    model: str = DEFAULT_TEXT_MODEL,
+    tools: list[dict[str, Any]] | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    response_format: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Run a single OpenAI-compatible chat completion against Agnes.
+
+    Args:
+        messages: List of message dicts ({"role": "system"|"user"|"assistant", "content": ...}).
+            Tool results are appended with role="tool" and the ``tool_call_id``.
+        model: Agnes text model ID (defaults to agnes-2.5-flash).
+        tools: Optional list of OpenAI-format tool definitions::
+
+            [
+                {"type": "function", "function": {
+                    "name": ..., "description": ..., "parameters": {...}
+                }}
+            ]
+
+        temperature: Sampling temperature (model default when None).
+        max_tokens: Cap on generated tokens.
+        response_format: Optional {"type": "json_object"} for structured output.
+
+    Returns the raw completion dict (``choices[0].message`` and friends).
+    """
+    body: dict[str, Any] = {"model": model, "messages": messages}
+    if tools:
+        body["tools"] = tools
+    if temperature is not None:
+        body["temperature"] = temperature
+    if max_tokens is not None:
+        body["max_tokens"] = max_tokens
+    if response_format is not None:
+        body["response_format"] = response_format
+
+    async def _request() -> Any:
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"{AGNES_BASE_URL}/chat/completions",
+                headers=_headers(),
+                json=body,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    try:
+        return await _retry_with_backoff(_request, max_retries=3, base_delay=1.0)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:
+            console.print("[red]Error: Agnes chat rate limit exceeded. Retry shortly.[/red]")
+        elif e.response.status_code == 503:
+            console.print("[red]Error: Agnes chat API temporarily unavailable.[/red]")
+        raise
+
+
+def _build_tools_payload(
+    tools: list[tuple[str, Any, dict[str, Any], str]] | list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Normalise a tool spec list into the OpenAI ``tools`` payload.
+
+    Accepts either:
+      - pre-shaped OpenAI tool dicts (pass through unchanged), or
+      - 4-tuples ``(name, handler, json_schema, description)`` (handlers are
+        ignored here; the loop keeps them separately).
+    """
+    out: list[dict[str, Any]] = []
+    for t in tools:
+        if isinstance(t, dict):
+            # Already an OpenAI-format tool dict — but strip any "handler" key.
+            out.append({k: v for k, v in t.items() if k != "handler"})
+        else:
+            name, _handler, schema, description = t
+            out.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": description,
+                        "parameters": schema,
+                    },
+                }
+            )
+    return out
+
+
+async def agent_tool_loop(
+    messages: list[dict[str, Any]],
+    tools: list[tuple[str, Any, dict[str, Any], str]],
+    *,
+    model: str = DEFAULT_TEXT_MODEL,
+    max_iterations: int = 6,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
+    """Run a multi-turn agent loop where Agnes can call client-side tools.
+
+    ``tools`` is a list of ``(name, handler, json_schema, description)``
+    tuples — the shape produced by :func:`brandly_cli.agent_tools.get_builtin_tools`.
+    The ``handler`` is invoked locally (sync or async) with JSON args; its
+    result is JSON-stringified and appended as a ``tool``-role message so the
+    model can reason over it.
+
+    Returns the final assistant message dict plus metadata:
+        {"content": ..., "tool_calls": [...], "iterations": N, "messages": [...]}
+    """
+    tools_payload = _build_tools_payload(tools)
+    handlers: dict[str, Any] = {t[0]: t[1] for t in tools}
+
+    working = list(messages)
+    history: list[dict[str, Any]] = []
+    last_message: dict[str, Any] = {}
+
+    for iteration in range(1, max_iterations + 1):
+        data = await chat_completion(
+            working,
+            model=model,
+            tools=tools_payload or None,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        choice = (data.get("choices") or [{}])[0]
+        msg = choice.get("message") or {}
+        last_message = msg
+        content = msg.get("content") or ""
+        tool_calls = msg.get("tool_calls") or []
+
+        if not tool_calls:
+            return {
+                "content": content,
+                "model": model,
+                "iterations": iteration,
+                "messages": working + [msg],
+            }
+
+        # Append the assistant's tool-calling turn
+        working.append(msg)
+        for call in tool_calls:
+            fn = call.get("function") or {}
+            fn_name = fn.get("name", "")
+            raw_args = fn.get("arguments") or "{}"
+            try:
+                import json as _json
+
+                args = _json.loads(raw_args) if raw_args else {}
+            except ValueError:
+                args = {"raw": raw_args}
+
+            result: Any
+            if fn_name in handlers:
+                try:
+                    result = handlers[fn_name](**args)
+                    if hasattr(result, "__await__"):
+                        result = await result
+                except Exception as exc:  # pragma: no cover - defensive
+                    result = {"error": str(exc)}
+            else:
+                result = {"error": f"unknown tool: {fn_name}"}
+
+            # Stringify for the model
+            from brandly_cli.agent_tools import to_json
+
+            tool_payload = to_json(result)
+            history.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.get("id", ""),
+                    "name": fn_name,
+                    "content": tool_payload,
+                }
+            )
+            working.append(
+
+                {
+                    "role": "tool",
+                    "tool_call_id": call.get("id", ""),
+                    "content": tool_payload,
+                }
+            )
+
+    # Exhausted iterations — return the last assistant message.
+    return {
+        "content": last_message.get("content") or "(max tool iterations reached)",
+        "model": model,
+        "iterations": max_iterations,
+        "messages": working,
+    }

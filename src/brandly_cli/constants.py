@@ -184,7 +184,6 @@ STYLE_CONFIG: dict[StylePreset, dict[str, str]] = {
 ImageModel = Literal[
     "agnes-image-2.1-flash",
     "agnes-image-2.0-flash",
-    "agnes-image-2.5-flash",
     "stable-diffusion-xl",
     "flux-pro",
     "dall-e-3",
@@ -196,7 +195,6 @@ ImageModel = Literal[
 IMAGE_MODELS: list[ImageModel] = [
     "agnes-image-2.1-flash",
     "agnes-image-2.0-flash",
-    "agnes-image-2.5-flash",
     "stable-diffusion-xl",
     "flux-pro",
     "dall-e-3",
@@ -228,18 +226,7 @@ IMAGE_MODEL_INFO: dict[ImageModel, dict[str, Any]] = {
         "features": ["text-to-image", "img2img", "inpainting", "outpainting"],
         "description": "Premium quality image generation with advanced editing",
     },
-    "agnes-image-2.5-flash": {
-        "name": "Agnes Image 2.5 Flash",
-        "category": "image",
-        "provider": "Agnes AI",
-        "speed": "fast",
-        "quality": "high",
-        "cost_credits": 12,
-        "max_resolution": "2K",
-        "features": ["text-to-image", "style transfer"],
-        "description": "Latest-generation fast image model",
-    },
-    "stable-diffusion-xl": {
+"stable-diffusion-xl": {
         "name": "Stable Diffusion XL",
         "category": "image",
         "provider": "OpenAI Compatible",
@@ -430,10 +417,11 @@ VIDEO_MODEL_INFO: dict[VideoModel, dict[str, Any]] = {
             "reference video",
             "reference audio",
             "co-speech video",
+            "native stereo audio",
         ],
         "description": (
-            "MiniMax H3: Full multimodal video generation with reference inputs, "
-            "co-speech support, and up to 2K resolution"
+            "MiniMax H3: Full multimodal video generation with native synchronized "
+            "stereo audio, reference inputs, co-speech support, and up to 2K resolution"
         ),
     },
     "minimax-h3-max": {

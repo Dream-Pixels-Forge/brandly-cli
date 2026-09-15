@@ -132,28 +132,39 @@ async def create_video_task(
 ) -> dict[str, Any]:
     """Create a video generation task via MiniMax API.
 
+    MiniMax H3 generates video with **synchronized native stereo audio** in the
+    same inference pass — no separate audio flag is needed. Direct sound via
+    the prompt's [sound] element (e.g. "footsteps on wet concrete, rain, no
+    dialogue"). Reference audio (voice clone / music) goes in via
+    ``reference_audios``.
+
     Models:
-        MiniMax-H3: Full multimodal input (first/last frame, reference video/audio)
-                    Resolution: 480P, 768P, 2K | Duration: 4-15s
-        MiniMax-H3-Max: Fast generation; first/last frame only
-                        Resolution: 480P, 768P | Duration: 5-15s
+        MiniMax-H3: Full multimodal input (first/last frame, reference
+            video/audio) | Resolution: 480P, 768P, 2K | Duration: 4-15s
+        MiniMax-H3-Max: Fast; first/last frame only (no reference video/audio)
+            Resolution: 480P, 768P | Duration: 5-15s
 
     Args:
-        prompt: Text prompt (max 7000 chars).
+        prompt: Text prompt (max 7000 chars). Include a [sound] element to
+            direct native audio.
         model: "MiniMax-H3" or "MiniMax-H3-Max".
-        resolution: "480P", "768P", or "2K" (varies by model).
-        duration: Video duration in seconds.
+        resolution: "480P", "768P", or "2K" (H3-Max caps at 768P).
+        duration: Video duration in seconds (H3: 4-15, H3-Max: 5-15).
         ratio: Aspect ratio — adaptive, 21:9, 16:9, 4:3, 1:1, 3:4, 9:16.
         first_frame: URL for first frame image.
         last_frame: URL for last frame image.
         reference_images: URLs for reference images.
-        reference_videos: URLs for reference videos (mutually exclusive with image-to-video).
-        reference_audios: URLs for reference audio (for co-speech video).
+        reference_videos: URLs for reference videos (H3 only, not H3-Max).
+        reference_audios: URLs for reference audio (H3 only, not H3-Max).
     """
     is_h3_max = "H3-Max" in model
     valid_resolutions = {"480P", "768P", "2K"} if not is_h3_max else {"480P", "768P"}
     if resolution not in valid_resolutions:
         resolution = "768P"
+
+    # H3-Max supports only T2V + first/last-frame I2V — no reference video/audio
+    effective_ref_vids: list[str] | None = None if is_h3_max else reference_videos
+    effective_ref_auds: list[str] | None = None if is_h3_max else reference_audios
 
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt[:7000]}]
 
@@ -164,18 +175,23 @@ async def create_video_task(
     if reference_images:
         for img_url in reference_images:
             content.append({"type": "image_url", "url": img_url, "role": "reference_image"})
-    if reference_videos:
-        for vid_url in reference_videos:
+    if effective_ref_vids:
+        for vid_url in effective_ref_vids:
             content.append({"type": "video_url", "url": vid_url, "role": "reference_video"})
-    if reference_audios:
-        for aud_url in reference_audios:
+    if effective_ref_auds:
+        for aud_url in effective_ref_auds:
             content.append({"type": "audio_url", "url": aud_url, "role": "reference_audio"})
+
+    # Clamp duration to model-specific range
+    min_dur = 5 if is_h3_max else 4
+    max_dur = 15
+    clamped_dur = max(min_dur, min(max_dur, duration))
 
     body: dict[str, Any] = {
         "model": model,
         "content": content,
         "resolution": resolution,
-        "duration": duration,
+        "duration": clamped_dur,
     }
     if ratio:
         body["ratio"] = ratio

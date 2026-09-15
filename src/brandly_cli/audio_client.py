@@ -9,7 +9,7 @@ import httpx
 
 MINIMAX_BASE_URL = os.getenv(
     "MINIMAX_BASE_URL",
-    "https://api.minimaxi.com/v1",
+    "https://api.minimax.io/v1",
 )
 
 # Default TTS model and voice IDs
@@ -60,8 +60,25 @@ async def generate_tts(
     voice_id: str = "English_Insightful_Speaker",
     output_format: str = "url",
     speed: float = 1.0,
+    vol: float = 1.0,
+    pitch: int = 0,
+    emotion: str | None = None,
 ) -> dict[str, Any]:
-    """Generate voiceover via MiniMax TTS. Returns {url, duration_ms, model, voice_id}."""
+    """Generate voiceover via MiniMax TTS. Returns {url, duration_ms, model, voice_id}.
+
+    Args:
+        text: Text to synthesise. Supports inline tags like (laughs), (sighs)
+            and pause markers.
+        model: TTS model — speech-2.8-hd / speech-2.8-turbo /
+            speech-2.6-hd / speech-2.6-turbo.
+        voice_id: Voice preset (e.g. English_Insightful_Speaker).
+        output_format: "url" or "hex".
+        speed: Speech rate (0.5-2.0).
+        vol: Volume (0.1-2.0).
+        pitch: Pitch shift in semitones (-12 to 12).
+        emotion: Optional emotion tag — "happy", "sad", "angry", "fearful",
+            "neutral" (speech 2.6 / 2.8 only).
+    """
     body: dict[str, Any] = {
         "model": model,
         "text": text,
@@ -70,6 +87,8 @@ async def generate_tts(
         "voice_setting": {
             "voice_id": voice_id,
             "speed": speed,
+            "vol": vol,
+            "pitch": pitch,
         },
         "audio_setting": {
             "sample_rate": 32000,
@@ -78,6 +97,8 @@ async def generate_tts(
             "channel": 1,
         },
     }
+    if emotion is not None:
+        body["voice_setting"]["emotion"] = emotion
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             f"{MINIMAX_BASE_URL}/t2a_v2",

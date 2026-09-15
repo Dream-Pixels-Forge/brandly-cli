@@ -46,6 +46,25 @@ def test_estimate(runner: CliRunner) -> None:
     assert "Cost Estimate" in result.output
 
 
+def test_rate_limits_table(runner: CliRunner) -> None:
+    import os
+    env = {**os.environ, "COLUMNS": "200"}
+    wide = CliRunner(env=env)
+    result = wide.invoke(cli, ["rate-limits"])
+    assert result.exit_code == 0
+    assert "Agnes" in result.output
+    assert "MiniMax" in result.output
+    assert "h3_concurrent_tasks_free" in result.output
+
+
+def test_rate_limits_json(runner: CliRunner) -> None:
+    result = runner.invoke(cli, ["rate-limits", "-o", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["Agnes AI"]["image_rpm_by_size"]["1K"] == 20
+    assert payload["MiniMax"]["h3_concurrent_tasks_paid"] == 15
+
+
 def test_estimate_invalid_style(runner: CliRunner) -> None:
     result = runner.invoke(cli, ["estimate", "--style", "nonexistent"])
     assert result.exit_code == 1

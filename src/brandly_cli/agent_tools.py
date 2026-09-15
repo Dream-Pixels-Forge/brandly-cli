@@ -116,7 +116,7 @@ def _list_jobs(
 
 def _generate_image(
     prompt: str,
-    model: str = "agnes-image-2.1-flash",
+    model: str = "agnes-image-2.5-flash",
     size: str = "2K",
     ratio: str = "16:9",
 ) -> dict[str, Any]:
@@ -225,7 +225,7 @@ BUILTIN_TOOLS: dict[str, dict[str, Any]] = {
                 },
                 "model": {
                     "type": "string",
-                    "default": "agnes-image-2.1-flash",
+                    "default": "agnes-image-2.5-flash",
                     "description": "Agnes image model ID.",
                 },
                 "size": {

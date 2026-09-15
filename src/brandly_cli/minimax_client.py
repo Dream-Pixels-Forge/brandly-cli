@@ -70,56 +70,112 @@ async def generate_image(
         image_style_setting: Optional art-style settings for image-01-live, e.g.
             {"style": "cinematic", "strength": 0.5}. Ignored for base image-01.
     """
-    body: dict[str, Any] = {
-        "model": model,
-        "prompt": prompt[:1500],
-        "aspect_ratio": aspect_ratio,
-        "response_format": response_format,
-        "n": n,
-    }
-    if width and height:
-        body["width"] = width
-        body["height"] = height
-    if subject_reference:
-        body["subject_reference"] = subject_reference
-    if seed is not None:
-        body["seed"] = seed
-    if image_style_setting and "live" in model:
-        body["image_style_setting"] = image_style_setting
-
-    async def _request() -> dict[str, Any]:
+    async def _post(payload: dict[str, Any]) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
                 f"{MINIMAX_BASE_URL}/v1/image_generation",
                 headers=_headers(),
-                json=body,
+                json=payload,
             )
             resp.raise_for_status()
             return resp.json()
 
-    try:
-        data = await _request()
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            console.print("[red]Error: MiniMax API key invalid or expired.[/red]")
-        elif e.response.status_code == 429:
-            console.print("[red]Error: MiniMax rate limit exceeded. Please wait and retry.[/red]")
+    def _payload(count: int) -> dict[str, Any]:
+        item: dict[str, Any] = {
+            "model": model,
+            "prompt": prompt[:1500],
+            "aspect_ratio": aspect_ratio,
+            "response_format": response_format,
+            "n": count,
+        }
+        if width and height:
+            item["width"] = width
+            item["height"] = height
+        if subject_reference:
+            item["subject_reference"] = subject_reference
+        if seed is not None:
+            item["seed"] = seed
+        if image_style_setting and "live" in model:
+            item["image_style_setting"] = image_style_setting
+        return item
+
+    def _result_from(data: dict[str, Any]) -> dict[str, Any]:
+        image_urls = data.get("data", {}).get("image_urls", [])
+        failed_count = int(data.get("metadata", {}).get("failed_count", 0))
+        success_count = int(data.get("metadata", {}).get("success_count", 0))
+        return {
+            "id": data.get("id", ""),
+            "urls": image_urls,
+            "success_count": success_count,
+            "failed_count": failed_count,
+        }
+
+    async def _generate_one() -> dict[str, Any]:
+        data = await _post(_payload(1))
+        return _result_from(data)
+
+    async def _run_batch(count: int) -> dict[str, Any] | None:
+        try:
+            data = await _post(_payload(count))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                console.print("[red]Error: MiniMax API key invalid or expired.[/red]")
+            elif e.response.status_code == 429:
+                console.print(
+                    "[red]Error: MiniMax rate limit exceeded. "
+                    "Please wait and retry.[/red]"
+                )
+            else:
+                console.print(f"[red]Error: MiniMax API error ({e.response.status_code})[/red]")
+            return None
+        return _result_from(data)
+
+    if n > 1:
+        # Batch first; on any failure or partial result fall back to one image
+        # at a time so a single bad item doesn't abort the whole batch.
+        batch = await _run_batch(n)
+        if batch and batch["success_count"] >= n:
+            out = batch
+            out["model"] = model
+            out["generated_at"] = _now_iso()
+            out["fallback_used"] = False
+            return out
+        if batch is not None:
+            console.print(
+                f"[yellow]⚠ Batch only returned {batch['success_count']}/{n} images; "
+                f"falling back to one-at-a-time generation.[/yellow]"
+            )
         else:
-            console.print(f"[red]Error: MiniMax API error ({e.response.status_code})[/red]")
-        raise
+            console.print(
+                "[yellow]⚠ Batch generation failed; falling back to one-at-a-time "
+                "generation.[/yellow]"
+            )
+        urls: list[str] = list(batch["urls"] if batch else [])
+        success = batch["success_count"] if batch else 0
+        remaining = n - success
+        for i in range(remaining):
+            try:
+                one = await _generate_one()
+            except Exception as e:  # pragma: no cover - defensive
+                console.print(f"[yellow]⚠ One-at-a-time item {i + 1} failed: {e}[/yellow]")
+                continue
+            urls.extend(one["urls"])
+            success += one["success_count"]
+        return {
+            "id": "",
+            "model": model,
+            "urls": urls,
+            "success_count": success,
+            "failed_count": max(0, n - success),
+            "generated_at": _now_iso(),
+            "fallback_used": True,
+        }
 
-    image_urls = data.get("data", {}).get("image_urls", [])
-    failed_count = int(data.get("metadata", {}).get("failed_count", 0))
-    success_count = int(data.get("metadata", {}).get("success_count", 0))
-
-    return {
-        "id": data.get("id", ""),
-        "model": model,
-        "urls": image_urls,
-        "success_count": success_count,
-        "failed_count": failed_count,
-        "generated_at": _now_iso(),
-    }
+    single = await _generate_one()
+    single["model"] = model
+    single["generated_at"] = _now_iso()
+    single["fallback_used"] = False
+    return single
 
 
 # ---------------------------------------------------------------------------

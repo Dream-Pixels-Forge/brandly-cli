@@ -182,6 +182,7 @@ STYLE_CONFIG: dict[StylePreset, dict[str, str]] = {
 # ---------------------------------------------------------------------------
 
 ImageModel = Literal[
+    "agnes-image-2.5-flash",
     "agnes-image-2.1-flash",
     "agnes-image-2.0-flash",
     "stable-diffusion-xl",
@@ -193,6 +194,7 @@ ImageModel = Literal[
 ]
 
 IMAGE_MODELS: list[ImageModel] = [
+    "agnes-image-2.5-flash",
     "agnes-image-2.1-flash",
     "agnes-image-2.0-flash",
     "stable-diffusion-xl",
@@ -203,7 +205,35 @@ IMAGE_MODELS: list[ImageModel] = [
     "seedream-3.5",
 ]
 
+# Current model IDs per the official Agnes docs (verified 2026-09-15):
+# - Image: agnes-image-2.5-flash is the latest generation and the default.
+# - Video: agnes-video-2.5-flash is the current free video model (720P, 4-12s).
+# - Text: agnes-2.5-flash is the recommended text/agent model (tool calling).
+DEFAULT_AGNES_IMAGE_MODEL = "agnes-image-2.5-flash"
+DEFAULT_AGNES_VIDEO_MODEL = "agnes-video-2.5-flash"
+DEFAULT_AGNES_TEXT_MODEL = "agnes-2.5-flash"
+
 IMAGE_MODEL_INFO: dict[ImageModel, dict[str, Any]] = {
+    "agnes-image-2.5-flash": {
+        "name": "Agnes Image 2.5 Flash",
+        "category": "image",
+        "provider": "Agnes AI",
+        "speed": "fast",
+        "quality": "ultra-high",
+        "cost_credits": 10,
+        "max_resolution": "4K",
+        "features": [
+            "text-to-image",
+            "image-to-image",
+            "multi-image composition",
+            "high-density details",
+        ],
+        "description": (
+            "Latest-generation Agnes image model - strongest detail rendering, "
+            "composition preservation, and prompt alignment. Same API contract as "
+            "2.1-flash (sizes 1K/2K/3K/4K, ratios incl. 21:9). Currently free."
+        ),
+    },
     "agnes-image-2.1-flash": {
         "name": "Agnes Image 2.1 Flash",
         "category": "image",
@@ -595,3 +625,32 @@ def get_model_info(model_id: str) -> dict[str, Any] | None:
         info["id"] = model_id
         return info
     return None
+
+
+# ---------------------------------------------------------------------------
+# Provider rate limits (official docs, verified 2026-09-15)
+# ---------------------------------------------------------------------------
+# Agnes default/free key effective RPM; enterprise ~2x on 1K/2K, Token Plan
+# text 1000 RPM. MiniMax H3 is governed by concurrent tasks (2 free / 15
+# paid), not per-minute RPM.
+#   https://www.agnes-ai.com/en/docs/tokenplan
+#   https://platform.minimax.io/docs/guides/rate-limits
+PROVIDER_RATE_LIMITS: dict[str, dict[str, Any]] = {
+    "Agnes AI": {
+        "docs": "https://www.agnes-ai.com/en/docs/tokenplan",
+        "access_type": "default/free key (effective RPM)",
+        "text_rpm": 20,
+        "image_rpm_by_size": {"1K": 20, "2K": 10, "3K": 1, "4K": 1},
+        "video": "500 video-seconds/day free quota (Token Plan); RPM updated 2026-06-28",
+        "video_poll_seconds": 1,
+    },
+    "MiniMax": {
+        "docs": "https://platform.minimax.io/docs/guides/rate-limits",
+        "note": "H3 video is concurrency-governed, not per-minute RPM",
+        "h3_concurrent_tasks_free": 2,
+        "h3_concurrent_tasks_paid": 15,
+        "text_rpm_free": 20,
+        "text_rpm_paid": 200,
+        "task_visibility_days": 7,
+    },
+}

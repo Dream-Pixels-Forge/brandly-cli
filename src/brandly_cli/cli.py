@@ -45,6 +45,7 @@ from brandly_cli.ark_client import (
 from brandly_cli.audio_client import generate_music, generate_tts, list_voices
 from brandly_cli.constants import (
     PHASE_ORDER,
+    PROVIDER_RATE_LIMITS,
     SHOT_COSTS,
     STYLE_COSTS,
     STYLE_PRESET_OPTIONS,
@@ -913,7 +914,11 @@ def anchor(
 @cli.command()
 @click.option("--project-id", default=None, help="Optional project UUID")
 @click.option("--prompt", "-p", required=True, help="Image generation prompt")
-@click.option("--model", default="agnes-image-2.1-flash", help="Agnes image model")
+@click.option(
+    "--model",
+    default="agnes-image-2.5-flash",
+    help="Agnes image model (2.5-flash is the current default)",
+)
 @click.option("--size", default="2K", help="Image size tier (1K, 2K, 3K, 4K)")
 @click.option("--ratio", default="16:9", help="Aspect ratio")
 @click.option(
@@ -1075,8 +1080,8 @@ def image(
 @click.option("--prompt", "-p", required=True, help="Video generation prompt")
 @click.option(
     "--model",
-    default="agnes-video-v2.0",
-    help="Agnes video model (v2.0 recommended; 2.5-flash is free but rate-limited to 1/min)",
+    default="agnes-video-2.5-flash",
+    help="Agnes video model (2.5-flash is the current default; 720P, 4-12s)",
 )
 @click.option(
     "--style",
@@ -2086,6 +2091,44 @@ def model(model_id: str, output: str) -> None:
     console.print(RPanel("\n".join(lines), title=f"Model: {model_id}"))
 
 
+@cli.command(name="rate-limits")
+@click.option("-o", "--output", type=click.Choice(["table", "json"]), default="table")
+def rate_limits(output: str) -> None:
+    """Show provider rate limits for Agnes AI and MiniMax.
+
+    Values mirror the official documentation (Agnes Token Plan FAQ + MiniMax
+    rate-limits page). Use these to plan batch / parallel generation.
+    """
+    if output == "json":
+        # Emit raw, non-wrapped JSON so it is directly parseable.
+        console.print(
+            json.dumps(PROVIDER_RATE_LIMITS, indent=2, ensure_ascii=False),
+            soft_wrap=True,
+        )
+        return
+
+    for provider, limits in PROVIDER_RATE_LIMITS.items():
+        table = Table(title=f"{provider} rate limits")
+        table.add_column("Limit", style="cyan")
+        table.add_column("Value", style="white")
+        table.add_column("Notes", style="dim")
+        for key, value in limits.items():
+            if key in ("docs",):
+                continue
+            notes = ""
+            if key == "image_rpm_by_size":
+                value = " | ".join(f"{sz}:{rpm}" for sz, rpm in value.items())
+                notes = "effective RPM on a free/default key"
+            elif key == "h3_concurrent_tasks_free":
+                notes = "parallel H3 video tasks (free tier)"
+            elif key == "h3_concurrent_tasks_paid":
+                notes = "parallel H3 video tasks (paid)"
+            table.add_row(key, str(value), notes)
+        console.print(table)
+        console.print(f"[dim]Source: {limits.get('docs', '')}[/dim]")
+        console.print()
+
+
 # ---------------------------------------------------------------------------
 # jobs — list/cancel async video jobs
 # ---------------------------------------------------------------------------
@@ -2408,7 +2451,11 @@ def probe(input: str, output: str) -> None:
 @click.argument("project_id")
 @click.argument("base_prompt")
 @click.option("--style", default="cinematic", help="Video style")
-@click.option("--model", default="agnes-video-v2.0", help="Model to use")
+@click.option(
+    "--model",
+    default="agnes-video-2.5-flash",
+    help="Model to use (2.5-flash is the current default)",
+)
 @click.option("-n", "--count", default=3, help="Number of variants to generate")
 @click.option("--wait", is_flag=True, help="Wait for each generation to complete")
 @click.option("--character", default=None, help="Character description for consistency")
@@ -2452,13 +2499,30 @@ async def batch(
         if count > 1:
             variant_prompt += f"\n\nVariation {i + 1}: Unique camera angle and composition."
         console.print(f"[dim]Generating variant {i + 1}/{count}...[/dim]")
-        task = await create_video_task(
-            variant_prompt,
-            model=model,
-            duration=5,
-            aspect_ratio="16:9",
-            reference_images=imgs,
-        )
+        try:
+            task = await create_video_task(
+                variant_prompt,
+                model=model,
+                duration=5,
+                aspect_ratio="16:9",
+                reference_images=imgs,
+            )
+        except Exception as e:
+            # One-at-a-time fallback: a failed variant (e.g. a 429 rate-limit)
+            # must not abort the whole batch — record it and move on.
+            console.print(
+                f"[yellow]⚠ Variant {i + 1} failed to submit ({e}); "
+                f"continuing with the next variant.[/yellow]"
+            )
+            results.append(
+                {
+                    "variant": i + 1,
+                    "status": "failed",
+                    "error": str(e),
+                    "created_one_at_a_time": True,
+                }
+            )
+            continue
         video_id = task.get("video_id", "")
         if wait and video_id:
             console.print("[dim]Waiting for completion...[/dim]")

@@ -164,5 +164,98 @@ class TestMinimaxImageSeedAndStyle:
         assert "image_style_setting" not in cap["json"]
 
 
+class TestMinimaxImageBatchFallback:
+    """Batch (n>1) generation must fall back to one-at-a-time on failure/partial."""
+
+    def _image_resp(self, urls: list[str], success: int) -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "id": "i",
+            "data": {"image_urls": urls},
+            "metadata": {"success_count": success, "failed_count": 0},
+        }
+        resp.raise_for_status.return_value = None
+        return resp
+
+    def test_full_batch_no_fallback(self) -> None:
+        calls: list[int] = []
+
+        # Use an AsyncMock post that records n and returns full 2/2 for the batch.
+        async def fake_post(*args: Any, **kwargs: Any) -> Any:
+            n = kwargs.get("json", {}).get("n")
+            calls.append(n)
+            resp = self._image_resp([f"https://i/{x}.png" for x in range(n)], n or 0)
+            resp.raise_for_status.return_value = None
+            return resp
+
+        client = AsyncMock()
+        client.post = fake_post
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        with patch("brandly_cli.minimax_client.httpx.AsyncClient", return_value=ctx):
+            result = _run(generate_image("a cat", n=2))
+        # A successful 2/2 batch is returned directly, no one-at-a-time follow-up.
+        assert result["fallback_used"] is False
+        assert result["success_count"] == 2
+        assert len(calls) == 1 and calls[0] == 2
+
+    def test_partial_batch_falls_back_one_at_a_time(self) -> None:
+        calls: list[int] = []
+
+        async def fake_post(*args: Any, **kwargs: Any) -> Any:
+            n = kwargs.get("json", {}).get("n")
+            calls.append(n)
+            if n == 3:
+                # Batch returns only 1 of 3 -> trigger fallback.
+                return self._image_resp(["https://i/1.png"], 1)
+            # n==1 fallback items each return a single image.
+            return self._image_resp([f"https://i/{len(calls)}.png"], 1)
+
+        client = AsyncMock()
+        client.post = fake_post
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        with patch("brandly_cli.minimax_client.httpx.AsyncClient", return_value=ctx):
+            result = _run(generate_image("a cat", n=3))
+        assert result["fallback_used"] is True
+        assert result["success_count"] == 3
+        # 1 batch call (n=3) + 2 fallback calls (n=1 each).
+        assert calls[0] == 3 and 1 in calls[1:]
+
+    def test_batch_failure_falls_back_one_at_a_time(self) -> None:
+        import httpx as _httpx
+
+        calls: list[int] = []
+
+        async def fake_post(*args: Any, **kwargs: Any) -> Any:
+            n = kwargs.get("json", {}).get("n")
+            calls.append(n)
+            if n == 2:
+                resp = MagicMock()
+                resp.status_code = 429
+                resp.headers = {}
+                resp.json.return_value = {}
+                resp.raise_for_status.side_effect = _httpx.HTTPStatusError(
+                    "rate limited", request=MagicMock(), response=resp
+                )
+                return resp
+            return self._image_resp([f"https://i/{len(calls)}.png"], 1)
+
+        client = AsyncMock()
+        client.post = fake_post
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        with patch("brandly_cli.minimax_client.httpx.AsyncClient", return_value=ctx):
+            result = _run(generate_image("a cat", n=2))
+        # Batch 429 -> two one-at-a-time items.
+        assert result["fallback_used"] is True
+        assert result["success_count"] == 2
+        assert calls == [2, 1, 1]
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-v"]))

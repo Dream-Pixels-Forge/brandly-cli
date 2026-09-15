@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 from rich.console import Console
 
+from brandly_cli.constants import DEFAULT_AGNES_IMAGE_MODEL
 from brandly_cli.utils import now_iso
 
 console = Console()
@@ -166,7 +167,7 @@ async def _retry_with_backoff(
 async def generate_image(
     prompt: str,
     *,
-    model: str = "agnes-image-2.1-flash",
+    model: str = DEFAULT_AGNES_IMAGE_MODEL,
     size: str = "2K",
     ratio: str = "16:9",
     images: list[str] | None = None,
@@ -209,7 +210,9 @@ async def generate_image(
                 "[red]Error: Rate limit exceeded. Please wait a moment and try again.[/red]"
             )
             console.print(
-                "[dim]Tip: Use v2.0 model for production (2.5-flash is rate-limited)[/dim]"
+                "[dim]Tip: Agnes free keys allow ~10 RPM for 2K images "
+                "(see `brandly rate-limits`). Switch to a smaller size tier "
+                "or wait a minute before retrying.[/dim]"
             )
         elif e.response.status_code == 503:
             console.print(

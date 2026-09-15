@@ -1896,7 +1896,7 @@ def config(ctx: click.Context) -> None:
     table.add_row("AGNES_API_KEY", "set" if agnes_key else "not set")
     table.add_row("MINIMAX_API_KEY", "set" if minimax_key else "not set")
     table.add_row("AGNES_BASE_URL", os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1"))
-    table.add_row("MINIMAX_BASE_URL", os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1"))
+    table.add_row("MINIMAX_BASE_URL", os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1"))
     table.add_row("Version", __version__)
     console.print(table)
 
@@ -2197,9 +2197,15 @@ def agnes_chat(
             console.print(f"  [bold]{name}[/bold] - {spec['description']}")
         return
 
+    if not os.getenv("AGNES_API_KEY"):
+        console.print(
+            "[red]AGNES_API_KEY is not set. Get one from https://apihub.agnes-ai.com,"
+            " or use --list-models / --list-tools (no key required).[/red]"
+        )
+        sys.exit(1)
+
     tool_specs = get_builtin_tools() if tools else None
     messages = [{"role": "user", "content": prompt}]
-
     if tool_specs:
         result = asyncio.run(agent_tool_loop(messages, tool_specs, model=model))
         if output == "json":

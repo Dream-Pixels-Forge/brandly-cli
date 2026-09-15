@@ -233,3 +233,35 @@ class TestChatCompletionPayload:
         assert body["tools"] == tools
         assert "/chat/completions" in captured["url"]
         assert result["choices"][0]["message"]["content"] == "ok"
+
+# ---------------------------------------------------------------------------
+# agnes-chat CLI key guard
+# ---------------------------------------------------------------------------
+
+
+class TestAgnesChatKeyGuard:
+    def test_missing_key_exits_cleanly(self, monkeypatch) -> None:
+        """Without AGNES_API_KEY, agnes-chat errors out (not a raw traceback)."""
+        from click.testing import CliRunner
+
+        from brandly_cli.cli import cli
+
+        monkeypatch.delenv("AGNES_API_KEY", raising=False)
+        runner = CliRunner()
+        result = runner.invoke(cli, ["agnes-chat", "hello"])
+        # Should not raise; should mention the missing key and exit non-zero.
+        assert result.exit_code != 0
+        assert "AGNES_API_KEY" in result.output
+
+    def test_list_models_needs_no_key(self, monkeypatch) -> None:
+        from click.testing import CliRunner
+
+        from brandly_cli.cli import cli
+
+        monkeypatch.delenv("AGNES_API_KEY", raising=False)
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["agnes-chat", "x", "--list-models"]
+        )
+        assert result.exit_code == 0
+        assert "agnes-2.5-flash" in result.output

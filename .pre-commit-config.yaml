@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: ruff-lint
         name: ruff-lint
-        entry: python3 -m ruff check src/
+        entry: python3 -m ruff check src/ tests/
         language: system
         types: [python]
         pass_filenames: false

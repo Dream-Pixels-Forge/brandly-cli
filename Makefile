@@ -1,14 +1,14 @@
 # Brandly CLI — Makefile
 
 PYTHON   := python3
-PNPM     := pnpm
 PIP      := $(PYTHON) -m pip
 PYTEST   := $(PYTHON) -m pytest
 RUFF     := $(PYTHON) -m ruff
+MYPY     := $(PYTHON) -m mypy
 ROOT     ?= .
 
-.PHONY: help install dev test lint type-check build clean \
-        pre-commit ci e2e upgrade sync
+.PHONY: help install dev test cov lint lint-fix check-syntax type-check \
+        build clean pre-commit ci e2e upgrade sync
 
 ## Show this help
 help:
@@ -18,6 +18,10 @@ help:
 ## Install package in editable mode + dev deps
 install: ## install
 	$(PIP) install -e ".[dev]"
+
+## Install full dev environment (package + build tooling, mirrors CI)
+dev: ## dev
+	$(PIP) install -e ".[dev]" build twine
 
 ## Install pre-commit hooks
 pre-commit: ## pre-commit
@@ -34,18 +38,27 @@ cov: ## cov
 
 ## Run linter
 lint: ## lint
-	$(RUFF) check src/
+	$(RUFF) check src/ tests/
 
 ## Fix lint issues automatically
 lint-fix: ## lint-fix
-	$(RUFF) check src/ --fix
+	$(RUFF) check src/ tests/ --fix
+
+## Type check
+type-check: ## type-check
+	$(MYPY) src/
 
 ## Syntax check all modules
 check-syntax: ## check-syntax
 	$(PYTHON) -m py_compile src/brandly_cli/*.py
 
-## Run all quality gates (test + lint + syntax)
-ci: check-syntax lint test ## ci
+## Build sdist + wheel (run 'make dev' first to install build/twine)
+build: ## build
+	$(PYTHON) -m build
+	$(PYTHON) -m twine check dist/*
+
+## Run all quality gates (lint + type-check + test + build)
+ci: lint type-check test build ## ci
 	@echo "All quality gates passed."
 
 ## End-to-end CLI smoke test

@@ -8,13 +8,16 @@ Common issues and solutions for video generation.
 
 **Symptoms:** Generation hangs or takes excessive time
 **Causes:**
-- v2.0 model processing time (~20-60 seconds for 5s video)
-- 2.5-flash rate limiting (1 request per minute)
+- Model processing time (~20-60 seconds for a 5s video)
+- Agnes provider rate limits (free key: 20 text RPM, 2K images 10 RPM — see `brandly rate-limits`)
 - Large resolution requests
 
 **Solutions:**
 ```bash
-# Use v2.0 for reliable performance
+# Default model is agnes-video-2.5-flash — poll with --wait
+brandly video <id> --wait
+
+# Or pin the legacy v2.0 model explicitly
 brandly video <id> --model agnes-video-v2.0 --wait
 
 # Check API status
@@ -29,9 +32,9 @@ brandly status
 - Rapid successive requests
 
 **Solutions:**
-- Switch to v2.0 model for consistent performance
-- Add delays between requests: `sleep 60`
-- Queue generation requests
+- Check the limits table: `brandly rate-limits`
+- Add delays between requests (e.g. `sleep 6` for 10 RPM at 2K images)
+- Queue generation requests; MiniMax H3 keeps 2 (free) / 15 (paid) tasks in flight, not more
 
 ## Quality Issues
 
@@ -45,7 +48,7 @@ brandly status
 
 **Solutions:**
 ```bash
-# Use a higher-quality model (default is already v2.0; 2.5-flash is free but rate-limited)
+# Default is agnes-video-2.5-flash (720P, 4-12s); pin legacy v2.0 for 1080p
 brandly video <id> --style cinematic --model agnes-video-v2.0 --duration 5
 
 # Add quality keywords to prompt
@@ -182,5 +185,5 @@ If issues persist:
 1. Check the API status page
 2. Review error logs: `brandly logs`
 3. Test with minimal prompt
-4. Try different model (v2.0 vs 2.5-flash)
+4. Check provider limits with `brandly rate-limits` and wait out the window
 5. Consult documentation or support

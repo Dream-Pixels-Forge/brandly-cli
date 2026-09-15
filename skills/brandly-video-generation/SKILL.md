@@ -353,33 +353,43 @@ brandly export <project_id>
 
 | Command | Provider | Model Default | Notes |
 |---------|----------|--------------|-------|
-| `brandly image` | Agnes AI | `agnes-image-2.1-flash` | Style presets, 2K/4K output |
-| `brandly video` | Agnes AI | `agnes-video-v2.0` | Requires project, ref-image anchoring |
-| `brandly minimax-image` | MiniMax | `image-01` | Subject reference, up to 2K |
-| `brandly minimax-video` | MiniMax | `MiniMax-H3` | First/last frame, ref video/audio |
+| `brandly image` | Agnes AI | `agnes-image-2.5-flash` | Style presets, 1K/2K/3K/4K output |
+| `brandly video` | Agnes AI | `agnes-video-2.5-flash` | Requires project, ref-image anchoring |
+| `brandly minimax-image` | MiniMax | `image-01` | Subject reference, seed, up to 2K |
+| `brandly minimax-video` | MiniMax | `MiniMax-H3` | First/last frame, ref video/audio, native stereo audio |
 
 **Choose based on your needs:**
 - **Character consistency** → `brandly video` (Agnes) with reference images
 - **Image generation** → `brandly image` for speed, `brandly minimax-image` for subject reference
 - **Reference video + audio** → `brandly minimax-video` (MiniMax H3 supports ref video input)
-- **Free prototyping** → `brandly video` with `--model agnes-video-2.5-flash` (rate-limited)
+- **Prototyping** → `brandly video` default (`agnes-video-2.5-flash` — currently free; 720P, 4-12s)
+- **Rate limits** → `brandly rate-limits` (Agnes RPM by tier; MiniMax H3 concurrent tasks)
 
 ## API Notes
 
-- **Image models** (Agnes): `agnes-image-2.1-flash` (fast, default), `agnes-image-2.0-flash` (premium), `agnes-image-2.5-flash` (latest)
-- **Video models** (Agnes): `agnes-video-v2.0` (reliable, 1080p max), `agnes-video-2.5-flash` (free, rate-limited)
-- **MiniMax image**: `image-01`, `image-01-live` — subject reference supported
-- **MiniMax video**: `MiniMax-H3` (ref video/audio, 2K), `MiniMax-H3-Max` (fast, first/last frame)
+- **Image models** (Agnes): `agnes-image-2.5-flash` (current default — latest gen, same API contract as 2.1, sizes 1K-4K), `agnes-image-2.1-flash` / `agnes-image-2.0-flash` (legacy)
+- **Video models** (Agnes): `agnes-video-2.5-flash` (current default — 720P, 4-12s, ≤5 ref images, ≤3 ref audios, no ref video), `agnes-video-v2.0` (legacy, 1080p max)
+- **MiniMax image**: `image-01`, `image-01-live` — subject reference, `--seed` reproducibility, `--style` art settings (live)
+- **MiniMax video**: `MiniMax-H3` (ref video/audio, 2K, native synchronized stereo audio via [sound] prompt tag), `MiniMax-H3-Max` (fast, first/last frame only)
 - **Negative prompts**: Not supported by Agnes API — use prompt engineering via style presets instead
 - **Output formats**: Images as URLs, videos as MP4 with direct download links
 - **Size options**: 1K, 2K, 3K, 4K for Agnes images; 720P/1080P/2K for MiniMax images; 480P/768P/2K for MiniMax video
 
+## Provider Rate Limits (v0.3.4+)
+
+Run `brandly rate-limits` for the live table. Headlines:
+
+- **Agnes AI** (free/default key): text 20 RPM; images 1K 20 RPM, 2K 10 RPM, 3K/4K 1 RPM; video free quota ~500s/day. Enterprise keys get ~2× on 1K/2K image RPM.
+- **MiniMax**: H3 video is governed by *concurrent tasks* (2 free / 15 paid), not RPM; text tier 20 RPM free / 200 paid.
+- **Batch safety**: MiniMax image `n > 1` batches automatically fall back to one-at-a-time generation on 429 or partial results; the `batch` video command continues past failed variants instead of aborting the run.
+
+
 ## Troubleshooting
 
 ### Video Takes Too Long
-- v2.0 model: ~20-60 seconds for 5s video
-- 2.5-flash: Free but rate-limited to 1 request per minute
-- Use `--wait` to poll until complete
+- 2.5-flash (default): ~20-60s for a 5s clip; poll with `--wait`
+- On 429s, check provider limits with `brandly rate-limits` before retrying
+- MiniMax H3 is concurrency-limited (2 free / 15 paid parallel tasks), not per-minute RPM
 
 ### Character Drifts Between Shots
 - Add more detailed character description

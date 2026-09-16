@@ -98,6 +98,22 @@ After project initialization, follow this phase pipeline:
 7. **validate** — Quality checks and virality scoring
 8. **publish** — Export final video with captions
 
+## Quality Gate (anti-slop / anti-drift verification)
+Before proceeding from an asset to the next pipeline step, verify it with
+`brandly gate`:
+```
+brandly gate <project_id> <element> [--ref <locked_image>] [--strict]
+```
+- After `brandly reference` / `brandly video`, the gate runs automatically
+  (disable with `--no-gate` where supported) and writes a report to
+  `.brandly/<project>/docs/tmp/`.
+- `brandly gate` exits 0 = pass, 1 = warn, 2 = fail.
+- On **warn**: review the flagged issues (slop, distortion, drift, matte
+  backdrop) and regenerate with `--ref <locked reference>` to lock identity.
+- On **fail**: do NOT proceed to the next step — regenerate the element
+  (sheets must stay on the seamless matte mid-grey studio backdrop), then
+  re-gate.
+
 ## Dashboard
 When the user asks to **see information**, **view progress**, **check status**,
 **open dashboard**, or any similar request to visualize the project:

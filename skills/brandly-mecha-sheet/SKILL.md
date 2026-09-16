@@ -207,6 +207,9 @@ Before using a mecha sheet:
 4. **Lighting Rules**: Establish signature effects
 5. **Scale References**: Include size comparisons
 
+### Mandatory Backdrop (all reference-sheet renders)
+Every reference board **must** be rendered on a **seamless matte neutral mid-grey studio backdrop** with subtle thin grey divider lines — never a white, colored, busy, or in-scene background. This keeps cutouts clean, identity consistent, and avoids color spill. If a model ignores the backdrop, the quality gate (`brandly gate`) flags `matte_background` and the sheet should be regenerated.
+
 ### Generate Mecha Reference (Recommended First Step)
 
 For any mecha video or multi-asset campaign, generate a **mecha reference**
@@ -226,8 +229,8 @@ brandly reference <project_id> \
   --ratio 16:9
 ```
 
-The generated reference is saved to `.brandly/projects/<id>/artifacts/images/`
-with the `reference_mecha_*` prefix and is auto-injected as the first
+The generated reference is saved to `.brandly/<project_id>/refs/`
+with the `mecha_*` prefix and is auto-injected as the first
 reference image (strongest influence) in every `brandly video` call.
 Pass `--require-reference` to `brandly video` to fail-fast when the
 reference is missing.

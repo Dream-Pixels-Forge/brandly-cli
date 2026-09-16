@@ -9,7 +9,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/brandly-cli.svg)](https://pypi.org/project/brandly-cli/)
 [![Python >=3.10](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-330_passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
+[![Tests](https://img.shields.io/badge/tests-351_passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![Lint](https://img.shields.io/badge/lint-ruff_clean-brightgreen.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![CI](https://github.com/Dream-Pixels-Forge/brandly-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli/actions)
 [![GitHub stars](https://img.shields.io/github/stars/Dream-Pixels-Forge/brandly-cli?style=social)](https://github.com/Dream-Pixels-Forge/brandly-cli/stargazers)
@@ -27,6 +27,16 @@ Brandly is an **autonomous video production pipeline** that turns product ideas 
 - **Director orchestrator** — an autonomous agent that guides the entire production process
 - **Credit budgeting** — track spend per phase against a project budget
 - **Style presets** — avoid AI slop with photorealistic, cinematic, editorial, commercial, and documentary presets
+
+### v0.3.7 New Features
+
+| Feature | Description |
+|---------|-------------|
+| **Quality Gate** | `brandly gate <id> <element>` — anti-slop/anti-drift verification before the next step |
+| **AI Visual Review** | Multimodal model scores quality, slop, distortion, drift, and matte backdrop |
+| **Auto-Gate** | `brandly reference` and `brandly video` run the gate post-generation (`--no-gate` to skip) |
+| **Matte Sheets** | Reference sheets now use a seamless matte mid-grey studio backdrop for clean cutouts |
+| **Gate Reports** | Auditable reports written to `.brandly/<project>/docs/tmp/` |
 
 ### v0.3.1 New Features
 
@@ -153,6 +163,7 @@ brandly share output.mp4
 | `brandly template list` | List templates |
 | `brandly template use <name>` | Create project from template |
 | `brandly validate <id>` | Run virality validation |
+| `brandly gate <id> [element]` | Verify an element (anti-slop/drift) before the next step |
 | `brandly director` | Show Director agent prompt |
 
 ---

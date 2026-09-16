@@ -571,94 +571,158 @@ REFERENCE_SUBJECTS: dict[str, str] = {
 # Aspect ratio (16:9) is the project default; users can override with --ratio.
 REFERENCE_PROMPT_TEMPLATES: dict[str, str] = {
     "object": (
-        "Professional product reference sheet, 16:9, multi-view grid layout.\n"
-        "Subject: {subject}.\n"
-        "Layout: split the 16:9 frame into a 3-column grid. "
-        "Left column: front three-quarter view. "
-        "Middle column: pure side profile. "
-        "Right column: rear three-quarter view. "
-        "All three views show the same {subject} at the same scale, "
-        "on a single continuous clean neutral background, "
-        "studio product lighting (soft key from camera-left, fill from camera-right, "
-        "rim from behind to separate subject from background), "
-        "sharp focus across the entire subject in every panel, no motion, "
-        "no people, no environment context, single product only, "
-        "thin white separator lines between the three views.\n"
-        "Style: commercial product photography, 8K, high-end catalog aesthetic."
+        "Subject and Character\n"
+        "{subject}. A single product, shown alone, with consistent material, "
+        "color and form across every view. The product identity is strictly "
+        "consistent across all views.\n\n"
+        "Composition and Layout\n"
+        "A single 16:9 landscape production product reference board set "
+        "against a seamless matte neutral mid-grey studio backdrop with subtle "
+        "thin grey divider lines. Left two-thirds: a 3-column multi-view grid "
+        "(front three-quarter, pure side profile, rear three-quarter). Right "
+        "third: a single large hero front view. All views show the same "
+        "product at the same scale.\n\n"
+        "Lighting and Technical\n"
+        "Soft, even three-point studio lighting, uniform across all panels. "
+        "Shot with an 85mm lens, f/8 for deep focus across the whole board, "
+        "high-resolution photorealistic texture with sharp definition of "
+        "materials and surface detail, neutral color temperature with no "
+        "color spill.\n\n"
+        "Constraints\n"
+        "No text, no labels, no watermarks, no logos, no people, no "
+        "environment context, no dramatic shadows, no oversaturated colors."
     ),
     "character": (
-        "Character reference sheet, 16:9, multi-view grid layout.\n"
-        "Subject: {subject}.\n"
-        "Layout: split the 16:9 frame into a 3-column grid. "
-        "Left column: front view (head and upper torso). "
-        "Middle column: pure side profile. "
-        "Right column: three-quarter view. "
-        "All three views show the same character at the same scale, "
-        "consistent studio lighting from the same direction in all three "
-        "(key from camera-left, fill from camera-right, subtle rim from behind), "
-        "clean neutral background, full color and material details, no motion, "
-        "thin white separator lines between the three views.\n"
-        "Style: cinematic character design sheet, 8K, neutral grading."
+        "Subject and Character\n"
+        "{subject}. The character identity is strictly consistent across all "
+        "views.\n\n"
+        "Composition and Layout\n"
+        "A single 16:9 landscape production character reference board set "
+        "against a seamless matte neutral mid-grey studio backdrop with "
+        "subtle thin grey divider lines. The layout features a 2 by 2 grid in "
+        "the left two-thirds of the frame, consisting of 2 equal square "
+        "panels: top left is an extreme close-up of the face from eyes to "
+        "chin; top right is a front-facing head and shoulders portrait; the "
+        "right third of the board contains two tall vertical panels spanning "
+        "the full height of the image with correct proportions, showing a "
+        "full-body front-facing standing view and a full-body back standing "
+        "view.\n\n"
+        "Lighting and Technical\n"
+        "Soft, even three-point studio lighting, uniform across all panels "
+        "to ensure professional clarity. Shot with an 85mm lens, f/8 for "
+        "deep focus across the entire board, high-resolution photorealistic "
+        "texture, sharp definition of fabric weaves and skin pores, neutral "
+        "color temperature with no color spill.\n\n"
+        "Constraints\n"
+        "No text, no labels, no watermarks, no logos, no distorted facial "
+        "features, no inconsistent character design, no dramatic shadows, "
+        "no oversaturated colors."
     ),
     "location": (
-        "Location reference sheet, 16:9, full-frame single image.\n"
-        "Subject: {subject}.\n"
-        "Layout: ONE wide establishing frame filling the entire 16:9 canvas, "
-        "no grid, no split panels, no insets. "
-        "No people. "
-        "Consistent lighting and time of day across the whole frame. "
-        "Clean composition with clear architectural or environmental reference points, "
-        "no text overlays, no UI elements.\n"
-        "Style: cinematic location design sheet, 8K, color-graded reference frame."
+        "Subject and Character\n"
+        "{subject}. A single environment shown with consistent lighting, "
+        "time of day and reference points across the frame.\n\n"
+        "Composition and Layout\n"
+        "A single 16:9 landscape establishing frame filling the entire "
+        "canvas, no grid, no split panels, no insets. No people. Clear "
+        "architectural or environmental reference points with consistent "
+        "lighting and time of day across the whole frame.\n\n"
+        "Lighting and Technical\n"
+        "Uniform, professional lighting matched to the stated time of day; "
+        "deep focus across the frame; high-resolution photorealistic "
+        "texture; neutral, accurate color grading.\n\n"
+        "Constraints\n"
+        "No text, no labels, no watermarks, no logos, no UI elements, no "
+        "people, no dramatic color cast."
     ),
     "vehicle": (
-        "Vehicle reference sheet, 16:9, multi-view grid layout.\n"
-        "Subject: {subject}.\n"
-        "Layout: split the 16:9 frame into a 3-column grid. "
-        "Left column: front three-quarter view. "
-        "Middle column: pure side profile. "
-        "Right column: rear three-quarter view. "
-        "All three views show the same vehicle at the same scale, "
-        "consistent outdoor lighting, sharp focus, clean background, "
-        "no people, "
-        "thin white separator lines between the three views.\n"
-        "Style: automotive design sheet, 8K, commercial photography."
+        "Subject and Character\n"
+        "{subject}. A single vehicle shown with consistent form, paint and "
+        "detail across every view. The vehicle identity is strictly "
+        "consistent across all views.\n\n"
+        "Composition and Layout\n"
+        "A single 16:9 landscape production vehicle reference board set "
+        "against a seamless matte neutral mid-grey studio backdrop with "
+        "subtle thin grey divider lines. Left two-thirds: a 3-column "
+        "multi-view grid (front three-quarter, pure side profile, rear "
+        "three-quarter). Right third: a single large hero front three-"
+        "quarter view. All views show the same vehicle at the same scale.\n\n"
+        "Lighting and Technical\n"
+        "Soft, even three-point studio lighting, uniform across all panels. "
+        "Shot with an 85mm lens, f/8 for deep focus, high-resolution "
+        "photorealistic texture with sharp definition of paint, glass and "
+        "surface detail, neutral color temperature with no color spill.\n\n"
+        "Constraints\n"
+        "No text, no labels, no watermarks, no logos, no people, no "
+        "environment context, no dramatic shadows, no oversaturated colors."
     ),
     "animal": (
-        "Animal reference sheet, 16:9, multi-view grid layout.\n"
-        "Subject: {subject}.\n"
-        "Layout: split the 16:9 frame into a 3-column grid. "
-        "Left column: full body side profile. "
-        "Middle column: head close-up (face/eyes detail). "
-        "Right column: three-quarter body view. "
-        "All three views show the same animal at consistent scale, "
-        "consistent natural lighting, habitat hints, sharp focus, no people, "
-        "thin white separator lines between the three views.\n"
-        "Style: nature reference sheet, 8K, wildlife photography aesthetic."
+        "Subject and Character\n"
+        "{subject}. A single animal shown with consistent anatomy, coat and "
+        "proportion across every view. The animal identity is strictly "
+        "consistent across all views.\n\n"
+        "Composition and Layout\n"
+        "A single 16:9 landscape production animal reference board set "
+        "against a seamless matte neutral mid-grey studio backdrop with "
+        "subtle thin grey divider lines. Left two-thirds: a 3-column "
+        "multi-view grid (full-body side profile, head close-up with eye "
+        "detail, three-quarter body). Right third: a single large hero "
+        "full-body view. All views show the same animal at the same scale.\n\n"
+        "Lighting and Technical\n"
+        "Soft, even three-point studio lighting, uniform across all panels. "
+        "Shot with an 85mm lens, f/8 for deep focus, high-resolution "
+        "photorealistic texture with sharp definition of coat and features, "
+        "neutral color temperature with no color spill.\n\n"
+        "Constraints\n"
+        "No text, no labels, no watermarks, no logos, no people, no "
+        "habitat or environment context, no distorted anatomy, no dramatic "
+        "shadows, no oversaturated colors."
     ),
     "plant": (
-        "Plant reference sheet, 16:9, multi-view grid layout.\n"
-        "Subject: {subject}.\n"
-        "Layout: split the 16:9 frame into a 3-column grid. "
-        "Left column: full plant overview. "
-        "Middle column: leaf detail close-up. "
-        "Right column: stem/trunk/bark detail. "
-        "All three views show the same plant at consistent scale, "
-        "consistent soft daylight, clean background, sharp focus, no people, "
-        "thin white separator lines between the three views.\n"
-        "Style: botanical reference sheet, 8K, scientific photography aesthetic."
+        "Subject and Character\n"
+        "{subject}. A single plant shown with consistent foliage, structure "
+        "and color across every view. The plant identity is strictly "
+        "consistent across all views.\n\n"
+        "Composition and Layout\n"
+        "A single 16:9 landscape production botanical reference board set "
+        "against a seamless matte neutral mid-grey studio backdrop with "
+        "subtle thin grey divider lines. Left two-thirds: a 3-column "
+        "multi-view grid (full-plant overview, leaf detail close-up, "
+        "stem/trunk detail). Right third: a single large hero full-plant "
+        "view. All views show the same plant at the same scale.\n\n"
+        "Lighting and Technical\n"
+        "Soft, even diffused studio lighting, uniform across all panels. "
+        "Shot with a 100mm macro-to-mid lens, f/11 for deep focus, "
+        "high-resolution photorealistic texture with sharp definition of "
+        "leaf texture and color, neutral color temperature with no color "
+        "spill.\n\n"
+        "Constraints\n"
+        "No text, no labels, no watermarks, no logos, no people, no soil "
+        "or environment context, no distorted foliage, no dramatic shadows, "
+        "no oversaturated colors."
     ),
     "mecha": (
-        "Mecha reference sheet, 16:9, multi-view grid layout.\n"
-        "Subject: {subject}.\n"
-        "Layout: split the 16:9 frame into a 3-column grid. "
-        "Left column: front three-quarter view. "
-        "Middle column: pure side profile. "
-        "Right column: detail close-up of distinctive mechanical features. "
-        "All three views show the same mecha at consistent scale, "
-        "consistent studio lighting, clean background, sharp focus, no people, "
-        "thin white separator lines between the three views.\n"
-        "Style: technical design sheet, 8K, industrial photography."
+        "Subject and Character\n"
+        "{subject}. A single mecha shown with consistent proportions, "
+        "panel lines, materials and detailing across every view. The mecha "
+        "identity is strictly consistent across all views.\n\n"
+        "Composition and Layout\n"
+        "A single 16:9 landscape production mecha reference board set "
+        "against a seamless matte neutral mid-grey studio backdrop with "
+        "subtle thin grey divider lines. Left two-thirds: a 3-column "
+        "multi-view grid (front three-quarter, pure side profile, detail "
+        "close-up of distinctive mechanical features). Right third: a "
+        "single large hero front three-quarter view. All views show the "
+        "same mecha at the same scale.\n\n"
+        "Lighting and Technical\n"
+        "Soft, even three-point studio lighting, uniform across all panels. "
+        "Shot with an 85mm lens, f/8 for deep focus, high-resolution "
+        "photorealistic texture with sharp definition of metal, panel "
+        "lines and wear, neutral color temperature with no color spill.\n\n"
+        "Constraints\n"
+        "No text, no labels, no watermarks, no logos, no people, no "
+        "environment context, no distorted structure, no dramatic shadows, "
+        "no oversaturated colors."
     ),
 }
 
@@ -709,6 +773,12 @@ def build_reference_prompt(subject_type: str, subject: str) -> str:
     default="agnes-image-2.1-flash",
     help="Agnes image model (2.1-flash default, 2.0-flash for higher quality)",
 )
+@click.option(
+    "--gate/--no-gate",
+    "run_gate",
+    default=True,
+    help="Run the quality gate (AI check) on the generated sheet (default: on)",
+)
 @click.pass_context
 def reference(
     ctx: click.Context,
@@ -719,6 +789,7 @@ def reference(
     size: str,
     ratio: str,
     model: str,
+    run_gate: bool,
 ) -> None:
     """Generate the primary reference image for a project.
 
@@ -871,6 +942,26 @@ def reference(
             console.print("[red]✗ Failed to update project metadata.[/red]")
             sys.exit(1)
         console.print("[green]✓ Project primary_reference metadata updated.[/green]")
+
+        if run_gate:
+            from brandly_cli import quality_gate
+
+            gate_result = asyncio.run(
+                quality_gate.verify_element(
+                    saved,
+                    description=subject,
+                    expect_matt_background=True,
+                    use_ai=True,
+                    root=root,
+                    project_id=project_id,
+                )
+            )
+            _print_gate_report(gate_result)
+            if gate_result.status == quality_gate.FAIL:
+                console.print(
+                    "[yellow]⚠ Quality gate failed — review or regenerate the "
+                    "sheet before using it as a reference.[/yellow]"
+                )
         console.print(
             f"\n[bold]Next:[/bold] run [cyan]brandly video {project_id} ...[/cyan] — the "
             f"primary reference image will be auto-injected as a reference image."
@@ -1152,6 +1243,12 @@ def image(
     hidden=True,
     help="DEPRECATED: use --allow-referenceless.",
 )
+@click.option(
+    "--gate/--no-gate",
+    "run_gate",
+    default=True,
+    help="Run the quality gate on the generated video (default: on)",
+)
 @click.pass_context
 def video(
     ctx: click.Context,
@@ -1170,6 +1267,7 @@ def video(
     max_wait: int,
     require_reference: bool | None,
     allow_referenceless: bool,
+    run_gate: bool,
 ) -> None:
     """Generate an AI video via Agnes AI.
 
@@ -1390,6 +1488,29 @@ def video(
             else:
                 console.print("[yellow]⚠ Could not save artifact, but URL is available[/yellow]")
 
+    # Quality gate: verify the generated video before the next step.
+    if run_gate:
+        from brandly_cli import quality_gate
+
+        _saved_media = locals().get("saved")
+        if isinstance(_saved_media, Path) and _saved_media.exists():
+            gate_result = asyncio.run(
+                quality_gate.verify_element(
+                    _saved_media,
+                    description=character or prompt,
+                    expect_matt_background=False,
+                    use_ai=True,
+                    root=root,
+                    project_id=project_id,
+                )
+            )
+            _print_gate_report(gate_result)
+            if gate_result.status == quality_gate.FAIL:
+                console.print(
+                    "[yellow]⚠ Quality gate failed — review or regenerate "
+                    "before editing/publishing.[/yellow]"
+                )
+
     # Persist to project
     root = _get_root(ctx)
     pm = ProjectManager(root)
@@ -1597,6 +1718,176 @@ def validate(ctx: click.Context, project_id: str, video_path: str | None) -> Non
             "message": "Virality validation initiated (requires higgsfield MCP tool)",
         }
     )
+
+
+
+# ---------------------------------------------------------------------------
+# gate (quality verification before the next step)
+# ---------------------------------------------------------------------------
+
+
+@cli.command(name="gate")
+@click.argument("project_id")
+@click.argument("element", default=None, required=False)
+@click.option(
+    "--ref",
+    "reference",
+    default=None,
+    help="Reference image to compare against (drift check)",
+)
+@click.option(
+    "--kind",
+    type=click.Choice(["auto", "image", "video"]),
+    default="auto",
+    help="Element type (default: infer from extension)",
+)
+@click.option("--description", "-d", default="", help="Expected subject/description")
+@click.option(
+    "--matt-background/--no-matt-background",
+    "expect_matt_background",
+    default=None,
+    help=(
+        "Require a seamless matte mid-grey backdrop. "
+        "Default: on for reference/sheet images, off for videos."
+    ),
+)
+@click.option(
+    "--use-ai/--no-ai",
+    default=True,
+    help="Use the Agnes multimodal model for visual analysis (default: on)",
+)
+@click.option("--strict", is_flag=True, help="Promote warnings to failures")
+@click.option(
+    "-o",
+    "--output",
+    type=click.Choice(["text", "json"]),
+    default="text",
+)
+@click.pass_context
+def gate(
+    ctx: click.Context,
+    project_id: str,
+    element: str | None,
+    reference: str | None,
+    kind: str,
+    description: str,
+    expect_matt_background: bool | None,
+    use_ai: bool,
+    strict: bool,
+    output: str,
+) -> None:
+    """Verify a generated element before proceeding (anti-slop/drift gate).
+
+    Runs cheap offline pre-checks and a multimodal model analysis of the
+    candidate (and optional reference). Exits 0 for pass, 1 for warn,
+    2 for fail.
+    """
+    if not is_valid_project_id(project_id):
+        console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(1)
+
+    from brandly_cli import quality_gate
+
+    root = _get_root(ctx)
+
+    # Resolve the element: explicit path, or auto-detect the newest media
+    # artifact in the project.
+    element_path: Path | None
+    if element is None:
+        element_path = _latest_project_media(root, project_id)
+    else:
+        element_path = Path(element)
+    if element_path is None:
+        console.print("[red]No element to verify. Pass a path or generate one first.[/red]")
+        sys.exit(2)
+
+    inferred_video = kind == "video" or quality_gate.is_video(element_path)
+
+    # Auto-detect a project reference when not supplied.
+    ref_path = reference
+    if ref_path is None:
+        ref = _load_project_reference(project_id, root)
+        if ref:
+            img = ref.get("image_path")
+            if img and Path(img).exists():
+                ref_path = img
+
+    # A reference/sheet image expects a matte backdrop unless overridden.
+    if expect_matt_background is None:
+        expect_matt_background = not inferred_video
+
+    result = asyncio.run(
+        quality_gate.verify_element(
+            element_path,
+            reference=Path(ref_path) if ref_path else None,
+            description=description,
+            expect_matt_background=expect_matt_background,
+            use_ai=use_ai,
+            root=root,
+            project_id=project_id,
+            strict=strict,
+        )
+    )
+
+    if output == "json":
+        _print_json(result.to_dict())
+    else:
+        _print_gate_report(result)
+
+    exit_code = 0 if result.status == quality_gate.PASS else (
+        1 if result.status == quality_gate.WARN else 2
+    )
+    sys.exit(exit_code)
+
+
+def _latest_project_media(root: Path, project_id: str) -> Path | None:
+    """Return the most recently modified media file under the project tree."""
+    proj_dir = layout.resolve_project_dir(root, project_id)
+    if not proj_dir.exists():
+        return None
+    media_exts = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mov"}
+    files: list[Path] = []
+    for top in ("refs", "images", "videos", "audio"):
+        base = proj_dir / top
+        if base.exists():
+            for f in base.rglob("*"):
+                if f.is_file() and f.suffix.lower() in media_exts:
+                    files.append(f)
+    if not files:
+        return None
+    return max(files, key=lambda pth: pth.stat().st_mtime)
+
+
+def _print_gate_report(result: Any) -> None:
+    from brandly_cli import quality_gate
+
+    color = {
+        quality_gate.PASS: "green",
+        quality_gate.WARN: "yellow",
+        quality_gate.FAIL: "red",
+    }
+    mark = {quality_gate.PASS: "✓", quality_gate.WARN: "⚠", quality_gate.FAIL: "✗"}
+    console.print(
+        f"[{color[result.status]}]{mark[result.status]} GATE {result.status.upper()}"
+        f"[/] [{result.score}/100] {result.kind} → {result.element}"
+    )
+    if result.issues:
+        console.print(f"[red]Failures ({len(result.issues)}):[/red]")
+        for i in result.issues:
+            console.print(f"  [red]✗ {i}[/red]")
+    if result.warnings:
+        console.print(f"[yellow]Warnings ({len(result.warnings)}):[/yellow]")
+        for w in result.warnings:
+            console.print(f"  [yellow]⚠ {w}[/yellow]")
+    if result.ai:
+        console.print(
+            f"[dim]AI verdict: {result.ai.get('verdict', '?')} — "
+            f"{result.ai.get('notes', '')}[/dim]"
+        )
+    console.print(
+        "[dim]Report: .brandly/<project>/docs/tmp/ (gate_<kind>_<ts>.md)[/dim]"
+    )
+
 
 
 # ---------------------------------------------------------------------------

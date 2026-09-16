@@ -71,36 +71,44 @@ def _write_project(project_dir: Path, project_id: str, **overrides: object) -> P
 
 def test_build_reference_prompt_object() -> None:
     result = build_reference_prompt("object", "Nike Air Max 1, white colorway")
-    assert "Professional product reference sheet" in result
+    assert "Subject and Character" in result
+    assert "Composition and Layout" in result
+    assert "Lighting and Technical" in result
+    assert "Constraints" in result
     assert "Nike Air Max 1, white colorway" in result
-    assert "no people" in result.lower()
-    assert "studio product lighting" in result.lower()
+    assert "seamless matte neutral mid-grey" in result
     assert "16:9" in result
-    assert "multi-view grid" in result.lower()
-    assert "3-column grid" in result.lower()
 
 
 def test_build_reference_prompt_character() -> None:
     result = build_reference_prompt("character", "Maya, mid-20s, dark hair")
-    assert "Character reference sheet" in result
+    # Four-section structure, each exactly once, in order.
+    assert result.count("Subject and Character") == 1
+    assert result.count("Composition and Layout") == 1
+    assert result.count("Lighting and Technical") == 1
+    assert result.count("Constraints") == 1
     assert "Maya, mid-20s, dark hair" in result
-    assert "16:9" in result
-    assert "multi-view grid" in result.lower()
-    assert "front view" in result.lower()
-    assert "pure side profile" in result.lower()
-    assert "three-quarter view" in result.lower()
+    # The goal's exact structural markers:
+    assert "2 by 2 grid" in result
+    assert "seamless matte neutral mid-grey" in result
+    assert "extreme close-up of the face from eyes to chin" in result
+    assert "full-body front-facing standing view" in result
+    assert "full-body back standing view" in result
+    assert "85mm lens" in result
+    # Constraints section:
+    assert "No text, no labels, no watermarks, no logos" in result
+    assert "no distorted facial features" in result
 
 
 def test_build_reference_prompt_location() -> None:
     result = build_reference_prompt("location", "Modern kitchen, white marble")
-    assert "Location reference sheet" in result
+    assert "Subject and Character" in result
+    assert "Composition and Layout" in result
+    assert "Lighting and Technical" in result
+    assert "Constraints" in result
     assert "Modern kitchen, white marble" in result
-    assert "no people" in result.lower()
+    assert "No people" in result
     assert "16:9" in result
-    # Location is the EXCEPTION — full-frame, no grid
-    assert "full-frame" in result.lower()
-    assert "no grid" in result.lower()
-    assert "multi-view grid" not in result.lower()
 
 
 def test_build_reference_prompt_unknown_returns_empty() -> None:
@@ -108,60 +116,63 @@ def test_build_reference_prompt_unknown_returns_empty() -> None:
 
 
 def test_build_reference_prompt_vehicle() -> None:
-    """Vehicle templates use the 16:9 multi-view grid layout."""
+    """Vehicle templates use the 4-section matte-grey board layout."""
     result = build_reference_prompt("vehicle", "Vintage Porsche 911, silver")
-    assert "Vehicle reference sheet" in result
+    assert "Subject and Character" in result
     assert "Vintage Porsche 911, silver" in result
     assert "16:9" in result
-    assert "multi-view grid" in result.lower()
+    assert "seamless matte neutral mid-grey" in result
     assert "front three-quarter" in result.lower()
-    assert "pure side profile" in result.lower()
     assert "rear three-quarter" in result.lower()
 
 
 def test_build_reference_prompt_animal() -> None:
-    """Animal templates use the 16:9 multi-view grid layout."""
+    """Animal templates use the 4-section matte-grey board layout."""
     result = build_reference_prompt("animal", "Adult golden retriever")
-    assert "Animal reference sheet" in result
+    assert "Subject and Character" in result
     assert "Adult golden retriever" in result
     assert "16:9" in result
-    assert "multi-view grid" in result.lower()
+    assert "seamless matte neutral mid-grey" in result
     assert "head close-up" in result.lower()
 
 
 def test_build_reference_prompt_plant() -> None:
-    """Plant templates use the 16:9 multi-view grid layout."""
+    """Plant templates use the 4-section matte-grey board layout."""
     result = build_reference_prompt("plant", "Monstera deliciosa")
-    assert "Plant reference sheet" in result
+    assert "Subject and Character" in result
     assert "Monstera deliciosa" in result
     assert "16:9" in result
-    assert "multi-view grid" in result.lower()
+    assert "seamless matte neutral mid-grey" in result
     assert "leaf detail" in result.lower()
 
 
 def test_build_reference_prompt_mecha() -> None:
-    """Mecha templates use the 16:9 multi-view grid layout."""
+    """Mecha templates use the 4-section matte-grey board layout."""
     result = build_reference_prompt("mecha", "Bipedal combat mech")
-    assert "Mecha reference sheet" in result
+    assert "Subject and Character" in result
     assert "Bipedal combat mech" in result
     assert "16:9" in result
-    assert "multi-view grid" in result.lower()
+    assert "seamless matte neutral mid-grey" in result
     assert "front three-quarter" in result.lower()
-    assert "pure side profile" in result.lower()
 
 
-def test_all_non_location_sheets_use_multi_view_grid() -> None:
-    """Sanity check: every sheet except 'location' must use the multi-view grid."""
-    multi_view_sheets = ["object", "character", "vehicle", "animal", "plant", "mecha"]
-    for sheet in multi_view_sheets:
+def test_all_sheets_use_matt_grey_backdrop() -> None:
+    """Every sheet template must specify the seamless matte mid-grey backdrop."""
+    for sheet in ["object", "character", "vehicle", "animal", "plant", "mecha", "location"]:
         result = build_reference_prompt(sheet, "test subject")
-        assert "16:9" in result, f"{sheet} template missing 16:9"
-        assert "multi-view grid" in result.lower(), (
-            f"{sheet} template missing multi-view grid"
-        )
-        assert "full-frame" not in result.lower(), (
-            f"{sheet} should NOT use full-frame (only location does)"
-        )
+        for header in (
+            "Subject and Character",
+            "Composition and Layout",
+            "Lighting and Technical",
+            "Constraints",
+        ):
+            assert header in result, f"{sheet} template missing '{header}'"
+        # Sheets (non-location) require the matte grey board backdrop; location
+        # is a full-frame environment and does not use a studio board.
+        if sheet != "location":
+            assert "seamless matte neutral mid-grey" in result, (
+                f"{sheet} template missing matte-grey backdrop"
+            )
 
 
 def test_reference_subjects_covers_all_skills() -> None:

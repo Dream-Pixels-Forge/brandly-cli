@@ -235,8 +235,8 @@ brandly reference <project_id> \
   --ratio 16:9
 ```
 
-The generated reference is saved to `.brandly/projects/<id>/artifacts/images/`
-with the `reference_location_*` prefix and is auto-injected as the first
+The generated reference is saved to `.brandly/<project_id>/refs/`
+with the `loc_*` prefix and is auto-injected as the first
 reference image (strongest influence) in every `brandly video` call.
 Pass `--require-reference` to `brandly video` to fail-fast when the
 reference is missing.

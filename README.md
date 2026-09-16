@@ -9,7 +9,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/brandly-cli.svg)](https://pypi.org/project/brandly-cli/)
 [![Python >=3.10](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-351_passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
+[![Tests](https://img.shields.io/badge/tests-358_passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![Lint](https://img.shields.io/badge/lint-ruff_clean-brightgreen.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![CI](https://github.com/Dream-Pixels-Forge/brandly-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli/actions)
 [![GitHub stars](https://img.shields.io/github/stars/Dream-Pixels-Forge/brandly-cli?style=social)](https://github.com/Dream-Pixels-Forge/brandly-cli/stargazers)
@@ -23,10 +23,19 @@ Brandly is an **autonomous video production pipeline** that turns product ideas 
 - **Image generation** via [Agnes AI](https://apihub.agnes-ai.com) (text-to-image, image-to-image)
 - **Video generation** via Agnes AI (text-to-video, keyframe-controlled, reference-based)
 - **Audio generation** via [MiniMax Audio](https://platform.minimaxi.com) (background music, TTS voiceover)
+- **3D Spatial Control** — Blender PlayBlast renderer for spatial reference frames (camera composition, depth, keyframes) feeding Agnes AI keyframe/reference modes
 - **Multi-agent pipeline** — automated workflow from idea → trends → concept → script → assets → audio → validate → publish
 - **Director orchestrator** — an autonomous agent that guides the entire production process
 - **Credit budgeting** — track spend per phase against a project budget
 - **Style presets** — avoid AI slop with photorealistic, cinematic, editorial, commercial, and documentary presets
+
+### v0.3.9 New Features
+
+| Feature | Description |
+|---------|-------------|
+| **Blender 3D Spatial Pipeline** | `skills/brandly-3d-spatial/` — PlayBlast + EEVEE fallback renders spatial references for Agnes keyframe/reference modes; Blender version auto-detection via `blender_integration.py` |
+| **Resilient 503 Retry** | Video task creation now uses 5 retries with jitter + `Retry-After` header support; prevents transient GPU backend outages from failing the whole pipeline |
+| **Spatial Reference System** | `brandly/layout.py` now creates `3d-spatial/{cameras,keyframes,depthmaps,general}/` per project |
 
 ### v0.3.7 New Features
 
@@ -65,7 +74,7 @@ pip install brandly-cli
 ### Install Agent Skills
 
 Brandly ships a set of agent skills (camera language, storyboard, production bible,
-character/object/vehicle/animal/plant/mecha sheets, consistency, video generation)
+character/object/vehicle/animal/plant/mecha sheets, 3D spatial, consistency, video generation)
 that you can install into any AI tool that supports the `npx skills` protocol:
 
 ```bash
@@ -88,6 +97,7 @@ Available skills (see [skills/README.md](skills/README.md) for details):
 | `brandly-mecha-sheet` | Mecha/robot reference sheets |
 | `brandly-animal-sheet` | Animal/creature reference sheets |
 | `brandly-plant-sheet` | Plant/botanical reference sheets |
+| `brandly-3d-spatial` | Blender PlayBlast renderer — spatial reference frames for Agnes keyframe/reference video modes |
 
 ### Configure API Keys
 
@@ -137,7 +147,28 @@ brandly music --prompt "upbeat electronic" --duration 30
 brandly tts "Welcome to SuperWidget Pro"
 ```
 
-### 4. Export & Share
+### 4. 3D Spatial References (Optional)
+
+If Blender is installed, generate spatial reference frames for Agnes AI keyframe/reference modes:
+
+```bash
+# Detect installed Blender version
+python -c "from brandly_cli.blender_integration import detect_blender; v = detect_blender(); print(v)"
+
+# Render spatial references
+python skills/brandly-3d-spatial/scripts/playblast_renderer.py \
+  --config .brandly/my-project/3d-spatial/cameras/scene.json \
+  --output .brandly/my-project/3d-spatial/cameras \
+  --mode single
+
+# Extract references for Agnes
+python skills/brandly-3d-spatial/scripts/extract_references.py \
+  --input .brandly/my-project/3d-spatial/cameras \
+  --output .brandly/my-project/3d-spatial/keyframes \
+  --strategy first
+```
+
+### 5. Export & Share
 
 ```bash
 brandly export <project-id> --platforms tiktok youtube
@@ -166,7 +197,7 @@ brandly share output.mp4
 | Command | Description |
 |---------|-------------|
 | `brandly image` | Generate an image via Agnes AI |
-| `brandly video <id>` | Generate a video via Agnes AI |
+| `brandly video <id>` | Generate a video via Agnes AI (with 503 resilience) |
 | `brandly music` | Generate background music |
 | `brandly tts <text>` | Generate voiceover via TTS |
 
@@ -192,6 +223,18 @@ brandly share output.mp4
 | `brandly validate <id>` | Run virality validation |
 | `brandly gate <id> [element]` | Verify an element (anti-slop/drift) before the next step |
 | `brandly director` | Show Director agent prompt |
+
+### 3D Spatial
+
+| Command | Description |
+|---------|-------------|
+| (Python API) | `from brandly_cli.blender_integration import detect_blender, is_blender_available` |
+
+---
+
+## Keywords
+
+`ai video generation`, `product video`, `marketing video`, `cli tool`, `agent pipeline`, `multi-agent`, `agentic ai`, `brand video`, `social media video`, `tiktok video`, `youtube video`, `image generation`, `video generation`, `keyframe video`, `reference video`, `blender 3d`, `spatial reference`, `agnes ai`, `minimax tts`, `background music`, `voiceover`, `director agent`, `pipeline orchestration`, `creative ai`, `automated video production`, `product demo`, `commercial`, `advertising`, `content creation`, `shot list`, `storyboard`, `consistency`, `character sheet`, `reference sheet`
 
 ---
 

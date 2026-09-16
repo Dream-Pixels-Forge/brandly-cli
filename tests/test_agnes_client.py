@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from brandly_cli.agnes_client import (
+    _compute_backoff_delay,
     _headers,
     _retry_with_backoff,
     cancel_job,
@@ -66,6 +67,63 @@ class TestHeaders:
         monkeypatch.delenv("AGNES_API_KEY", raising=False)
         with pytest.raises(OSError, match="AGNES_API_KEY"):
             _headers()
+
+
+# ---------------------------------------------------------------------------
+# _compute_backoff_delay
+# ---------------------------------------------------------------------------
+
+
+class TestComputeBackoffDelay:
+    def test_basic_exponential(self) -> None:
+        """Test basic exponential backoff calculation."""
+        # attempt 0: 1.0 * 2^0 = 1.0
+        # attempt 1: 1.0 * 2^1 = 2.0
+        # attempt 2: 1.0 * 2^2 = 4.0
+        # With jitter, result should be within [0.5, 1.5] of base
+        for attempt, expected in [(0, 1.0), (1, 2.0), (2, 4.0), (3, 8.0)]:
+            delay = _compute_backoff_delay(attempt, 1.0, jitter=False)
+            assert delay == expected
+
+    def test_max_delay_cap(self) -> None:
+        """Test that max_delay caps the delay."""
+        # Without cap: attempt 5 with base 1.0 = 32.0
+        # With cap 10.0: should be 10.0
+        delay = _compute_backoff_delay(5, 1.0, max_delay=10.0, jitter=False)
+        assert delay == 10.0
+
+    def test_retry_after_header(self) -> None:
+        """Test that Retry-After header takes precedence."""
+        resp = MagicMock()
+        resp.headers = {"retry-after": "42"}
+        delay = _compute_backoff_delay(0, 1.0, response=resp, jitter=False)
+        assert delay == 42.0
+
+    def test_retry_after_invalid(self) -> None:
+        """Test invalid Retry-After falls through to computed delay."""
+        resp = MagicMock()
+        resp.headers = {"retry-after": "not-a-number"}
+        delay = _compute_backoff_delay(0, 1.0, response=resp, jitter=False)
+        assert delay == 1.0  # Falls back to exponential
+
+    def test_no_response(self) -> None:
+        """Test no response falls through to computed delay."""
+        delay = _compute_backoff_delay(2, 2.0, response=None, jitter=False)
+        assert delay == 8.0  # 2.0 * 2^2 = 8.0
+
+    def test_jitter_variance(self) -> None:
+        """Test that jitter adds variance (should be within 0.5x-1.5x)."""
+        import random
+        random.seed(42)  # For reproducibility
+        delay = _compute_backoff_delay(1, 10.0, jitter=True)
+        # Expected: 10.0 * 2^1 = 20.0, with jitter factor 0.5-1.5
+        # So delay should be between 10.0 and 30.0
+        assert 10.0 <= delay <= 30.0
+
+    def test_minimum_wait(self) -> None:
+        """Test that delay has a minimum of 0.1 seconds."""
+        delay = _compute_backoff_delay(0, 0.01, jitter=False)
+        assert delay >= 0.1
 
 
 # ---------------------------------------------------------------------------

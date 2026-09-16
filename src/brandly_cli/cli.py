@@ -1201,13 +1201,13 @@ def image(
 )
 @click.option("--duration", "-d", default=10, help="Duration in seconds (default: 10)")
 @click.option("--aspect-ratio", default="16:9", help="Aspect ratio")
-@click.option("--first-frame", default=None, help="First frame image URL (keyframe mode)")
-@click.option("--last-frame", default=None, help="Last frame image URL (keyframe mode)")
+@click.option("--first-frame", default=None, help="First frame image URL or local file path (keyframe mode)")
+@click.option("--last-frame", default=None, help="Last frame image URL or local file path (keyframe mode)")
 @click.option(
     "--reference-images",
     "-r",
     default=None,
-    help="Comma-separated image URLs for character/object consistency (reference mode)",
+    help="Comma-separated image URLs or local file paths for character/object consistency (reference mode)",
 )
 @click.option(
     "--character",
@@ -1249,6 +1249,11 @@ def image(
     default=True,
     help="Run the quality gate on the generated video (default: on)",
 )
+@click.option(
+    "--reference-audios",
+    default=None,
+    help="Comma-separated reference audio URLs (reference mode)",
+)
 @click.pass_context
 def video(
     ctx: click.Context,
@@ -1268,6 +1273,7 @@ def video(
     require_reference: bool | None,
     allow_referenceless: bool,
     run_gate: bool,
+    reference_audios: str | None,
 ) -> None:
     """Generate an AI video via Agnes AI.
 
@@ -1347,6 +1353,13 @@ def video(
     )
     imgs = ref_paths + user_imgs + auto_refs
 
+    # Parse reference audio URLs
+    auds = (
+        [u.strip() for u in reference_audios.split(",") if u.strip()]
+        if reference_audios
+        else None
+    )
+
     # Enhance prompt with style and character consistency
     enhanced = build_enhanced_video_prompt(
         prompt, style, character=character, reference_images=imgs
@@ -1414,6 +1427,7 @@ def video(
                 first_frame=first_frame,
                 last_frame=last_frame,
                 reference_images=imgs if imgs else None,
+                reference_audios=auds,
             )
         )
     except Exception as e:
@@ -1427,7 +1441,7 @@ def video(
     if wait:
         console.print(f"[dim]Polling (max {max_wait}s)...[/dim]")
         try:
-            result = asyncio.run(poll_video(video_id, max_wait_seconds=max_wait))
+            result = asyncio.run(poll_video(video_id, max_wait_seconds=max_wait, model_name=model))
         except TimeoutError as e:
             console.print(f"[red]Error: {e}[/red]")
             console.print(f"[dim]Video ID: {video_id} - check status manually[/dim]")
@@ -2780,7 +2794,7 @@ def probe(input: str, output: str) -> None:
 @click.option("-n", "--count", default=3, help="Number of variants to generate")
 @click.option("--wait", is_flag=True, help="Wait for each generation to complete")
 @click.option("--character", default=None, help="Character description for consistency")
-@click.option("--reference-images", default=None, help="Comma-separated reference image URLs")
+@click.option("--reference-images", default=None, help="Comma-separated reference image URLs or local file paths")
 @click.pass_context
 async def batch(
     ctx: click.Context,
@@ -3047,9 +3061,9 @@ async def minimax_image(
 @click.option("--resolution", default="768P", help="Resolution (480P, 768P, 2K)")
 @click.option("--duration", default=5, type=click.IntRange(4, 15), help="Duration in seconds")
 @click.option("--ratio", default="adaptive", help="Aspect ratio")
-@click.option("--first-frame", default=None, help="First frame image URL")
-@click.option("--last-frame", default=None, help="Last frame image URL")
-@click.option("--reference-images", default=None, help="Comma-separated reference image URLs")
+@click.option("--first-frame", default=None, help="First frame image URL or local file path")
+@click.option("--last-frame", default=None, help="Last frame image URL or local file path")
+@click.option("--reference-images", default=None, help="Comma-separated reference image URLs or local file paths")
 @click.option("--reference-videos", default=None, help="Comma-separated reference video URLs")
 @click.option("--reference-audios", default=None, help="Comma-separated reference audio URLs")
 @click.option("--wait", is_flag=True, help="Wait for completion")
@@ -3233,7 +3247,7 @@ def ark_image(
     "--reference-images",
     "-r",
     default=None,
-    help="Comma-separated image URLs for i2v mode",
+    help="Comma-separated image URLs or local file paths for i2v mode",
 )
 @click.option("--wait", is_flag=True, help="Poll until generation completes")
 @click.option("--max-wait", default=300, help="Max wait seconds (default: 300)")

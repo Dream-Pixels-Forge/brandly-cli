@@ -344,7 +344,7 @@ class Director:
             if is_ark:
                 result = await ark_poll_video(video_id, max_wait_seconds=max_wait)
             else:
-                result = await poll_video(video_id, max_wait_seconds=max_wait)
+                result = await poll_video(video_id, max_wait_seconds=max_wait, model_name=model)
             task["url"] = result.get("url")
             task["final_status"] = result.get("status")
 

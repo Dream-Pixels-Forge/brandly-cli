@@ -23,6 +23,8 @@ Layout — one folder per project, keyed by the readable project id (slug):
                 scenes/  insert/  transition/  general/
             audio/
                 soundtrack/  sfx/  foley/  voiceover/  general/
+            3d-spatial/
+                cameras/  keyframes/  depthmaps/  general/
             project.json
             cost.json
             export/
@@ -66,6 +68,14 @@ AUDIO_CATEGORIES: tuple[str, ...] = (
     "foley",
     "voiceover",
     "general",
+)
+
+#: ``3d-spatial/`` sub-folders, grouped by spatial reference type.
+SPATIAL_CATEGORIES: tuple[str, ...] = (
+    "cameras",      # Camera position/angle reference frames
+    "keyframes",    # First/last frame for animated shots
+    "depthmaps",    # Depth map renders from Blender
+    "general",      # Other spatial references
 )
 
 #: Map a reference ``subject_type`` to an ``images/`` category.
@@ -163,6 +173,15 @@ def image_category_for_subject(subject_type: str) -> str:
     return SUBJECT_TO_IMAGE_CATEGORY.get(subject_type, "general")
 
 
+def spatial_dir(proj_dir: Path, category: str = "general") -> Path:
+    """Return ``<proj>/3d-spatial/{category}`` for spatial reference frames.
+
+    Categories: cameras, keyframes, depthmaps, general.
+    These are Blender renders used as composition guides for Agnes.
+    """
+    return proj_dir / "3d-spatial" / _check(category, SPATIAL_CATEGORIES, "general")
+
+
 # ---------------------------------------------------------------------------
 # Generated-image naming convention
 #
@@ -224,8 +243,9 @@ def build_sheet_filename(
     return f"{token}_{timestamp}{ext}"
 
 
-def ensure_project_dirs(proj_dir: Path) -> None:
+def ensure_project_dirs(proj_dir: str | Path) -> None:
     """Create the full sub-folder tree for a project (idempotent)."""
+    proj_dir = Path(proj_dir)
     for cat in DOC_CATEGORIES:
         (proj_dir / "docs" / cat).mkdir(parents=True, exist_ok=True)
     refs_dir(proj_dir).mkdir(parents=True, exist_ok=True)
@@ -235,6 +255,8 @@ def ensure_project_dirs(proj_dir: Path) -> None:
         (proj_dir / "videos" / cat).mkdir(parents=True, exist_ok=True)
     for cat in AUDIO_CATEGORIES:
         (proj_dir / "audio" / cat).mkdir(parents=True, exist_ok=True)
+    for cat in SPATIAL_CATEGORIES:
+        (proj_dir / "3d-spatial" / cat).mkdir(parents=True, exist_ok=True)
     (proj_dir / "export").mkdir(parents=True, exist_ok=True)
 
 
@@ -272,3 +294,21 @@ def discover_docs(proj_dir: Path) -> list[Path]:
         if p.is_file():
             files.append(p)
     return files
+
+
+def discover_spatial(proj_dir: str | Path) -> list[Path]:
+    """Return every spatial reference under ``3d-spatial/`` (all categories)."""
+    proj_dir = Path(proj_dir)
+    base = proj_dir / "3d-spatial"
+    if not base.exists():
+        return []
+    found: list[Path] = []
+    for ext in _IMAGE_EXTS:
+        found.extend(base.rglob(ext))
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for p in sorted(found):
+        if p not in seen:
+            seen.add(p)
+            unique.append(p)
+    return unique

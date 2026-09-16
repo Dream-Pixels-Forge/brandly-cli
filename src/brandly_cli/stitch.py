@@ -238,3 +238,280 @@ def _result(
         "color_grade": color_grade,
         "clips_count": len(clips),
     }
+
+
+# ---------------------------------------------------------------------------
+# Scene graph — long-form continuity management
+# ---------------------------------------------------------------------------
+
+class SceneNode:
+    """A single scene in the scene graph."""
+
+    def __init__(
+        self,
+        scene_id: str,
+        title: str,
+        location: str,
+        time_of_day: str = "day",
+        mood: str = "neutral",
+        characters: list[str] | None = None,
+        props: list[str] | None = None,
+        duration_seconds: float = 0.0,
+    ) -> None:
+        self.scene_id = scene_id
+        self.title = title
+        self.location = location
+        self.time_of_day = time_of_day
+        self.mood = mood
+        self.characters = characters or []
+        self.props = props or []
+        self.duration_seconds = duration_seconds
+        self.transitions_from: list[str] = []
+        self.transitions_to: list[str] = []
+        self.visual_theme: dict[str, str] = {}
+
+    def add_transition_from(self, scene_id: str) -> None:
+        """Add a scene that transitions into this one."""
+        if scene_id not in self.transitions_from:
+            self.transitions_from.append(scene_id)
+
+    def add_transition_to(self, scene_id: str) -> None:
+        """Add a scene this one transitions to."""
+        if scene_id not in self.transitions_to:
+            self.transitions_to.append(scene_id)
+
+    def set_visual_theme(self, theme: dict[str, str]) -> None:
+        """Set the visual theme for this scene."""
+        self.visual_theme = theme
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary representation."""
+        return {
+            "scene_id": self.scene_id,
+            "title": self.title,
+            "location": self.location,
+            "time_of_day": self.time_of_day,
+            "mood": self.mood,
+            "characters": self.characters,
+            "props": self.props,
+            "duration_seconds": self.duration_seconds,
+            "transitions_from": self.transitions_from,
+            "transitions_to": self.transitions_to,
+            "visual_theme": self.visual_theme,
+        }
+
+
+class SceneGraph:
+    """Manages scene transitions and visual themes for long-form content.
+
+    Maintains continuity by tracking:
+    - Scene relationships and transitions
+    - Character appearances across scenes
+    - Visual theme consistency
+    - Time-of-day continuity
+    - Prop persistence
+    """
+
+    def __init__(self, title: str = "Untitled Project") -> None:
+        self.title = title
+        self._scenes: dict[str, SceneNode] = {}
+        self._scene_order: list[str] = []
+        self._global_visual_theme: dict[str, str] = {}
+        self._character_registry: dict[str, dict[str, str]] = {}
+
+    def add_scene(
+        self,
+        scene_id: str,
+        title: str,
+        location: str,
+        *,
+        time_of_day: str = "day",
+        mood: str = "neutral",
+        characters: list[str] | None = None,
+        props: list[str] | None = None,
+        duration_seconds: float = 0.0,
+        auto_transition: bool = True,
+    ) -> SceneNode:
+        """Add a scene to the graph."""
+        if scene_id in self._scenes:
+            raise ValueError(f"Scene '{scene_id}' already exists")
+
+        node = SceneNode(
+            scene_id=scene_id,
+            title=title,
+            location=location,
+            time_of_day=time_of_day,
+            mood=mood,
+            characters=characters,
+            props=props,
+            duration_seconds=duration_seconds,
+        )
+
+        # Apply global visual theme
+        if self._global_visual_theme:
+            node.set_visual_theme(self._global_visual_theme.copy())
+
+        self._scenes[scene_id] = node
+        self._scene_order.append(scene_id)
+
+        # Auto-transition from previous scene
+        if auto_transition and len(self._scene_order) > 1:
+            prev_id = self._scene_order[-2]
+            self.connect_scenes(prev_id, scene_id, "cut")
+
+        # Register characters
+        for char in (characters or []):
+            if char not in self._character_registry:
+                self._character_registry[char] = {"first_seen": scene_id}
+
+        return node
+
+    def connect_scenes(
+        self,
+        from_id: str,
+        to_id: str,
+        transition_type: str = "cut",
+    ) -> None:
+        """Connect two scenes with a transition."""
+        if from_id not in self._scenes:
+            raise ValueError(f"Scene '{from_id}' not found")
+        if to_id not in self._scenes:
+            raise ValueError(f"Scene '{to_id}' not found")
+
+        self._scenes[from_id].add_transition_to(to_id)
+        self._scenes[to_id].add_transition_from(from_id)
+
+    def set_global_visual_theme(self, theme: dict[str, str]) -> None:
+        """Set a global visual theme applied to all scenes."""
+        self._global_visual_theme = theme
+        for scene in self._scenes.values():
+            scene.set_visual_theme(theme.copy())
+
+    def register_character(
+        self,
+        character_name: str,
+        description: str,
+        key_traits: list[str] | None = None,
+    ) -> None:
+        """Register a character with their description for consistency."""
+        self._character_registry[character_name] = {
+            "description": description,
+            "key_traits": ", ".join(key_traits or []),
+        }
+
+    def get_scene(self, scene_id: str) -> SceneNode | None:
+        """Get a scene by ID."""
+        return self._scenes.get(scene_id)
+
+    def get_previous_scene(self, scene_id: str) -> SceneNode | None:
+        """Get the scene that comes before the given scene."""
+        idx = self._scene_order.index(scene_id) if scene_id in self._scene_order else -1
+        if idx > 0:
+            return self._scenes[self._scene_order[idx - 1]]
+        return None
+
+    def get_next_scene(self, scene_id: str) -> SceneNode | None:
+        """Get the scene that comes after the given scene."""
+        idx = self._scene_order.index(scene_id) if scene_id in self._scene_order else -1
+        if 0 <= idx < len(self._scene_order) - 1:
+            return self._scenes[self._scene_order[idx + 1]]
+        return None
+
+    def get_character_scenes(self, character_name: str) -> list[str]:
+        """Get all scene IDs where a character appears."""
+        return [
+            sid for sid, scene in self._scenes.items()
+            if character_name in scene.characters
+        ]
+
+    def validate_continuity(self) -> list[str]:
+        """Validate continuity across the scene graph.
+
+        Returns a list of issues found.
+        """
+        issues: list[str] = []
+
+        for i, scene_id in enumerate(self._scene_order):
+            scene = self._scenes[scene_id]
+
+            # Check time-of-day continuity
+            if i > 0:
+                prev = self._scenes[self._scene_order[i - 1]]
+                time_progression = {
+                    "dawn": 0, "morning": 1, "day": 2, "afternoon": 3,
+                    "evening": 4, "dusk": 5, "night": 6,
+                }
+                prev_time = time_progression.get(prev.time_of_day, 2)
+                curr_time = time_progression.get(scene.time_of_day, 2)
+                if curr_time < prev_time - 1:
+                    issues.append(
+                        f"Scene '{scene_id}': Time jumps backward from "
+                        f"'{prev.time_of_day}' to '{scene.time_of_day}'"
+                    )
+
+            # Check character consistency
+            for char in scene.characters:
+                if char in self._character_registry:
+                    # Character should maintain consistent appearance
+                    pass  # Visual consistency checked by prompt system
+
+            # Check location transitions
+            if i > 0:
+                prev = self._scenes[self._scene_order[i - 1]]
+                if prev.location != scene.location:
+                    # Location change should have a transition
+                    if scene_id not in prev.transitions_to:
+                        issues.append(
+                            f"Scene '{scene_id}': Location change from "
+                            f"'{prev.location}' without explicit transition"
+                        )
+
+        return issues
+
+    def generate_assembly_plan(self) -> dict[str, Any]:
+        """Generate an assembly plan for video stitching."""
+        total_duration = sum(
+            self._scenes[sid].duration_seconds
+            for sid in self._scene_order
+        )
+
+        scene_sequence = []
+        for i, scene_id in enumerate(self._scene_order):
+            scene = self._scenes[scene_id]
+            transition_type = "cut"
+            if i > 0:
+                prev_id = self._scene_order[i - 1]
+                # Determine transition from mood
+                if scene.mood == "dramatic":
+                    transition_type = "dissolve"
+                elif scene.mood == "tense":
+                    transition_type = "wipe"
+                else:
+                    transition_type = "fade"
+
+            scene_sequence.append({
+                "scene_id": scene_id,
+                "title": scene.title,
+                "duration_seconds": scene.duration_seconds,
+                "transition_to_next": transition_type if i < len(self._scene_order) - 1 else None,
+                "characters": scene.characters,
+                "location": scene.location,
+            })
+
+        return {
+            "title": self.title,
+            "total_scenes": len(self._scene_order),
+            "total_duration_seconds": total_duration,
+            "scenes": scene_sequence,
+            "characters": list(self._character_registry.keys()),
+            "issues": self.validate_continuity(),
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        """Export the entire scene graph as a dictionary."""
+        return {
+            "title": self.title,
+            "scenes": [self._scenes[sid].to_dict() for sid in self._scene_order],
+            "global_visual_theme": self._global_visual_theme,
+            "character_registry": self._character_registry,
+        }

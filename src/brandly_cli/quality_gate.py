@@ -596,4 +596,209 @@ __all__ = [
     "PASS",
     "WARN",
     "FAIL",
+    "drift_prevention",
+    "PromptConsistencyChecker",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Drift prevention — pre-generation prompt validation
+# ---------------------------------------------------------------------------
+
+class PromptConsistencyChecker:
+    """Validates prompts for consistency before generation.
+
+    Checks for:
+    - Character description drift between shots
+    - Missing anchor references
+    - Inconsistent style/lighting instructions
+    - Potential spatial confusion
+    """
+
+    def __init__(self, reference_description: str | None = None) -> None:
+        self.reference_description = reference_description
+        self._issues: list[str] = []
+        self._warnings: list[str] = []
+
+    def check_shot_prompt(
+        self,
+        prompt: str,
+        shot_index: int,
+        character_anchor: str | None = None,
+        expected_style: str | None = None,
+    ) -> list[str]:
+        """Check a single shot prompt for consistency issues."""
+        issues = []
+        warnings = []
+
+        # Check for character anchor presence
+        if character_anchor and shot_index > 0:
+            # Condensed anchor should still be present
+            anchor_key_phrases = ["ANCHOR", "same character", "continuity", "preserve"]
+            if not any(phrase.lower() in prompt.lower() for phrase in anchor_key_phrases):
+                warnings.append(
+                    f"Shot {shot_index + 1}: Missing character anchor — "
+                    f"may cause identity drift"
+                )
+
+        # Check for reference image mention in first shot
+        if shot_index == 0:
+            ref_phrases = ["reference image", "provided image", "visual reference"]
+            if not any(phrase.lower() in prompt.lower() for phrase in ref_phrases):
+                warnings.append(
+                    "Shot 1: No reference image mention — "
+                    "character identity may not be locked"
+                )
+
+        # Check for style consistency
+        if expected_style:
+            style_keywords = {
+                "cinematic": ["cinematic", "film", "widescreen"],
+                "commercial": ["commercial", "product", "advertisement"],
+                "documentary": ["documentary", "natural", "handheld"],
+                "ugc": ["smartphone", "casual", "authentic"],
+                "luxury": ["luxury", "elegant", "premium"],
+                "action": ["dynamic", "fast", "energetic"],
+                "lifestyle": ["lifestyle", "aspirational", "warm"],
+            }
+            expected_keywords = style_keywords.get(expected_style, [])
+            if expected_keywords:
+                prompt_lower = prompt.lower()
+                matches = [kw for kw in expected_keywords if kw in prompt_lower]
+                if not matches:
+                    warnings.append(
+                        f"Shot {shot_index + 1}: Style '{expected_style}' keywords "
+                        f"not detected in prompt"
+                    )
+
+        # Check for conflicting instructions
+        conflicting_pairs = [
+            ("static", "tracking"),
+            ("locked off", "handheld"),
+            ("wide shot", "close-up"),
+            ("high angle", "low angle"),
+        ]
+        prompt_lower = prompt.lower()
+        for term1, term2 in conflicting_pairs:
+            if term1 in prompt_lower and term2 in prompt_lower:
+                warnings.append(
+                    f"Shot {shot_index + 1}: Conflicting camera instructions "
+                    f"'{term1}' and '{term2}'"
+                )
+
+        self._issues.extend(issues)
+        self._warnings.extend(warnings)
+        return issues + warnings
+
+    def check_sequence(
+        self,
+        prompts: list[str],
+        character_anchor: str | None = None,
+        expected_style: str | None = None,
+    ) -> dict[str, Any]:
+        """Check a sequence of shot prompts for cross-shot consistency."""
+        all_issues: list[str] = []
+        all_warnings: list[str] = []
+
+        for i, prompt in enumerate(prompts):
+            issues = self.check_shot_prompt(
+                prompt, i, character_anchor, expected_style
+            )
+            all_issues.extend(issues)
+
+        # Cross-shot checks
+        if len(prompts) > 1:
+            # Check for repetitive content
+            action_phrases: list[str] = []
+            for prompt in prompts:
+                # Extract action phrases (simplified)
+                lines = prompt.split("\n")
+                for line in lines:
+                    if line.lower().startswith("the scene") or line.lower().startswith("setting:"):
+                        action_phrases.append(line.lower())
+
+            if len(set(action_phrases)) < len(action_phrases) * 0.5:
+                all_warnings.append(
+                    "Sequence has repetitive scene descriptions — "
+                    "may lack visual variety"
+                )
+
+        self._issues.extend(all_issues)
+        self._warnings.extend(all_warnings)
+
+        return {
+            "issues": all_issues,
+            "warnings": all_warnings,
+            "pass": len(all_issues) == 0,
+        }
+
+    @property
+    def has_issues(self) -> bool:
+        """Return True if any issues were found."""
+        return bool(self._issues)
+
+    @property
+    def has_warnings(self) -> bool:
+        """Return True if any warnings were found."""
+        return bool(self._warnings)
+
+    def get_report(self) -> str:
+        """Return a human-readable consistency report."""
+        lines = ["Prompt Consistency Report", "=" * 40]
+        if self._issues:
+            lines.append("\nIssues (must fix):")
+            for issue in self._issues:
+                lines.append(f"  - {issue}")
+        if self._warnings:
+            lines.append("\nWarnings (recommended):")
+            for warning in self._warnings:
+                lines.append(f"  - {warning}")
+        if not self._issues and not self._warnings:
+            lines.append("\nAll checks passed.")
+        return "\n".join(lines)
+
+
+async def drift_prevention(
+    prompts: list[str],
+    reference_description: str | None = None,
+    expected_style: str | None = None,
+    *,
+    strict: bool = False,
+) -> dict[str, Any]:
+    """Validate prompts for drift risk before generation.
+
+    This is a pre-generation check that analyzes prompt text for consistency
+    issues that could lead to visual drift, identity loss, or style
+    inconsistency across shots.
+
+    Args:
+        prompts: List of shot prompts to validate.
+        reference_description: Expected character/subject description.
+        expected_style: Expected visual style.
+        strict: If True, warnings become errors.
+
+    Returns:
+        Dict with validation results and recommendations.
+    """
+    checker = PromptConsistencyChecker(reference_description)
+    result = checker.check_sequence(prompts, reference_description, expected_style)
+
+    # Add recommendations
+    recommendations: list[str] = []
+    if result["warnings"]:
+        recommendations.append(
+            "Consider adding explicit character anchors to each shot prompt"
+        )
+    if len(prompts) > 3:
+        recommendations.append(
+            "For sequences >3 shots, consider using the ShotChain class "
+            "for automatic continuity hooks"
+        )
+
+    return {
+        "valid": result["pass"] if not strict else not result["warnings"],
+        "issues": result["issues"],
+        "warnings": result["warnings"],
+        "recommendations": recommendations,
+        "report": checker.get_report(),
+    }

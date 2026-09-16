@@ -9,7 +9,10 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import base64
+import mimetypes
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -44,12 +47,89 @@ def _headers() -> dict[str, str]:
     }
 
 
+def _resolve_image_url(path_or_url: str) -> str:
+    """Resolve an image input to a URL the Agnes API can consume.
+
+    - HTTP(S) URLs are returned as-is.
+    - Local file paths are base64-encoded into a data: URL.
+    - stdin ('-') reads from stdin.
+    """
+    if path_or_url.startswith(("http://", "https://")):
+        return path_or_url
+
+    p = Path(path_or_url)
+    if not p.exists():
+        console.print(f"[yellow]⚠ Image file not found:[/yellow] {path_or_url}")
+        return path_or_url  # let API return a clear error
+
+    mime = mimetypes.guess_type(p.name)[0] or "image/png"
+    data = base64.b64encode(p.read_bytes()).decode()
+    console.print(f"[dim]Encoded local file: {p.name} ({mime}, {p.stat().st_size // 1024}KB)[/dim]")
+    return f"data:{mime};base64,{data}"
+
+
+def _resolve_image_urls(items: list[str] | None) -> list[str] | None:
+    """Resolve a list of image paths/URLs."""
+    if not items:
+        return None
+    return [_resolve_image_url(x) for x in items]
+
+
+def _compute_backoff_delay(
+    attempt: int,
+    base_delay: float,
+    max_delay: float | None = None,
+    response: httpx.Response | None = None,
+    *,
+    jitter: bool = True,
+) -> float:
+    """Compute exponential backoff delay with jitter and Retry-After support.
+
+    Args:
+        attempt: Current attempt number (0-indexed).
+        base_delay: Base delay in seconds (e.g. 1.0).
+        max_delay: Maximum delay in seconds; None means no cap.
+        response: httpx.Response (optional) — used to read Retry-After header.
+        jitter: If True, add randomized variance to avoid thundering herd.
+
+    Returns:
+        Delay in seconds to wait before the next retry.
+    """
+    # Check for Retry-After header first (per RFC 7231)
+    if response is not None:
+        retry_after = response.headers.get("retry-after")
+        if retry_after is not None:
+            try:
+                return float(retry_after)
+            except ValueError:
+                pass  # fall through to computed delay
+
+    # Exponential backoff: base * 2^attempt
+    delay = base_delay * (2 ** attempt)
+
+    # Cap at max_delay if provided
+    if max_delay is not None:
+        delay = min(delay, max_delay)
+
+    # Add jitter to avoid coordinated retry storms
+    if jitter:
+        import random
+
+        variance = random.uniform(0.5, 1.5)  # ±50% variance
+        delay = delay * variance
+
+    # Ensure at least a minimal wait
+    delay = max(delay, 0.1)
+    return delay
+
+
 async def _retry_with_backoff(
     request_func,
     *,
     max_retries: int = 3,
     base_delay: float = 1.0,
     max_delay: float = 60.0,
+    jitter: bool = True,
 ) -> Any:
     """Retry an async request with exponential backoff for 429/503 errors.
 
@@ -105,9 +185,18 @@ async def _retry_with_backoff(
                 )
                 raise
 
+            # Compute next-wait using shared helper (jitter + Retry-After)
+            wait_time = _compute_backoff_delay(
+                attempt,
+                base_delay,
+                max_delay,
+                e.response,
+                jitter=jitter,
+            )
+
             if status == 429:  # Rate limit
-                wait_time = min(base_delay * (2**attempt), max_delay)
-                # Check for Retry-After header
+                # Check for Retry-After header (already handled in helper,
+                # but we also print a helpful message)
                 retry_after = e.response.headers.get("retry-after")
                 if retry_after:
                     try:
@@ -123,7 +212,6 @@ async def _retry_with_backoff(
                 await asyncio.sleep(wait_time)
 
             elif status == 503:  # Service unavailable (genuine)
-                wait_time = min(base_delay * (2**attempt), max_delay)
                 console.print(
                     f"[yellow]⚠ Service unavailable (503). "
                     f"Waiting {wait_time:.1f}s before retry "
@@ -137,7 +225,12 @@ async def _retry_with_backoff(
 
         except httpx.TimeoutException as e:
             last_error = e
-            wait_time = min(base_delay * (2**attempt), max_delay)
+            wait_time = _compute_backoff_delay(
+                attempt,
+                base_delay,
+                max_delay,
+                jitter=jitter,
+            )
             console.print(
                 f"[yellow]⚠ Request timeout. "
                 f"Waiting {wait_time:.1f}s before retry "
@@ -146,7 +239,12 @@ async def _retry_with_backoff(
             await asyncio.sleep(wait_time)
         except httpx.NetworkError as e:
             last_error = e
-            wait_time = min(base_delay * (2**attempt), max_delay)
+            wait_time = _compute_backoff_delay(
+                attempt,
+                base_delay,
+                max_delay,
+                jitter=jitter,
+            )
             console.print(
                 f"[yellow]⚠ Network error: {e}. "
                 f"Waiting {wait_time:.1f}s before retry "
@@ -190,7 +288,7 @@ async def generate_image(
     if ratio:
         body["ratio"] = ratio
     if images:
-        body["extra_body"] = {"image": images, "response_format": "url"}
+        body["extra_body"] = {"image": _resolve_image_urls(images), "response_format": "url"}
 
     async def _request() -> Any:
         async with httpx.AsyncClient(timeout=120) as client:
@@ -252,25 +350,25 @@ async def create_video_task(
 ) -> dict[str, Any]:
     """Create a video generation task and return {id, video_id, status, progress}.
 
-    Supports three modes:
-    - text: plain text-to-video generation (maps to API mode 'ti2vid')
-    - keyframe: transition between first_frame and last_frame images (maps to 'keyframes')
-    - reference: use reference_images to maintain character/object consistency
-      (maps to 'multi_reference')
+    Supports three modes (API accepts these values directly):
+    - text: plain text-to-video generation
+    - keyframe: transition between first_frame and last_frame images
+    - reference: use reference_images/audios to maintain character/object consistency
     """
     from brandly_cli.style_presets import apply_style_preset
 
     enhanced = apply_style_preset(prompt, "cinematic")
     is_v25_flash = "flash" in model or "2.5-flash" in model
 
-    # Map CLI modes to API modes
-    mode_map = {"text": "ti2vid", "keyframe": "keyframes", "reference": "multi_reference"}
-    api_mode = mode_map.get(mode, "ti2vid")
+    # API accepts mode values directly: "text", "keyframe", "reference"
+    if mode not in ("text", "keyframe", "reference"):
+        console.print(f"[yellow]⚠ Unknown mode '{mode}', falling back to 'text'[/yellow]")
+        mode = "text"
 
     body: dict[str, Any] = {
         "model": model,
         "prompt": enhanced,
-        "mode": api_mode,
+        "mode": mode,
     }
     if seed is not None:
         body["seed"] = seed
@@ -282,6 +380,14 @@ async def create_video_task(
         "properties (color, texture, size) in every frame."
     )
     body["prompt"] = enhanced + consistency_hint
+
+    # Resolve local file paths to data: URLs
+    if first_frame:
+        first_frame = _resolve_image_url(first_frame)
+    if last_frame:
+        last_frame = _resolve_image_url(last_frame)
+    if reference_images:
+        reference_images = _resolve_image_urls(reference_images)
 
     if is_v25_flash:
         # Video 2.5 Flash: duration 4-12s, size fixed at 720P
@@ -332,14 +438,28 @@ async def create_video_task(
             return resp.json()
 
     try:
-        data = await _retry_with_backoff(_request)
+        data = await _retry_with_backoff(
+            _request,
+            max_retries=5,          # Video submission: more attempts for GPU backend
+            base_delay=2.0,         # Longer initial wait for transient 503 recovery
+            max_delay=120.0,        # Cap at 2min per retry attempt
+            jitter=True,            # Avoid thundering herd on retries
+        )
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
-            console.print("[red]Error: Rate limit exceeded. Using v2.0 model recommended.[/red]")
-            console.print("[dim]Tip: Switch to agnes-video-v2.0 for production use[/dim]")
+            console.print(
+                "[red]Error: Rate limit exceeded. Agnes video 2.5-flash has a 1 req/min rate limit.[/red]"
+            )
+            console.print(
+                "[dim]Tip: Wait at least 60 seconds between requests, or switch to "
+                "agnes-video-v2.0 for production use (higher cost, no rate limit).[/dim]"
+            )
         elif e.response.status_code == 503:
             console.print(
-                "[red]Error: Agnes API is temporarily unavailable. Please try again later.[/red]"
+                "[yellow]Warning: Agnes API returned 503 (service unavailable).[/yellow]"
+            )
+            console.print(
+                "[dim]This is usually a transient issue. The retry logic will wait and retry.[/dim]"
             )
         raise
 
@@ -352,15 +472,28 @@ async def create_video_task(
     }
 
 
-async def get_video_status(video_id: str) -> dict[str, Any]:
-    """Poll video generation status with retry for rate limits."""
+async def get_video_status(
+    video_id: str,
+    *,
+    model_name: str | None = None,
+) -> dict[str, Any]:
+    """Poll video generation status with retry for rate limits.
+
+    Args:
+        video_id: The video ID to query.
+        model_name: Model name for retrieval. Required for keyframe/reference
+            modes; optional for text mode. E.g. "agnes-video-2.5-flash".
+    """
 
     async def _request() -> Any:
+        params: dict[str, Any] = {"video_id": video_id}
+        if model_name:
+            params["model_name"] = model_name
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(
                 f"{AGNES_BASE_URL}/agnesapi",
                 headers=_headers(),
-                params={"video_id": video_id},
+                params=params,
             )
             resp.raise_for_status()
             return resp.json()
@@ -400,10 +533,15 @@ async def poll_video(
     *,
     max_wait_seconds: int = 300,
     interval_seconds: int = 5,
+    model_name: str | None = None,
 ) -> dict[str, Any]:
     """Poll until video generation completes or times out.
 
     Handles rate limits gracefully by waiting and retrying.
+
+    Args:
+        video_id: The video ID to poll.
+        model_name: Model name for retrieval (required for keyframe/reference modes).
     """
     import asyncio
 
@@ -417,7 +555,7 @@ async def poll_video(
     while asyncio.get_event_loop().time() < deadline:
         attempts += 1
         try:
-            result = await get_video_status(video_id)
+            result = await get_video_status(video_id, model_name=model_name)
 
             if result["status"] == "completed":
                 console.print(f"[green]✓ Video generated after {attempts} polls[/green]")

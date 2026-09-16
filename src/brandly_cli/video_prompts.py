@@ -471,3 +471,293 @@ def list_lighting_presets() -> list[str]:
 def list_shot_types() -> list[str]:
     """Return available shot type names."""
     return list(SHOT_TYPES.keys())
+
+
+# ---------------------------------------------------------------------------
+# Realism boosters — skin, materials, lighting, film stock
+# ---------------------------------------------------------------------------
+
+REALISM_BOOSTERS = {
+    "skin": {
+        "natural": (
+            "realistic skin texture, subsurface scattering, "
+            "natural skin pores, subtle imperfections, no airbrushing"
+        ),
+        "editorial": (
+            "editorial beauty skin, soft diffused lighting, "
+            "flawless but natural complexion, minimal makeup"
+        ),
+        "gritty": (
+            "weathered skin, visible pores, sweat droplets, "
+            "natural blemishes, authentic texture"
+        ),
+    },
+    "materials": {
+        "fabric": (
+            "realistic fabric weave, cloth micro-detail, "
+            "natural fabric draping, thread texture visible"
+        ),
+        "metal": (
+            "brushed metal anisotropy, realistic reflections, "
+            "surface scratches, fingerprints on chrome"
+        ),
+        "glass": (
+            "realistic glass refraction, caustic light patterns, "
+            "fingerprint smudges, dust particles in glass"
+        ),
+        "organic": (
+            "organic surface detail, natural imperfections, "
+            "realistic bark/skin/scale texture"
+        ),
+    },
+    "lighting": {
+        "global_illumination": (
+            "global illumination, realistic light bounce, "
+            "color bleeding from surfaces, ambient occlusion"
+        ),
+        "volumetric": (
+            "volumetric lighting, atmospheric haze, "
+            "light shafts through particles, god rays"
+        ),
+        "practical": (
+            "practical lighting only, visible light sources, "
+            "realistic falloff, no artificial fill"
+        ),
+    },
+    "film_stock": {
+        "kodak_portra_400": (
+            "Kodak Portra 400 film stock, warm skin tones, "
+            "soft pastel colors, fine grain, natural highlights"
+        ),
+        "kodak_vision3_500t": (
+            "Kodak Vision3 500T tungsten film, cinema look, "
+            "rich shadows, controlled highlights, cinematic grain"
+        ),
+        "fuji_pro_400h": (
+            "Fuji Pro 400H film stock, cool tones, "
+            "soft greens, airy highlights, fine grain structure"
+        ),
+        "cinestill_800t": (
+            "CineStill 800T film stock, tungsten halation, "
+            "glowing highlights, red halation around lights, cinematic"
+        ),
+        "digital_clean": (
+            "clean digital capture, no visible noise, "
+            "maximum sharpness, clinical precision"
+        ),
+    },
+    "lens_effects": {
+        "anamorphic": (
+            "anamorphic lens flare, oval bokeh, "
+            "horizontal streak flares, cinematic widescreen"
+        ),
+        "vintage": (
+            "vintage lens softness, chromatic aberration, "
+            "swirly bokeh, warm color cast"
+        ),
+        "macro": (
+            "macro lens detail, razor-thin depth of field, "
+            "extreme close-up sharpness, background blur"
+        ),
+        "tilt_shift": (
+            "tilt-shift miniature effect, selective focus, "
+            "miniature world aesthetic"
+        ),
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Character anchor system — multi-shot consistency locking
+# ---------------------------------------------------------------------------
+
+class CharacterAnchorSystem:
+    """Locks character appearance across multiple shots.
+
+    Ensures the same character description, key traits, and visual identity
+    are injected into every shot prompt to prevent drift.
+    """
+
+    def __init__(
+        self,
+        character_description: str,
+        key_traits: list[str] | None = None,
+        reference_image: str | None = None,
+        prop_anchors: dict[str, str] | None = None,
+    ) -> None:
+        self.character_description = character_description
+        self.key_traits = key_traits or []
+        self.reference_image = reference_image
+        self.prop_anchors = prop_anchors or {}
+
+    def anchor_for_shot(self, shot_index: int) -> str:
+        """Generate the anchor block for a specific shot.
+
+        Shot 0 gets the full anchor with reference image.
+        Subshots get a condensed anchor to reinforce consistency.
+        """
+        lines = []
+
+        if shot_index == 0:
+            lines.append("ANCHOR — Establishing character identity:")
+            lines.append(f"Character: {self.character_description}")
+            if self.key_traits:
+                lines.append(f"Key traits to preserve: {', '.join(self.key_traits)}")
+            if self.reference_image:
+                lines.append(
+                    "Use the provided reference image as the exact visual target. "
+                    "Match appearance, lighting, and composition."
+                )
+        else:
+            lines.append(f"ANCHOR — Character continuity (shot {shot_index + 1}):")
+            lines.append(f"Same character: {self.character_description}")
+            if self.key_traits:
+                lines.append(f"Preserve: {', '.join(self.key_traits)}")
+            lines.append("No identity drift. Match previous shot exactly.")
+
+        # Prop anchors
+        for prop_name, prop_desc in self.prop_anchors.items():
+            lines.append(f"Prop '{prop_name}': {prop_desc}")
+
+        return "\n".join(lines)
+
+    def consistency_block(self) -> str:
+        """Return a standalone consistency reminder for the end of each shot."""
+        traits_str = ", ".join(self.key_traits) if self.key_traits else "appearance, clothing, proportions"
+        return (
+            f"CONSISTENCY LOCK: {self.character_description}. "
+            f"Must match: {traits_str}. "
+            "No drift, no variation, identical identity across all shots."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Shot chain — narrative coherency across shots
+# ---------------------------------------------------------------------------
+
+class ShotChain:
+    """Builds prompts sequentially with continuity hooks.
+
+    Ensures narrative flow by carrying forward context from previous shots
+    and adding transition cues between shots.
+    """
+
+    TRANSITIONS = {
+        "cut": "Cut to",
+        "dissolve": "Dissolve to",
+        "match_cut": "Match cut to",
+        "whip_pan": "Whip pan to",
+        "cross_dissolve": "Cross-dissolve to",
+        "jump_cut": "Jump cut to",
+    }
+
+    def __init__(
+        self,
+        subject: str,
+        environment: str,
+        style: str = "cinematic",
+        character_anchor: CharacterAnchorSystem | None = None,
+    ) -> None:
+        self.subject = subject
+        self.environment = environment
+        self.style = style
+        self.character_anchor = character_anchor
+        self._shots: list[dict[str, str]] = []
+        self._previous_action: str | None = None
+
+    def add_shot(
+        self,
+        shot_type: str,
+        action: str,
+        camera_move: str = "push_in",
+        transition: str = "cut",
+        duration: int = 4,
+        environment_modifier: str | None = None,
+        emotional_beat: str | None = None,
+    ) -> "ShotChain":
+        """Add a shot to the chain with continuity context."""
+        shot_index = len(self._shots)
+        shot_data = {
+            "index": str(shot_index),
+            "type": shot_type,
+            "action": action,
+            "camera_move": camera_move,
+            "transition": transition,
+            "duration": str(duration),
+            "environment_modifier": environment_modifier or "",
+            "emotional_beat": emotional_beat or "",
+        }
+        self._shots.append(shot_data)
+        self._previous_action = action
+        return self
+
+    def build_prompt(self) -> str:
+        """Build the complete chained prompt with continuity."""
+        if not self._shots:
+            return ""
+
+        style_config = VIDEO_STYLE_TEMPLATES.get(self.style, VIDEO_STYLE_TEMPLATES["cinematic"])
+        lighting_config = LIGHTING_PRESETS.get(
+            style_config["lighting"], LIGHTING_PRESETS["golden_hour"]
+        )
+
+        lines = []
+        lines.append(f"CHAIN: {self.subject} in {self.environment} — {self.style} sequence")
+        lines.append("")
+
+        for i, shot in enumerate(self._shots):
+            shot_type = SHOT_TYPES.get(shot["type"], SHOT_TYPES["medium"])
+            transition_word = self.TRANSITIONS.get(shot["transition"], "Cut to")
+
+            # Add transition cue (except for first shot)
+            if i > 0:
+                lines.append(f"\n--- {transition_word} next shot ---\n")
+
+            # Character anchor
+            if self.character_anchor:
+                lines.append(self.character_anchor.anchor_for_shot(i))
+                lines.append("")
+
+            # Shot content
+            lines.append(f"SHOT {i + 1} — {shot_type['label']}:")
+            lines.append(f"Camera: {shot_type['camera']}, {CAMERA_MOVES.get(shot['camera_move'], '[Static]')}.")
+
+            # Continuity: reference previous action
+            if i > 0 and self._previous_action:
+                lines.append(f"Following from: {self._previous_action}.")
+
+            lines.append(f"{self.subject} {shot['action']}.")
+
+            # Environment with optional modifier
+            env = self.environment
+            if shot["environment_modifier"]:
+                env = f"{env}, {shot['environment_modifier']}"
+            lines.append(f"Setting: {env}.")
+
+            # Emotional beat
+            if shot["emotional_beat"]:
+                lines.append(f"Emotional tone: {shot['emotional_beat']}.")
+
+            lines.append(f"Lighting: {lighting_config['tags']}.")
+            lines.append(f"Style: {style_config['suffix'].lstrip(', ')}.")
+            lines.append(f"Duration: {shot['duration']}s.")
+
+            self._previous_action = shot["action"]
+
+        # Final consistency lock
+        if self.character_anchor:
+            lines.append("")
+            lines.append(self.character_anchor.consistency_block())
+
+        return "\n\n".join(lines)
+
+    @property
+    def shot_count(self) -> int:
+        """Return the number of shots in the chain."""
+        return len(self._shots)
+
+    def get_shot(self, index: int) -> dict[str, str] | None:
+        """Return a specific shot by index."""
+        if 0 <= index < len(self._shots):
+            return self._shots[index]
+        return None

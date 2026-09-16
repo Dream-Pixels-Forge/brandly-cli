@@ -62,6 +62,33 @@ Brandly is an **autonomous video production pipeline** that turns product ideas 
 pip install brandly-cli
 ```
 
+### Install Agent Skills
+
+Brandly ships a set of agent skills (camera language, storyboard, production bible,
+character/object/vehicle/animal/plant/mecha sheets, consistency, video generation)
+that you can install into any AI tool that supports the `npx skills` protocol:
+
+```bash
+npx skills add https://github.com/Dream-Pixels-Forge/brandly-cli/tree/main/skills
+```
+
+Available skills (see [skills/README.md](skills/README.md) for details):
+
+| Skill | Purpose |
+|-------|---------|
+| `brandly-camera` | Hollywood camera language — framing, angles, placement, composition, movement, Rembrandt/butterfly/split lighting |
+| `brandly-video-generation` | Master skill — generate AI video & images with prompt engineering |
+| `brandly-storyboard` | Plan shot-by-shot visual blueprints |
+| `brandly-production-bible` | Single source-of-truth campaign document |
+| `brandly-consistency` | Lock visual identity across all shots |
+| `brandly-character-sheet` | Character reference sheets |
+| `brandly-object-sheet` | Product/object reference sheets |
+| `brandly-location-sheet` | Location/set reference sheets |
+| `brandly-vehicle-sheet` | Vehicle reference sheets |
+| `brandly-mecha-sheet` | Mecha/robot reference sheets |
+| `brandly-animal-sheet` | Animal/creature reference sheets |
+| `brandly-plant-sheet` | Plant/botanical reference sheets |
+
 ### Configure API Keys
 
 ```bash

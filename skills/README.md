@@ -8,6 +8,7 @@ Complete reference for all agent skills in the brandly-cli skill system.
 |-------|---------|-------------|
 | [brandly-video-generation](brandly-video-generation/SKILL.md) | Master skill — generate AI video & images with prompt engineering, camera control, lighting presets | "generate video", "create video ad", "AI video generation", "cinematic prompt" |
 | [brandly-storyboard](brandly-storyboard/SKILL.md) | Plan shot-by-shot visual blueprints before generating | "storyboard", "shot list", "shot sequence", "scene breakdown" |
+| [brandly-camera](brandly-camera/SKILL.md) | Hollywood camera language — framing, angles, placement (broadcast/shadow side), composition, movement, Rembrandt/butterfly/split lighting | "camera language", "shot direction", "framing", "Rembrandt lighting", "180-degree rule", "camera placement" |
 | [brandly-production-bible](brandly-production-bible/SKILL.md) | Single source of truth document for the entire campaign | "production bible", "campaign bible", "style guide", "project document" |
 | [brandly-consistency](brandly-consistency/SKILL.md) | Lock visual identity across all shots and assets | "keep consistent", "character drifting", "lock identity", "consistency check" |
 
@@ -39,6 +40,7 @@ New Campaign →
 ```
 brandly-video-generation
   ├── brandly-storyboard        (recommended before generation)
+  ├── brandly-camera          (camera language & lighting rules)
   ├── brandly-production-bible  (recommended before generation)
   ├── brandly-consistency       (recommended for multi-shot campaigns)
   ├── brandly-character-sheet   (needed for character scenes)

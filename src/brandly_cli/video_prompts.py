@@ -674,7 +674,7 @@ class ShotChain:
         duration: int = 4,
         environment_modifier: str | None = None,
         emotional_beat: str | None = None,
-    ) -> "ShotChain":
+    ) -> ShotChain:
         """Add a shot to the chain with continuity context."""
         shot_index = len(self._shots)
         shot_data = {

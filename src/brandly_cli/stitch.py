@@ -480,7 +480,7 @@ class SceneGraph:
             scene = self._scenes[scene_id]
             transition_type = "cut"
             if i > 0:
-                prev_id = self._scene_order[i - 1]
+                self._scene_order[i - 1]
                 # Determine transition from mood
                 if scene.mood == "dramatic":
                     transition_type = "dissolve"

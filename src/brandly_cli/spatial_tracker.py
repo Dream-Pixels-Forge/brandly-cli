@@ -18,7 +18,7 @@ class Position3D:
     y: float = 0.0
     z: float = 0.0
 
-    def distance_to(self, other: "Position3D") -> float:
+    def distance_to(self, other: Position3D) -> float:
         """Calculate Euclidean distance to another position."""
         return (
             (self.x - other.x) ** 2
@@ -26,7 +26,7 @@ class Position3D:
             + (self.z - other.z) ** 2
         ) ** 0.5
 
-    def lerp(self, other: "Position3D", t: float) -> "Position3D":
+    def lerp(self, other: Position3D, t: float) -> Position3D:
         """Linear interpolation between two positions."""
         return Position3D(
             x=self.x + (other.x - self.x) * t,
@@ -39,7 +39,7 @@ class Position3D:
         return {"x": self.x, "y": self.y, "z": self.z}
 
     @classmethod
-    def from_dict(cls, d: dict[str, float]) -> "Position3D":
+    def from_dict(cls, d: dict[str, float]) -> Position3D:
         """Create from dictionary."""
         return cls(x=d.get("x", 0.0), y=d.get("y", 0.0), z=d.get("z", 0.0))
 
@@ -275,11 +275,11 @@ class SpatialTracker:
 
             # Continuity note
             if i > 0:
-                prev_camera = self._cameras[i - 1]
+                self._cameras[i - 1]
                 movement = self.get_camera_movement_vector(i - 1, i)
                 if movement and (abs(movement.x) > 0.1 or abs(movement.z) > 0.1):
                     parts.append(
-                        f"Camera moved from previous position — maintain spatial consistency"
+                        "Camera moved from previous position — maintain spatial consistency"
                     )
 
             additions.append("\n".join(parts))

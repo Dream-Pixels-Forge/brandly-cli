@@ -14,7 +14,6 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -54,7 +53,7 @@ RENDER_ENGINES: dict[int, str] = {
 }
 
 
-def _run_blender_version(blender_path: Path) -> Optional[str]:
+def _run_blender_version(blender_path: Path) -> str | None:
     """Run blender --version and return output."""
     try:
         result = subprocess.run(
@@ -69,7 +68,7 @@ def _run_blender_version(blender_path: Path) -> Optional[str]:
         return None
 
 
-def _parse_version(version_output: str) -> Optional[tuple[int, int, int]]:
+def _parse_version(version_output: str) -> tuple[int, int, int] | None:
     """Parse Blender version from --version output."""
     for line in version_output.splitlines():
         if "Blender" in line:
@@ -85,7 +84,7 @@ def _parse_version(version_output: str) -> Optional[tuple[int, int, int]]:
     return None
 
 
-def detect_blender() -> Optional[BlenderVersion]:
+def detect_blender() -> BlenderVersion | None:
     """Detect installed Blender on the system.
 
     Returns BlenderVersion if found, None otherwise.
@@ -159,13 +158,13 @@ def detect_blender() -> Optional[BlenderVersion]:
     return None
 
 
-def get_blender_path() -> Optional[Path]:
+def get_blender_path() -> Path | None:
     """Get the path to the installed Blender executable."""
     version = detect_blender()
     return version.path if version else None
 
 
-def get_blender_version_string() -> Optional[str]:
+def get_blender_version_string() -> str | None:
     """Get the Blender version as a string (e.g., '5.1.0')."""
     version = detect_blender()
     if version:

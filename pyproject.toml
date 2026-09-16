@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "brandly-cli"
-version = "0.3.9"
+version = "0.3.10"
 description = "AI product video orchestrator — add image, video, and sound generation to any AI tool"
 readme = "README.md"
 license = "MIT"
@@ -60,6 +60,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
+ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

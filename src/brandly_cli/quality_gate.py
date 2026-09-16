@@ -628,8 +628,8 @@ class PromptConsistencyChecker:
         expected_style: str | None = None,
     ) -> list[str]:
         """Check a single shot prompt for consistency issues."""
-        issues = []
-        warnings = []
+        issues: list[str] = []
+        warnings: list[str] = []
 
         # Check for character anchor presence
         if character_anchor and shot_index > 0:

@@ -61,7 +61,7 @@ def _run_blender_version(blender_path: Path) -> str | None:
             capture_output=True,
             text=True,
             timeout=10,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return result.stdout
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -129,7 +129,7 @@ def detect_blender() -> BlenderVersion | None:
             capture_output=True,
             text=True,
             timeout=10,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if result.returncode == 0:
             parsed = _parse_version(result.stdout)
@@ -210,7 +210,7 @@ def run_blender_script(
             capture_output=True,
             text=True,
             timeout=300,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         success = result.returncode == 0
         output = result.stdout if success else result.stderr

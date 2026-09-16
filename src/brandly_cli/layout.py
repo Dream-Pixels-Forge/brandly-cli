@@ -163,6 +163,67 @@ def image_category_for_subject(subject_type: str) -> str:
     return SUBJECT_TO_IMAGE_CATEGORY.get(subject_type, "general")
 
 
+# ---------------------------------------------------------------------------
+# Generated-image naming convention
+#
+# Sheet images are named by a type prefix + a slug of the subject:
+#   character sheet -> char_<name>_<ts>.png
+#   location sheet  -> loc_<name>_<ts>.png
+#   object/prop     -> prop_<name>_<ts>.png
+# Other subject types keep a readable ``<subject_type>_`` prefix.
+# ---------------------------------------------------------------------------
+
+#: Prefix used for the three primary sheet types.
+IMAGE_NAME_PREFIXES: dict[str, str] = {
+    "character": "char",
+    "location": "loc",
+    "object": "prop",
+    "prop": "prop",
+}
+
+
+def image_name_prefix(subject_type: str | None) -> str | None:
+    """Return the filename prefix for a subject type.
+
+    'character' -> 'char', 'location' -> 'loc', 'object'/'prop' -> 'prop'.
+    Unknown types fall back to the lowercased subject type itself; empty -> None.
+    """
+    if not subject_type:
+        return None
+    key = subject_type.lower()
+    if key in IMAGE_NAME_PREFIXES:
+        return IMAGE_NAME_PREFIXES[key]
+    return key or None
+
+
+def image_name_token(name: str, max_len: int = 40) -> str:
+    """Slug a subject/sheet name into a filesystem-safe token."""
+    import re
+
+    token = name.strip().lower()
+    token = re.sub(r"[\s\-]+", "_", token)
+    token = re.sub(r"[^a-z0-9_]", "", token)
+    token = re.sub(r"_+", "_", token).strip("_")
+    return token[:max_len] or "image"
+
+
+def build_sheet_filename(
+    subject_type: str | None,
+    name: str,
+    timestamp: str,
+    ext: str = ".png",
+) -> str:
+    """Build a conventional sheet-image filename.
+
+    e.g. ('character', 'Maya', '2026-01-01_000000') -> 'char_maya_2026-01-01_000000.png'
+    """
+    prefix = image_name_prefix(subject_type)
+    token = image_name_token(name)
+    if prefix:
+        return f"{prefix}_{token}_{timestamp}{ext}"
+    return f"{token}_{timestamp}{ext}"
+
+
 def ensure_project_dirs(proj_dir: Path) -> None:
     """Create the full sub-folder tree for a project (idempotent)."""
     for cat in DOC_CATEGORIES:

@@ -83,6 +83,44 @@ class TestLayoutStructure:
         assert "reference_object_1.png" in found
         assert "char_1.png" in found
 
+
+    def test_image_name_prefix_mapping(self) -> None:
+        assert layout.image_name_prefix("character") == "char"
+        assert layout.image_name_prefix("location") == "loc"
+        assert layout.image_name_prefix("object") == "prop"
+        assert layout.image_name_prefix("prop") == "prop"
+        # other subject types fall back to their lowercased name
+        assert layout.image_name_prefix("vehicle") == "vehicle"
+        assert layout.image_name_prefix("mecha") == "mecha"
+        assert layout.image_name_prefix(None) is None
+        assert layout.image_name_prefix("") is None
+
+    def test_build_sheet_filename_convention(self) -> None:
+        # character -> char_<name>
+        assert layout.build_sheet_filename(
+            "character", "Maya Lin", "2026-01-01_000000"
+        ) == "char_maya_lin_2026-01-01_000000.png"
+        # location -> loc_<name>
+        assert layout.build_sheet_filename(
+            "location", "Modern Loft", "2026-01-01_000000"
+        ) == "loc_modern_loft_2026-01-01_000000.png"
+        # object -> prop_<name>
+        assert layout.build_sheet_filename(
+            "object", "Nike Air Max 1", "2026-01-01_000000"
+        ) == "prop_nike_air_max_1_2026-01-01_000000.png"
+        # unknown type keeps a readable prefix
+        assert layout.build_sheet_filename(
+            "vehicle", "Porsche 911", "2026-01-01_000000"
+        ) == "vehicle_porsche_911_2026-01-01_000000.png"
+        # custom extension
+        assert layout.build_sheet_filename(
+            "character", "Maya", "ts", ext=".jpg"
+        ) == "char_maya_ts.jpg"
+
+    def test_image_name_token_slugifies(self) -> None:
+        assert layout.image_name_token("Nike Air Max 1") == "nike_air_max_1"
+        assert layout.image_name_token("A--B  C") == "a_b_c"
+        assert layout.image_name_token("!!!") == "image"  # no valid chars -> fallback
     def test_resolve_prefers_new_layout_and_falls_back_to_legacy(
         self, tmp_path: Path
     ) -> None:

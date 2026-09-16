@@ -821,10 +821,12 @@ def reference(
         prompt_hint=f"reference_{subject_type}_{subject}",
     )
     if saved:
-        # Rename to a stable reference_<subject_type>_<timestamp>.<ext>
+        # Rename to the conventional sheet name:
+        #   character -> char_<name>  ·  location -> loc_<name>  ·  object -> prop_<name>
         timestamp = now_iso().replace(":", "-").replace(".", "_")
         ext = saved.suffix or ".png"
-        new_path = saved.parent / f"reference_{subject_type}_{timestamp}{ext}"
+        stem = layout.build_sheet_filename(subject_type, subject, timestamp)
+        new_path = saved.parent / f"{stem}{ext}"
         try:
             saved.rename(new_path)
         except OSError:

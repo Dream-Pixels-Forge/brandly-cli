@@ -270,8 +270,9 @@ def test_reference_generates_image_and_saves_metadata(
 
     # Reference image file must exist
     refs_dir = project_dir / pid / "refs"
-    ref_files = list(refs_dir.glob("reference_object_*.png"))
-    assert len(ref_files) >= 1
+    # object sheets are named with the `prop_` prefix (see layout.build_sheet_filename)
+    ref_files = list(refs_dir.glob("prop_*.png"))
+    assert len(ref_files) >= 1, f"expected a prop_*.png in {refs_dir}"
     assert all(f.stat().st_size > 0 for f in ref_files)
 
 

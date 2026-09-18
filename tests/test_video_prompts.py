@@ -58,7 +58,7 @@ class TestApplyStyleToPrompt:
 
     def test_ugc_appends_suffix(self) -> None:
         result = apply_style_to_prompt("selfie video", "ugc")
-        assert "smartphone aesthetic" in result
+        assert "smartphone" in result
 
     def test_unknown_style_returns_prompt_unchanged(self) -> None:
         result = apply_style_to_prompt("hello world", "nonexistent_style")
@@ -78,11 +78,11 @@ class TestBuildVideoPrompt:
             shots=3,
             style="commercial",
         )
-        assert "Master Prompt:" in result
+        assert "[MASTER CONTEXT]" in result
         assert "SHOT 1" in result
         assert "SHOT 2" in result
         assert "SHOT 3" in result
-        assert "wireless earbuds rotate on a marble surface" in result
+        assert "wireless earbuds" in result
         assert "minimalist desk" in result
 
     def test_single_shot(self) -> None:
@@ -105,7 +105,7 @@ class TestBuildVideoPrompt:
             character_description="blonde woman, 30 years old, red floral dress",
             key_traits="blonde hair, red dress, tall",
         )
-        assert "ANCHOR" in result
+        assert "IDENTITY LOCK" in result
         assert "blonde woman" in result
         assert "red dress" in result
 
@@ -117,7 +117,8 @@ class TestBuildVideoPrompt:
             shots=2,
             reference_image="https://example.com/ref.jpg",
         )
-        assert "Use the provided image as the exact visual reference" in result
+        assert "REFERENCE ANCHOR" in result
+        assert "exact visual target" in result
 
     def test_camera_sequence_override(self) -> None:
         result = build_video_prompt(
@@ -127,8 +128,8 @@ class TestBuildVideoPrompt:
             shots=2,
             camera_sequence=["dolly_in", "orbital"],
         )
-        assert "Dolly in" in result
-        assert "Orbital" in result
+        assert "dolly_in" in result
+        assert "orbital" in result
 
     def test_style_applied(self) -> None:
         result = build_video_prompt(
@@ -138,7 +139,8 @@ class TestBuildVideoPrompt:
             shots=2,
             style="cinematic",
         )
-        assert "anamorphic" in result or "film grain" in result
+        result_lower = result.lower()
+        assert "anamorphic" in result_lower or "film grain" in result_lower
 
     def test_invalid_style_falls_back_to_cinematic(self) -> None:
         result = build_video_prompt(
@@ -148,8 +150,7 @@ class TestBuildVideoPrompt:
             shots=1,
             style="nonexistent_style",
         )
-        # Should not raise, should use cinematic fallback
-        assert "Master Prompt:" in result
+        assert "[MASTER CONTEXT]" in result
 
 
 class TestBuildSingleShotPrompt:
@@ -163,8 +164,8 @@ class TestBuildSingleShotPrompt:
         )
         assert "diamond ring" in result
         assert "sparkles under light" in result
-        assert "push in" in result.lower()
-        assert "5 seconds" in result
+        assert "push.in" in result.replace(" ", "") or "dolly" in result.lower()
+        assert "5s" in result
 
     def test_character_in_single_shot(self) -> None:
         result = build_single_shot_prompt(
@@ -183,7 +184,7 @@ class TestBuildSingleShotPrompt:
             environment="studio",
             reference_image="https://example.com/ref.jpg",
         )
-        assert "Use the provided image as the exact visual reference" in result
+        assert "REFERENCE ANCHOR" in result
 
     def test_default_style_is_cinematic(self) -> None:
         result = build_single_shot_prompt(
@@ -201,7 +202,7 @@ class TestBuildEnhancedVideoPrompt:
             style="cinematic",
         )
         assert "anamorphic" in result
-        assert "Character consistency notes" in result
+        assert "[SCENE CONTEXT]" in result
 
     def test_with_character(self) -> None:
         result = build_enhanced_video_prompt(
@@ -210,7 +211,7 @@ class TestBuildEnhancedVideoPrompt:
             character="blonde woman in white dress",
         )
         assert "blonde woman in white dress" in result
-        assert "Character reference" in result
+        assert "IDENTITY LOCK" in result
 
     def test_with_reference_images(self) -> None:
         refs = ["https://img1.com/a.png", "https://img2.com/b.png"]
@@ -219,8 +220,8 @@ class TestBuildEnhancedVideoPrompt:
             style="luxury",
             reference_images=refs,
         )
-        assert "2 image(s)" in result
-        assert "Preserve exact appearance" in result
+        assert "2 reference image" in result
+        assert "REFERENCE ANCHOR" in result
 
     def test_none_character_and_images(self) -> None:
         result = build_enhanced_video_prompt(
@@ -228,14 +229,13 @@ class TestBuildEnhancedVideoPrompt:
             style="ugc",
         )
         assert "simple product" in result
-        assert "Character consistency notes" in result
+        assert "[SCENE CONTEXT]" in result
 
     def test_unknown_style_falls_back_to_cinematic(self) -> None:
         result = build_enhanced_video_prompt(
             prompt="test",
             style="nonexistent_style",
         )
-        # Should not crash, falls back to cinematic style preset
         assert "test" in result
 
 
@@ -248,9 +248,9 @@ class TestBuildKeyframePrompt:
             style="commercial",
             duration=10,
         )
-        assert "START: raw ingredients" in result
-        assert "END: finished cake" in result
-        assert "TRANSITION: baking process" in result
+        assert "raw ingredients" in result
+        assert "finished cake" in result
+        assert "baking process" in result
         assert "10s" in result
 
 

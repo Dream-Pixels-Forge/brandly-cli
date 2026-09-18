@@ -466,6 +466,7 @@ def _build_shot_block(
         _motion(camera_move, action),
         f"Lighting: {LIGHTING_PRESETS.get(lighting_key, LIGHTING_PRESETS['studio'])['model_tags']}.",
         f"Color grade: {GRADE_PRESETS.get(style, GRADE_PRESETS['cinematic'])}.",
+        f"Visual style: {VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS['cinematic'])['model_tags']}",
         _material(subject),
         f"Duration: {duration}s.",
     ]
@@ -716,6 +717,14 @@ def list_lighting_presets() -> list[str]:
 
 def list_shot_types() -> list[str]:
     return list(SHOT_SPECS.keys())
+
+
+def apply_style_to_prompt(prompt: str, style: str) -> str:
+    """Append style model_tags to a prompt. Backward-compatible alias."""
+    config = VIDEO_STYLE_MODELS.get(style)
+    if not config:
+        return prompt
+    return f"{prompt}, {config['model_tags']}"
 
 
 # ---------------------------------------------------------------------------

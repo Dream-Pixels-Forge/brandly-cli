@@ -14,11 +14,11 @@ Usage:
     blender --background --python playblast_renderer.py -- --config scene.json --output ./renders
 """
 
-import bpy
 import json
 import os
 import sys
-import math
+
+import bpy
 from mathutils import Vector
 
 
@@ -234,7 +234,7 @@ def main():
 
     # Load config
     if config_path and os.path.exists(config_path):
-        with open(config_path, 'r') as f:
+        with open(config_path) as f:
             config = json.load(f)
     else:
         config = {

@@ -1,238 +1,479 @@
 """Cinematic video prompt engineering for Agnes AI.
 
-Provides shot-by-shot prompt templates with character consistency,
-camera control, lighting design, and reference image anchoring.
+Provides shot-by-shot prompt templates with explicit sectioning:
+Scene Context, Camera, Motion, Lighting, Grade, Style, and Constraints.
+Each section uses precise, model-parseable language for best generation results.
 """
 
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Character/Subject anchors for consistency
+# Section builders — each returns a single-line, model-optimized tag string
 # ---------------------------------------------------------------------------
 
-CHARACTER_ANCHOR_TEMPLATE = """\
-ANCHOR — Character: {description}
-Consistent across every shot: {key_traits}
-"""
+
+def _scene_context(environment: str, mood: str = "", scale: str = "") -> str:
+    """Build the scene context line."""
+    parts = [f"Setting: {environment}"]
+    if scale:
+        parts.append(f"Scale: {scale}")
+    if mood:
+        parts.append(f"Mood: {mood}")
+    return " | ".join(parts)
+
+
+def _camera_shot(shot_type: str, lens_mm: str, framing: str = "") -> str:
+    """Build the camera line."""
+    lens = f"{lens_mm}mm lens" if lens_mm else ""
+    parts = [f"Camera: {shot_type}"]
+    if lens:
+        parts.append(lens)
+    if framing:
+        parts.append(f"Framing: {framing}")
+    return " | ".join(parts)
+
+
+def _motion(camera_move: str, subject_action: str) -> str:
+    """Build the motion line."""
+    parts = []
+    if camera_move and camera_move != "locked_off":
+        parts.append(f"Camera motion: {camera_move}")
+    if subject_action:
+        parts.append(f"Subject action: {subject_action}")
+    return " | ".join(parts) if parts else "Camera: locked off, static"
+
+
+def _lighting(style: str, preset_key: str = "") -> str:
+    """Build the lighting line from a preset key."""
+    config = LIGHTING_PRESETS.get(preset_key or style)
+    if config:
+        return f"Lighting: {config['model_tags']}"
+    return "Lighting: balanced studio three-point, soft key, even fill"
+
+
+def _grade(style: str) -> str:
+    """Build the color grade line."""
+    config = GRADE_PRESETS.get(style)
+    if config:
+        return f"Color grade: {config}"
+    return "Color grade: natural, filmic LUT, balanced contrast"
+
+
+def _style(style: str) -> str:
+    """Build the style line."""
+    config = VIDEO_STYLE_MODELS.get(style)
+    if config:
+        return f"Visual style: {config['model_tags']}"
+    return "Visual style: cinematic commercial, high production value"
+
+
+def _constraints(style: str) -> str:
+    """Build the negative-constraint line."""
+    config = VIDEO_STYLE_MODELS.get(style)
+    if config and config.get("negatives"):
+        return f"Avoid: {config['negatives']}"
+    return "Avoid: AI artifacts, plastic skin, oversaturation, digital smear, waxy texture"
+
+
+def _material(subject: str) -> str:
+    """Build a [Material] line based on subject keywords."""
+    subject_lower = subject.lower()
+    if any(kw in subject_lower for kw in ("skin", "face", "portrait", "woman", "man", "person", "character")):
+        return "Material: realistic skin texture, subsurface scattering, natural pores, subtle imperfections"
+    if any(kw in subject_lower for kw in ("fabric", "cloth", "dress", "suit", "clothes", "wear")):
+        return "Material: realistic fabric weave, cloth micro-detail, natural draping, thread texture visible"
+    if any(kw in subject_lower for kw in ("metal", "steel", "chrome", "silver", "gold", "watch")):
+        return "Material: brushed metal anisotropy, realistic reflections, surface micro-scratches"
+    if any(kw in subject_lower for kw in ("glass", "crystal", "gem", "diamond", "water")):
+        return "Material: realistic glass refraction, caustic light patterns, fingerprint smudges"
+    if any(kw in subject_lower for kw in ("plant", "leaf", "tree", "flower", "wood")):
+        return "Material: organic surface detail, natural imperfections, realistic bark/skin/scale texture"
+    return ""
 
 
 # ---------------------------------------------------------------------------
-# Shot types library
+# Model-optimized data tables
 # ---------------------------------------------------------------------------
 
-SHOT_TYPES = {
-    "establishing": {
-        "label": "ESTABLISHING SHOT",
-        "description": "Wide-angle opening, sets location and mood",
-        "camera": "wide shot, 24mm lens, slow push in",
-    },
-    "medium": {
-        "label": "MEDIUM SHOT",
-        "description": "Standard framing at waist level",
-        "camera": "medium shot, 50mm lens, static",
-    },
-    "close_up": {
-        "label": "CLOSE-UP",
-        "description": "Intimate framing on face or product",
-        "camera": "close-up, 85mm lens, shallow depth of field",
-    },
-    "extreme_close_up": {
-        "label": "EXTREME CLOSE-UP",
-        "description": "Macro detail shot",
-        "camera": "macro close-up, 100mm lens, rack focus",
-    },
-    "low_angle": {
-        "label": "LOW ANGLE SHOT",
-        "description": "Heroic, powerful perspective",
-        "camera": "low angle, 35mm lens, tilting up",
-    },
-    "high_angle": {
-        "label": "HIGH ANGLE SHOT",
-        "description": "God's eye view, context",
-        "camera": "high angle, 24mm lens, crane down",
-    },
-    "tracking": {
-        "label": "TRACKING SHOT",
-        "description": "Camera follows subject movement",
-        "camera": "tracking shot, 50mm lens, gimbal follow",
-    },
-    "orbital": {
-        "label": "ORBITAL SHOT",
-        "description": "Camera orbits around subject",
-        "camera": "orbital shot, 35mm lens, 360-degree arc",
-    },
-    "dutch": {
-        "label": "DUTCH ANGLE",
-        "description": "Tilted camera for tension",
-        "camera": "dutch angle, 35mm lens, tilted 15 degrees",
-    },
-    "static_product": {
-        "label": "PRODUCT HERO SHOT",
-        "description": "Clean product showcase",
-        "camera": "static product shot, 50mm lens, center-framed",
-    },
-    "pov": {
-        "label": "POV SHOT",
-        "description": "Point-of-view perspective",
-        "camera": "POV shot, 35mm lens, handheld natural movement",
-    },
+SHOT_SPECS = {
+    "establishing": {"type": "extreme wide shot", "lens": "24", "framing": "full environment, subject small"},
+    "wide": {"type": "wide shot", "lens": "24", "framing": "subject + environment context"},
+    "medium": {"type": "medium shot", "lens": "50", "framing": "waist-up, centered"},
+    "medium_close": {"type": "medium close-up", "lens": "85", "framing": "chest-up portrait"},
+    "close_up": {"type": "close-up", "lens": "85", "framing": "face fills frame"},
+    "extreme_close_up": {"type": "extreme close-up", "lens": "100", "framing": "detail macro, razor-thin focus"},
+    "low_angle": {"type": "low angle shot", "lens": "35", "framing": "hero perspective, looking up"},
+    "high_angle": {"type": "high angle shot", "lens": "24", "framing": "looking down, context overhead"},
+    "over_the_shoulder": {"type": "over-the-shoulder", "lens": "50", "framing": "behind subject, focus on opposite"},
+    "pov": {"type": "POV shot", "lens": "35", "framing": "eye-level, first-person view"},
+    "aerial": {"type": "aerial/drone shot", "lens": "24", "framing": "bird's-eye, expansive"},
+    "profile": {"type": "profile/three-quarter", "lens": "50", "framing": "side or 3/4 view"},
 }
-
-
-# ---------------------------------------------------------------------------
-# Camera movement library
-# ---------------------------------------------------------------------------
 
 CAMERA_MOVES = {
-    "push_in": "[Push in] — Camera moves forward toward the subject",
-    "pull_out": "[Pull out] — Camera moves backward away from the subject",
-    "pan_left": "[Pan left] — Camera rotates horizontally left",
-    "pan_right": "[Pan right] — Camera rotates horizontally right",
-    "tilt_up": "[Tilt up] — Camera rotates vertically up",
-    "tilt_down": "[Tilt down] — Camera rotates vertically down",
-    "tracking": "[Tracking shot] — Camera follows the subject",
-    "static": "[Static shot] — Camera remains stationary",
-    "zoom_in": "[Zoom in] — Camera zooms in",
-    "zoom_out": "[Zoom out] — Camera zooms out",
-    "orbital": "[Orbital] — Camera orbits around the subject",
-    "crane_up": "[Crane up] — Camera rises vertically",
-    "crane_down": "[Crane down] — Camera lowers vertically",
-    "whip_pan": "[Whip pan] — Fast horizontal camera swing",
-    "dolly_in": "[Dolly in] — Camera physically moves closer",
-    "dolly_out": "[Dolly out] — Camera physically moves away",
-    "handheld": "[Handheld] — Natural slight camera shake",
-    "locked_off": "[Locked off] — Tripod-fixed, no movement",
+    "static": "locked off, tripod, no movement",
+    "push_in": "slow dolly push-in toward subject",
+    "pull_out": "slow dolly pull-out away from subject",
+    "track_left": "tracking shot moving left parallel to subject",
+    "track_right": "tracking shot moving right parallel to subject",
+    "tracking": "tracking shot following subject movement",
+    "orbit": "360-degree orbital arc around subject",
+    "tilt_up": "tilt up from feet to head",
+    "tilt_down": "tilt down from head to feet",
+    "pan_left": "pan left horizontally",
+    "pan_right": "pan right horizontally",
+    "crane_up": "crane rise vertically upward",
+    "crane_down": "crane drop vertically downward",
+    "whip_pan": "fast whip pan directional swing",
+    "handheld": "handheld with natural micro-movement",
+    "steadicam": "steadicam smooth glide follow",
+    "zoom_in": "optical zoom in",
+    "zoom_out": "optical zoom out",
+    "rack_focus": "rack focus shift foreground to background",
+    "locked_off": "locked off, no camera movement",
 }
-
-
-# ---------------------------------------------------------------------------
-# Lighting presets
-# ---------------------------------------------------------------------------
 
 LIGHTING_PRESETS = {
     "golden_hour": {
-        "description": "Warm late-afternoon sunlight",
-        "tags": "golden hour, warm amber light, long shadows, sun flare, cinematic bloom",
+        "model_tags": (
+            "golden hour sunlight, warm amber directional light, "
+            "long soft shadows, lens flare, cinematic bloom, "
+            "low-angle sun, warm color temperature ~3200K"
+        ),
     },
     "blue_hour": {
-        "description": "Cool twilight pre-sunset",
-        "tags": "blue hour, cool ambient light, street lamps glowing, soft fill",
+        "model_tags": (
+            "blue hour twilight, cool ambient fill light, "
+            "street lamps and practicals glowing, "
+            "soft even illumination, color temperature ~7500K"
+        ),
     },
     "studio": {
-        "description": "Clean studio three-point lighting",
-        "tags": (
-            "studio lighting, soft key light, fill from opposite side, "
-            "rim light separating subject, clean background"
-        ),
-    },
-    "neon": {
-        "description": "Urban neon glow",
-        "tags": (
-            "neon-lit, cyan and magenta reflections, wet surface bounce, "
-            "city bokeh, volumetric haze"
-        ),
-    },
-    "natural": {
-        "description": "Soft natural daylight",
-        "tags": (
-            "soft natural window light, diffused daylight, "
-            "gentle shadows, overcast atmosphere"
-        ),
-    },
-    "dramatic": {
-        "description": "High contrast chiaroscuro",
-        "tags": (
-            "dramatic side lighting, deep shadows, high contrast, "
-            "chiaroscuro effect, moody atmosphere"
+        "model_tags": (
+            "studio three-point lighting, softbox key light, "
+            "fill from opposite side at half intensity, "
+            "rim light separating subject from background, "
+            "clean even exposure, no harsh shadows"
         ),
     },
     "product_studio": {
-        "description": "Commercial product lighting",
-        "tags": (
-            "product photography lighting, clean white background, "
-            "three-point setup, soft reflections, sharp focus"
+        "model_tags": (
+            "commercial product lighting, clean white cyc background, "
+            "three-point setup with soft key, precise rim highlight, "
+            "sharp edge definition, zero background distraction"
+        ),
+    },
+    "neon": {
+        "model_tags": (
+            "neon-lit urban environment, cyan and magenta practicals, "
+            "wet surface reflections, volumetric haze, "
+            "deep shadows with colored bounce light"
+        ),
+    },
+    "natural": {
+        "model_tags": (
+            "soft natural window light, diffused overcast daylight, "
+            "gentle directional shadows, organic warmth, "
+            "no artificial fill, ambient-only exposure"
+        ),
+    },
+    "dramatic": {
+        "model_tags": (
+            "dramatic side lighting, Rembrandt triangle, "
+            "deep chiaroscuro shadows, high contrast ratio 8:1, "
+            "moody low-key exposure, controlled highlights"
         ),
     },
     "night": {
-        "description": "Nighttime with practical lights",
-        "tags": (
-            "night scene, practical light sources, moonlight blue fill, "
-            "street lights, atmospheric depth"
+        "model_tags": (
+            "night scene, practical light sources only, "
+            "moonlight blue fill at 1/4 intensity, "
+            "street lamp pools of warm light, "
+            "atmospheric depth with volumetric haze"
+        ),
+    },
+    "rembrandt": {
+        "model_tags": (
+            "Rembrandt portrait lighting, triangle of light on cheek, "
+            "dramatic side key, soft fill, classical chiaroscuro"
+        ),
+    },
+    "butterfly": {
+        "model_tags": (
+            "butterfly beauty lighting, key above and center, "
+            "shadow under nose, glamorous Paramount style, "
+            "even skin rendering, soft diffusion"
         ),
     },
 }
 
+GRADE_PRESETS = {
+    "cinematic": (
+        "teal and orange complementary grade, "
+        "lifted black points for film look, "
+        "soft highlight rolloff, subtle grain overlay, "
+        "Kodak Vision3 500T color science"
+    ),
+    "commercial": (
+        "clean commercial grade, vibrant saturated colors, "
+        "crisp midtones, balanced whites, "
+        "high-end advertising color science, "
+        "no creative tint, accurate color reproduction"
+    ),
+    "documentary": (
+        "natural documentary grade, minimal color correction, "
+        "authentic skin tones, slight teal shadows, "
+        "Leica M11 color profile, filmic contrast"
+    ),
+    "ugc": (
+        "bright social media grade, high saturation, "
+        "warm skin tones, lifted shadows, "
+        "Instagram-filter aesthetic, clean highlights"
+    ),
+    "luxury": (
+        "refined luxury grade, desaturated cool tones, "
+        "muted gold accents, high-end editorial look, "
+        "soft contrast, elegant tonal range"
+    ),
+    "action": (
+        "dynamic action grade, punchy contrast, "
+        "enhanced greens and oranges, "
+        "slightly desaturated shadows, "
+        "energetic color pop"
+    ),
+    "lifestyle": (
+        "warm lifestyle grade, golden tones, "
+        "soft contrast, inviting color palette, "
+        "natural skin tones with slight warmth"
+    ),
+}
 
-# ---------------------------------------------------------------------------
-# Style presets for video
-# ---------------------------------------------------------------------------
-
-VIDEO_STYLE_TEMPLATES = {
+VIDEO_STYLE_MODELS = {
     "commercial": {
-        "suffix": (
-            ", commercial quality, clean product focus, professional color grading, "
-            "high-end advertisement aesthetic, crisp details, polished finish"
+        "model_tags": (
+            "commercial quality, clean product focus, professional color grading, "
+            "high-end advertisement aesthetic, crisp details, polished finish, "
+            "studio lighting, sharp focus on hero element"
+        ),
+        "negatives": (
+            "AI slop, plastic skin, oversaturated colors, "
+            "digital smear, noisy artifacts, flat lighting"
         ),
         "lighting": "studio",
-        "camera_default": "static_product",
     },
     "cinematic": {
-        "suffix": (
-            ", cinematic film look, anamorphic lens flares, 2.39:1 widescreen, "
-            "film grain texture, rich color grading, dramatic contrast, "
-            "Hollywood production value"
+        "model_tags": (
+            "cinematic film look, anamorphic lens characteristics, "
+            "2.39:1 widescreen aspect, film grain texture, "
+            "rich color grading, dramatic contrast, Hollywood production value, "
+            "Kodak Vision3 500T film stock, depth of field separation"
+        ),
+        "negatives": (
+            "flat digital look, oversaturated, plastic skin, "
+            "uncanny valley, airbrushed, cartoonish, low budget"
         ),
         "lighting": "golden_hour",
-        "camera_default": "medium",
     },
     "documentary": {
-        "suffix": (
-            ", documentary style, natural available light, hand-held camera work, "
-            "authentic moments, raw and unpolished aesthetic, Leica M11 50mm look"
+        "model_tags": (
+            "documentary realism, available natural light, "
+            "hand-held camera aesthetic, authentic moments, "
+            "raw unpolished look, Leica M11 50mm summilux character, "
+            "photojournalistic composition, candid framing"
+        ),
+        "negatives": (
+            "staged posing, artificial lighting, "
+            "overproduced, studio gloss, plastic skin"
         ),
         "lighting": "natural",
-        "camera_default": "tracking",
     },
     "ugc": {
-        "suffix": (
-            ", smartphone aesthetic, vertical 9:16, casual authentic style, "
-            "natural lighting, candid moments, TikTok/Instagram Reels quality, "
-            "relatable vibe"
+        "model_tags": (
+            "smartphone-native aesthetic, vertical 9:16 composition, "
+            "casual authentic vibe, natural lighting, "
+            "candid moments, TikTok/Instagram Reels quality, "
+            "relatable everyday feel, unscripted energy"
+        ),
+        "negatives": (
+            "overproduced, studio lighting, "
+            "formal posing, cinematic gloss, professional setup"
         ),
         "lighting": "natural",
-        "camera_default": "medium",
     },
     "luxury": {
-        "suffix": (
-            ", luxury branding, elegant slow motion, premium product showcase, "
-            "minimalist composition, refined color palette, high-fashion aesthetic, "
-            "soft diffusion"
+        "model_tags": (
+            "luxury branding aesthetic, elegant slow motion, "
+            "premium product showcase, minimalist composition, "
+            "refined desaturated color palette, high-fashion editorial, "
+            "soft optical diffusion, expensive feel"
+        ),
+        "negatives": (
+            "cheap-looking, cluttered composition, "
+            "oversaturated, plastic sheen, low production value"
         ),
         "lighting": "studio",
-        "camera_default": "static_product",
     },
     "action": {
-        "suffix": (
-            ", dynamic action sequence, fast-paced editing feel, motion blur, "
-            "energetic camera work, intense atmosphere, high-energy cinematography"
+        "model_tags": (
+            "dynamic action sequence, fast temporal energy, "
+            "motion blur on fast elements, energetic camera work, "
+            "intense atmosphere, high-energy cinematography, "
+            "quick cuts feel within single take, dramatic shadows"
+        ),
+        "negatives": (
+            "static, boring, lifeless, "
+            "slow pacing, flat lighting, no energy"
         ),
         "lighting": "dramatic",
-        "camera_default": "tracking",
     },
     "lifestyle": {
-        "suffix": (
-            ", lifestyle photography, aspirational setting, warm inviting atmosphere, "
-            "natural interactions, candid beautiful moments, Instagram aesthetic"
+        "model_tags": (
+            "lifestyle photography, aspirational setting, "
+            "warm inviting atmosphere, natural interactions, "
+            "candid beautiful moments, Instagram aesthetic, "
+            "golden hour warmth, relatable premium feel"
+        ),
+        "negatives": (
+            "staged, artificial, "
+            "overly perfect, cold lighting, studio feel"
         ),
         "lighting": "golden_hour",
-        "camera_default": "medium",
+    },
+    "montage": {
+        "model_tags": (
+            "montage sequence, rapid visual rhythm, "
+            "dynamic transitions, varied shot sizes, "
+            "energetic pacing, visually compelling progression"
+        ),
+        "negatives": (
+            "monotonous, static, "
+            "repetitive framing, no energy variation"
+        ),
+        "lighting": "studio",
+    },
+    "multi_shot": {
+        "model_tags": (
+            "multi-shot campaign, varied perspectives, "
+            "consistent identity across shots, "
+            "cohesive visual language, narrative progression"
+        ),
+        "negatives": (
+            "inconsistent identity, varying lighting between shots, "
+            "disconnected visual language"
+        ),
+        "lighting": "studio",
+    },
+    "continuous": {
+        "model_tags": (
+            "single continuous shot, unbroken takes, "
+            "seamless camera choreography, real-time unfolding, "
+            "immersive uninterrupted experience"
+        ),
+        "negatives": (
+            "visible cuts, jump cuts, "
+            "edited rhythm, fragmented timeline"
+        ),
+        "lighting": "natural",
+    },
+    "unboxing": {
+        "model_tags": (
+            "product unboxing reveal, hands opening packaging, "
+            "smooth reveal motion, clean product presentation, "
+            "satisfying unboxing cadence, focused on product details"
+        ),
+        "negatives": (
+            "messy packaging, unclear product reveal, "
+            "poor lighting on product, distracting background"
+        ),
+        "lighting": "product_studio",
+    },
+    "brand_short_video": {
+        "model_tags": (
+            "brand short video, concise narrative arc, "
+            "strong hook in first 2 seconds, clear product benefit, "
+            "memorable visual moment, brand-consistent aesthetic"
+        ),
+        "negatives": (
+            "rambling narrative, weak opening, "
+            "unclear product focus, generic content"
+        ),
+        "lighting": "studio",
+    },
+    "explainer_video": {
+        "model_tags": (
+            "explainer video style, clear information delivery, "
+            "visual demonstration of concept, clean graphics overlay, "
+            "educational but engaging tone, focused subject"
+        ),
+        "negatives": (
+            "confusing visuals, cluttered composition, "
+            "unclear messaging, distracting elements"
+        ),
+        "lighting": "studio",
+    },
+    "collage_motion_graphic": {
+        "model_tags": (
+            "motion collage aesthetic, mixed-media composition, "
+            "layered visual elements, kinetic typography feel, "
+            "editorial design sensibility, dynamic graphic rhythm"
+        ),
+        "negatives": (
+            "plain static composition, "
+            "no motion design, overly photographic"
+        ),
+        "lighting": "studio",
     },
 }
 
+# ---------------------------------------------------------------------------
+# Character anchors — model-parseable identity locks
+# ---------------------------------------------------------------------------
+
+CHARACTER_ANCHOR_TEMPLATE = """\
+[IDENTITY LOCK]
+Subject: {description}
+Fixed traits: {key_traits}
+Do not vary: hair color, face shape, clothing colors, body type, accessories.
+Maintain identical appearance across every frame.
+"""
 
 # ---------------------------------------------------------------------------
-# Prompt builder
+# Prompt builders — sectioned, model-optimized output
 # ---------------------------------------------------------------------------
+
+
+def _build_shot_block(
+    shot_index: int,
+    subject: str,
+    action: str,
+    environment: str,
+    mood: str,
+    scale: str,
+    shot_type_key: str,
+    camera_move: str,
+    style: str,
+    character_anchor: str,
+    duration: int,
+) -> str:
+    """Build a single shot block with explicit sections."""
+    spec = SHOT_SPECS.get(shot_type_key, SHOT_SPECS["medium"])
+    lighting_key = VIDEO_STYLE_MODELS.get(style, {}).get("lighting", "studio")
+
+    lines = [
+        f"SHOT {shot_index}",
+        _scene_context(environment, mood, scale),
+        _camera_shot(spec["type"], spec["lens"], spec["framing"]),
+        _motion(camera_move, action),
+        f"Lighting: {LIGHTING_PRESETS.get(lighting_key, LIGHTING_PRESETS['studio'])['model_tags']}.",
+        f"Color grade: {GRADE_PRESETS.get(style, GRADE_PRESETS['cinematic'])}.",
+        _material(subject),
+        f"Duration: {duration}s.",
+    ]
+
+    if character_anchor:
+        lines.append(character_anchor)
+
+    return "\n".join(lines)
 
 
 def build_video_prompt(
@@ -247,27 +488,25 @@ def build_video_prompt(
     reference_image: str | None = None,
     duration_per_shot: int = 4,
     camera_sequence: list[str] | None = None,
+    moods: list[str] | None = None,
 ) -> str:
-    """Build a professional multi-shot video prompt for Agnes AI.
+    """Build a professional multi-shot video prompt with explicit sections.
 
-    Args:
-        subject: Main subject (person, product, or object)
-        action: What the subject does
-        environment: Where the scene takes place
-        shots: Number of shots (1-6 for best results)
-        style: Video style preset (commercial, cinematic, etc.)
-        character_description: Detailed character appearance for consistency
-        key_traits: Key visual traits that must stay consistent
-        reference_image: URL of reference image to anchor the scene
-        duration_per_shot: Seconds per shot
-        camera_sequence: Override camera moves for each shot
+    Each shot is structured as:
+      SHOT N
+      Setting: ... | Scale: ... | Mood: ...
+      Camera: ... | Lens: ...mm | Framing: ...
+      Motion: ... | Subject: ...
+      Lighting: ...
+      Color grade: ...
+      Duration: Ns.
     """
-    style_config = VIDEO_STYLE_TEMPLATES.get(style, VIDEO_STYLE_TEMPLATES["cinematic"])
-    lighting_config = LIGHTING_PRESETS.get(
-        style_config["lighting"], LIGHTING_PRESETS["golden_hour"]
-    )
+    style_config = VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS["cinematic"])
+    shot_keys = list(SHOT_SPECS.keys())
+    move_keys = list(CAMERA_MOVES.keys())
+    camera_moves = camera_sequence or move_keys[:shots]
+    shot_types = shot_keys[:shots]
 
-    # Build subject anchor if character info provided
     character_anchor = ""
     if character_description:
         traits = key_traits or "distinctive features, clothing, proportions"
@@ -276,57 +515,55 @@ def build_video_prompt(
             key_traits=traits,
         )
 
-    # Reference image anchor
     reference_anchor = ""
     if reference_image:
         reference_anchor = (
-            "Use the provided image as the exact visual reference. "
-            "Every shot preserves the lighting, color grade, and composition of the reference.\n\n"
+            "[REFERENCE ANCHOR]\n"
+            "Use the provided image as the exact visual target.\n"
+            "Preserve: lighting direction, color temperature, subject position, "
+            "composition framing, and atmospheric mood from the reference.\n"
         )
 
-    # Build shots
     shot_lines = []
-    camera_moves = camera_sequence or list(CAMERA_MOVES.keys())[:shots]
-
     for i in range(shots):
-        shot_type = SHOT_TYPES.get(
-            list(SHOT_TYPES.keys())[i % len(SHOT_TYPES)],
-            "medium",
+        mood = (moods[i] if moods and i < len(moods) else "")
+        block = _build_shot_block(
+            shot_index=i + 1,
+            subject=subject,
+            action=action,
+            environment=environment,
+            mood=mood,
+            scale="",
+            shot_type_key=shot_types[i % len(shot_types)],
+            camera_move=camera_moves[i % len(camera_moves)],
+            style=style,
+            character_anchor=character_anchor if i == 0 else "",
+            duration=duration_per_shot,
         )
-        if isinstance(shot_type, str):
-            shot_type = SHOT_TYPES[shot_type]
-        move = camera_moves[i % len(camera_moves)]
-        move_desc = CAMERA_MOVES.get(move, "[Static shot]")
+        shot_lines.append(block)
 
-        shot_line = (
-            f"SHOT {i + 1} — {shot_type['label']}:\n"
-            f"{reference_anchor if i == 0 else ''}"
-            f"{character_anchor if i == 0 else ''}"
-            f"The camera {shot_type['camera']}, {move_desc}.\n"
-            f"{subject} {action}.\n"
-            f"The scene is set in {environment}.\n"
-            f"Lighting: {lighting_config['tags']}.\n"
-            f"{style_config['suffix']}\n"
-            f"Duration: {duration_per_shot}s."
-        )
-        shot_lines.append(shot_line)
-
-    master_prompt = (
-        f"Master Prompt: {subject} {action} in {environment} — {style} commercial video\n\n"
-        + "\n\n".join(shot_lines)
+    master = (
+        f"[MASTER CONTEXT]\n"
+        f"Product/Subject: {subject}\n"
+        f"Action: {action}\n"
+        f"Environment: {environment}\n"
+        f"Style: {style}\n"
+        f"Total shots: {shots}\n\n"
     )
 
-    # Clean up any double-style suffixes
-    import re
+    if reference_anchor:
+        master += reference_anchor + "\n"
 
-    master_prompt = re.sub(
-        r",\s*(commercial|cinematic|documentary|ugc|luxury|action|lifestyle)\s+quality,",
-        " ",
-        master_prompt,
+    master += "\n\n".join(shot_lines)
+
+    # Add constraints block at the end
+    master += (
+        f"\n\n[CONSTRAINTS]\n"
+        f"Avoid: {style_config['negatives']}\n"
+        f"Negative prompt: {style_config['negatives']}"
     )
-    master_prompt = re.sub(r"\s{2,}", " ", master_prompt).strip()
 
-    return master_prompt
+    return master
 
 
 def build_single_shot_prompt(
@@ -339,32 +576,39 @@ def build_single_shot_prompt(
     duration: int = 5,
     reference_image: str | None = None,
     character_description: str | None = None,
+    shot_type: str = "medium",
+    mood: str = "",
 ) -> str:
-    """Build a single high-quality shot prompt for Agnes AI."""
-    style_config = VIDEO_STYLE_TEMPLATES.get(style, VIDEO_STYLE_TEMPLATES["cinematic"])
-    lighting_config = LIGHTING_PRESETS.get(
-        style_config["lighting"], LIGHTING_PRESETS["golden_hour"]
-    )
-    camera_desc = CAMERA_MOVES.get(camera, "[Static shot]")
+    """Build a single high-quality shot prompt with explicit sections."""
+    style_config = VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS["cinematic"])
+    lighting_key = style_config.get("lighting", "studio")
+    spec = SHOT_SPECS.get(shot_type, SHOT_SPECS["medium"])
 
-    lines = []
-    if reference_image:
-        lines.append("Use the provided image as the exact visual reference.")
+    lines = [
+        "[SCENE CONTEXT]",
+        f"Subject: {subject}",
+        f"Action: {action}",
+        f"Setting: {environment}",
+        f"Camera: {spec['type']}, {spec['lens']}mm lens, {spec['framing']}",
+        f"Motion: {CAMERA_MOVES.get(camera, 'locked off')}",
+        f"Lighting: {LIGHTING_PRESETS.get(lighting_key, LIGHTING_PRESETS['studio'])['model_tags']}.",
+        f"Color grade: {GRADE_PRESETS.get(style, GRADE_PRESETS['cinematic'])}.",
+        _material(subject),
+        f"Visual style: {style_config['model_tags']}",
+        f"Duration: {duration}s.",
+    ]
+
     if character_description:
-        lines.append(character_description)
-    lines.append(f"A {style} scene featuring {subject}.")
-    lines.append(f"{subject} {action}.")
-    lines.append(f"The scene takes place in {environment}.")
-    lines.append(f"The camera {camera_desc}.")
-    lines.append(f"Lighting: {lighting_config['tags']}.")
-    # Avoid duplicating style in suffix
-    suffix = style_config["suffix"]
-    if suffix.startswith(","):
-        suffix = suffix[1:].strip()
-    lines.append(suffix)
-    lines.append(f"Duration: {duration} seconds.")
+        traits = "distinctive features, clothing, proportions"
+        lines.insert(1, f"[IDENTITY LOCK] Subject: {character_description} | Fixed traits: {traits}")
 
-    return "\n\n".join(lines)
+    if reference_image:
+        lines.insert(1, "[REFERENCE ANCHOR] Use provided image as exact visual target.")
+
+    lines.append(f"[CONSTRAINTS] Avoid: {style_config['negatives']}")
+    lines.append(f"Negative prompt: {style_config['negatives']}")
+
+    return "\n".join(lines)
 
 
 def build_keyframe_prompt(
@@ -375,20 +619,25 @@ def build_keyframe_prompt(
     style: str = "cinematic",
     duration: int = 5,
 ) -> str:
-    """Build a prompt for keyframe-to-keyframe video generation."""
-    style_config = VIDEO_STYLE_TEMPLATES.get(style, VIDEO_STYLE_TEMPLATES["cinematic"])
-    lighting_config = LIGHTING_PRESETS.get(
-        style_config["lighting"], LIGHTING_PRESETS["golden_hour"]
-    )
+    """Build a keyframe-to-keyframe prompt with explicit sections."""
+    style_config = VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS["cinematic"])
+    lighting_key = style_config.get("lighting", "studio")
 
     return (
-        f"Keyframe transition video:\n\n"
-        f"START: {first_frame_subject}\n\n"
-        f"END: {last_frame_subject}\n\n"
-        f"TRANSITION: {transformation}\n\n"
-        f"Style: {style_config['suffix']}\n"
-        f"Lighting: {lighting_config['tags']}\n"
-        f"Duration: {duration}s."
+        f"[KEYFRAME TRANSITION]\n"
+        f"Start frame: {first_frame_subject}\n"
+        f"End frame: {last_frame_subject}\n"
+        f"Transformation: {transformation}\n\n"
+        f"[SCENE CONTEXT]\n"
+        f"Camera: 50mm lens, medium shot\n"
+        f"Motion: smooth morph transition\n"
+        f"Lighting: {LIGHTING_PRESETS.get(lighting_key, LIGHTING_PRESETS['studio'])['model_tags']}.\n"
+        f"Color grade: {GRADE_PRESETS.get(style, GRADE_PRESETS['cinematic'])}.\n"
+        f"Visual style: {style_config['model_tags']}\n"
+        f"Duration: {duration}s.\n\n"
+        f"[CONSTRAINTS]\n"
+        f"Avoid: {style_config['negatives']}\n"
+        f"Negative prompt: {style_config['negatives']}"
     )
 
 
@@ -398,10 +647,8 @@ def build_product_showcase_prompt(
     setting: str,
     *,
     shots: int = 4,
-    hero_angle: str = "front",
 ) -> str:
     """Build a product showcase prompt with consistent hero shots."""
-
     return build_video_prompt(
         subject=product_name,
         action="is showcased and displayed elegantly",
@@ -420,149 +667,90 @@ def build_enhanced_video_prompt(
     character: str | None = None,
     reference_images: list[str] | None = None,
 ) -> str:
-    """Enhance a video prompt with style preset and consistency hints.
-
-    Deduplicated from Director.generate_video and CLI video command.
-    """
+    """Enhance a raw prompt with style-specific sections and constraints."""
     from brandly_cli.style_presets import apply_style_preset
 
     enhanced = apply_style_preset(prompt, style)
-    enhanced += (
-        "\n\nCharacter consistency notes: Maintain identical appearance, clothing, "
-        "and physical features across all shots. No identity drift. Same object "
-        "properties (color, texture, size) in every frame."
-    )
+
+    style_config = VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS["cinematic"])
+    lighting_key = style_config.get("lighting", "studio")
+
+    sections = [
+        f"[SCENE CONTEXT] {prompt}",
+        f"[LIGHTING] {LIGHTING_PRESETS.get(lighting_key, LIGHTING_PRESETS['studio'])['model_tags']}.",
+        f"[COLOR GRADE] {GRADE_PRESETS.get(style, GRADE_PRESETS['cinematic'])}.",
+        f"[VISUAL STYLE] {style_config['model_tags']}",
+    ]
+
     if character:
-        enhanced += (
-            f"\n\nCharacter reference: {character}. "
-            "Maintain this exact appearance across all frames."
-        )
+        sections.append(f"[IDENTITY LOCK] Character: {character}. Maintain identical appearance across all frames. No drift.")
+
     if reference_images:
-        enhanced += (
-            f"\n\nReference images provided: {len(reference_images)} image(s). "
+        sections.append(
+            f"[REFERENCE ANCHOR] {len(reference_images)} reference image(s) provided. "
             "Preserve exact appearance, lighting, and composition from references."
         )
-    return enhanced
+
+    sections.append(f"[CONSTRAINTS] Avoid: {style_config['negatives']}")
+    sections.append(f"Negative prompt: {style_config['negatives']}")
+
+    return "\n".join(sections)
 
 
-def apply_style_to_prompt(prompt: str, style: str) -> str:
-    """Append style suffix to an existing prompt."""
-    style_config = VIDEO_STYLE_TEMPLATES.get(style)
-    if not style_config:
-        return prompt
-    return f"{prompt}{style_config['suffix']}"
+# ---------------------------------------------------------------------------
+# Utility
+# ---------------------------------------------------------------------------
 
 
 def list_video_styles() -> list[str]:
-    """Return available video style names."""
-    return list(VIDEO_STYLE_TEMPLATES.keys())
+    return list(VIDEO_STYLE_MODELS.keys())
 
 
 def list_camera_moves() -> list[str]:
-    """Return available camera move names."""
     return list(CAMERA_MOVES.keys())
 
 
 def list_lighting_presets() -> list[str]:
-    """Return available lighting preset names."""
     return list(LIGHTING_PRESETS.keys())
 
 
 def list_shot_types() -> list[str]:
-    """Return available shot type names."""
-    return list(SHOT_TYPES.keys())
+    return list(SHOT_SPECS.keys())
 
 
 # ---------------------------------------------------------------------------
-# Realism boosters — skin, materials, lighting, film stock
+# Realism boosters — material, lighting, film stock, lens effects
 # ---------------------------------------------------------------------------
 
 REALISM_BOOSTERS = {
     "skin": {
-        "natural": (
-            "realistic skin texture, subsurface scattering, "
-            "natural skin pores, subtle imperfections, no airbrushing"
-        ),
-        "editorial": (
-            "editorial beauty skin, soft diffused lighting, "
-            "flawless but natural complexion, minimal makeup"
-        ),
-        "gritty": (
-            "weathered skin, visible pores, sweat droplets, "
-            "natural blemishes, authentic texture"
-        ),
+        "natural": "realistic skin texture, subsurface scattering, natural pores, subtle imperfections, no airbrushing",
+        "editorial": "editorial beauty skin, soft diffused lighting, flawless but natural complexion, minimal makeup",
+        "gritty": "weathered skin, visible pores, sweat droplets, natural blemishes, authentic texture",
     },
     "materials": {
-        "fabric": (
-            "realistic fabric weave, cloth micro-detail, "
-            "natural fabric draping, thread texture visible"
-        ),
-        "metal": (
-            "brushed metal anisotropy, realistic reflections, "
-            "surface scratches, fingerprints on chrome"
-        ),
-        "glass": (
-            "realistic glass refraction, caustic light patterns, "
-            "fingerprint smudges, dust particles in glass"
-        ),
-        "organic": (
-            "organic surface detail, natural imperfections, "
-            "realistic bark/skin/scale texture"
-        ),
+        "fabric": "realistic fabric weave, cloth micro-detail, natural draping, thread texture visible",
+        "metal": "brushed metal anisotropy, realistic reflections, surface micro-scratches, chrome fingerprints",
+        "glass": "realistic glass refraction, caustic light patterns, fingerprint smudges, dust particles",
+        "organic": "organic surface detail, natural imperfections, realistic bark/skin/scale texture",
     },
     "lighting": {
-        "global_illumination": (
-            "global illumination, realistic light bounce, "
-            "color bleeding from surfaces, ambient occlusion"
-        ),
-        "volumetric": (
-            "volumetric lighting, atmospheric haze, "
-            "light shafts through particles, god rays"
-        ),
-        "practical": (
-            "practical lighting only, visible light sources, "
-            "realistic falloff, no artificial fill"
-        ),
+        "global_illumination": "global illumination, realistic light bounce, color bleeding from surfaces, ambient occlusion",
+        "volumetric": "volumetric lighting, atmospheric haze, light shafts through particles, god rays",
+        "practical": "practical lighting only, visible light sources, realistic falloff, no artificial fill",
     },
     "film_stock": {
-        "kodak_portra_400": (
-            "Kodak Portra 400 film stock, warm skin tones, "
-            "soft pastel colors, fine grain, natural highlights"
-        ),
-        "kodak_vision3_500t": (
-            "Kodak Vision3 500T tungsten film, cinema look, "
-            "rich shadows, controlled highlights, cinematic grain"
-        ),
-        "fuji_pro_400h": (
-            "Fuji Pro 400H film stock, cool tones, "
-            "soft greens, airy highlights, fine grain structure"
-        ),
-        "cinestill_800t": (
-            "CineStill 800T film stock, tungsten halation, "
-            "glowing highlights, red halation around lights, cinematic"
-        ),
-        "digital_clean": (
-            "clean digital capture, no visible noise, "
-            "maximum sharpness, clinical precision"
-        ),
+        "kodak_portra_400": "Kodak Portra 400 film stock, warm skin tones, soft pastels, fine grain, natural highlights",
+        "kodak_vision3_500t": "Kodak Vision3 500T tungsten film, cinema look, rich shadows, controlled highlights, cinematic grain",
+        "fuji_pro_400h": "Fuji Pro 400H film stock, cool tones, soft greens, airy highlights, fine grain structure",
+        "cinestill_800t": "CineStill 800T film stock, tungsten halation, glowing highlights, red halation around lights",
+        "digital_clean": "clean digital capture, no visible noise, maximum sharpness, clinical precision",
     },
     "lens_effects": {
-        "anamorphic": (
-            "anamorphic lens flare, oval bokeh, "
-            "horizontal streak flares, cinematic widescreen"
-        ),
-        "vintage": (
-            "vintage lens softness, chromatic aberration, "
-            "swirly bokeh, warm color cast"
-        ),
-        "macro": (
-            "macro lens detail, razor-thin depth of field, "
-            "extreme close-up sharpness, background blur"
-        ),
-        "tilt_shift": (
-            "tilt-shift miniature effect, selective focus, "
-            "miniature world aesthetic"
-        ),
+        "anamorphic": "anamorphic lens flare, oval bokeh, horizontal streak flares, cinematic widescreen aspect",
+        "vintage": "vintage lens softness, chromatic aberration, swirly bokeh, warm color cast",
+        "macro": "macro lens detail, razor-thin depth of field, extreme close-up sharpness, background blur",
+        "tilt_shift": "tilt-shift miniature effect, selective focus plane, miniature world aesthetic",
     },
 }
 
@@ -572,11 +760,7 @@ REALISM_BOOSTERS = {
 # ---------------------------------------------------------------------------
 
 class CharacterAnchorSystem:
-    """Locks character appearance across multiple shots.
-
-    Ensures the same character description, key traits, and visual identity
-    are injected into every shot prompt to prevent drift.
-    """
+    """Locks character appearance across multiple shots."""
 
     def __init__(
         self,
@@ -591,64 +775,52 @@ class CharacterAnchorSystem:
         self.prop_anchors = prop_anchors or {}
 
     def anchor_for_shot(self, shot_index: int) -> str:
-        """Generate the anchor block for a specific shot.
-
-        Shot 0 gets the full anchor with reference image.
-        Subshots get a condensed anchor to reinforce consistency.
-        """
         lines = []
-
         if shot_index == 0:
-            lines.append("ANCHOR — Establishing character identity:")
-            lines.append(f"Character: {self.character_description}")
+            lines.append("[IDENTITY LOCK — Shot 1: Establishing]")
+            lines.append(f"Subject: {self.character_description}")
             if self.key_traits:
-                lines.append(f"Key traits to preserve: {', '.join(self.key_traits)}")
+                lines.append(f"Fixed traits: {', '.join(self.key_traits)}")
             if self.reference_image:
                 lines.append(
-                    "Use the provided reference image as the exact visual target. "
-                    "Match appearance, lighting, and composition."
+                    "REFERENCE: Match exact appearance, lighting, and composition "
+                    "from the provided reference image."
                 )
         else:
-            lines.append(f"ANCHOR — Character continuity (shot {shot_index + 1}):")
-            lines.append(f"Same character: {self.character_description}")
+            lines.append(f"[IDENTITY LOCK — Shot {shot_index + 1}: Continuity]")
+            lines.append(f"Same subject: {self.character_description}")
             if self.key_traits:
                 lines.append(f"Preserve: {', '.join(self.key_traits)}")
             lines.append("No identity drift. Match previous shot exactly.")
 
-        # Prop anchors
         for prop_name, prop_desc in self.prop_anchors.items():
-            lines.append(f"Prop '{prop_name}': {prop_desc}")
+            lines.append(f"PROP '{prop_name}': {prop_desc}")
 
         return "\n".join(lines)
 
     def consistency_block(self) -> str:
-        """Return a standalone consistency reminder for the end of each shot."""
         traits_str = ", ".join(self.key_traits) if self.key_traits else "appearance, clothing, proportions"
         return (
-            f"CONSISTENCY LOCK: {self.character_description}. "
-            f"Must match: {traits_str}. "
+            f"[CONSISTENCY LOCK] Subject: {self.character_description}\n"
+            f"Must match: {traits_str}\n"
             "No drift, no variation, identical identity across all shots."
         )
 
 
 # ---------------------------------------------------------------------------
-# Shot chain — narrative coherency across shots
+# Shot chain — narrative coherence across shots
 # ---------------------------------------------------------------------------
 
 class ShotChain:
-    """Builds prompts sequentially with continuity hooks.
-
-    Ensures narrative flow by carrying forward context from previous shots
-    and adding transition cues between shots.
-    """
+    """Builds prompts sequentially with continuity hooks."""
 
     TRANSITIONS = {
-        "cut": "Cut to",
-        "dissolve": "Dissolve to",
-        "match_cut": "Match cut to",
-        "whip_pan": "Whip pan to",
-        "cross_dissolve": "Cross-dissolve to",
-        "jump_cut": "Jump cut to",
+        "cut": "CUT TO",
+        "dissolve": "DISSOLVE TO",
+        "match_cut": "MATCH CUT TO",
+        "whip_pan": "WHIP PAN TO",
+        "cross_dissolve": "CROSS DISSOLVE TO",
+        "jump_cut": "JUMP CUT TO",
     }
 
     def __init__(
@@ -675,9 +847,8 @@ class ShotChain:
         environment_modifier: str | None = None,
         emotional_beat: str | None = None,
     ) -> ShotChain:
-        """Add a shot to the chain with continuity context."""
         shot_index = len(self._shots)
-        shot_data = {
+        self._shots.append({
             "index": str(shot_index),
             "type": shot_type,
             "action": action,
@@ -686,78 +857,76 @@ class ShotChain:
             "duration": str(duration),
             "environment_modifier": environment_modifier or "",
             "emotional_beat": emotional_beat or "",
-        }
-        self._shots.append(shot_data)
+        })
         self._previous_action = action
         return self
 
     def build_prompt(self) -> str:
-        """Build the complete chained prompt with continuity."""
         if not self._shots:
             return ""
 
-        style_config = VIDEO_STYLE_TEMPLATES.get(self.style, VIDEO_STYLE_TEMPLATES["cinematic"])
-        lighting_config = LIGHTING_PRESETS.get(
-            style_config["lighting"], LIGHTING_PRESETS["golden_hour"]
-        )
+        style_config = VIDEO_STYLE_MODELS.get(self.style, VIDEO_STYLE_MODELS["cinematic"])
+        lighting_key = style_config.get("lighting", "studio")
 
-        lines = []
-        lines.append(f"CHAIN: {self.subject} in {self.environment} — {self.style} sequence")
-        lines.append("")
+        lines = [
+            f"[MASTER CONTEXT]",
+            f"Subject: {self.subject}",
+            f"Environment: {self.environment}",
+            f"Style: {self.style}",
+            f"Total shots: {len(self._shots)}",
+            "",
+        ]
 
         for i, shot in enumerate(self._shots):
-            shot_type = SHOT_TYPES.get(shot["type"], SHOT_TYPES["medium"])
-            transition_word = self.TRANSITIONS.get(shot["transition"], "Cut to")
+            shot_spec = SHOT_SPECS.get(shot["type"], SHOT_SPECS["medium"])
+            transition_word = self.TRANSITIONS.get(shot["transition"], "CUT TO")
 
-            # Add transition cue (except for first shot)
             if i > 0:
-                lines.append(f"\n--- {transition_word} next shot ---\n")
+                lines.append(f"--- {transition_word} ---")
 
-            # Character anchor
             if self.character_anchor:
                 lines.append(self.character_anchor.anchor_for_shot(i))
                 lines.append("")
 
-            # Shot content
-            lines.append(f"SHOT {i + 1} — {shot_type['label']}:")
-            lines.append(f"Camera: {shot_type['camera']}, {CAMERA_MOVES.get(shot['camera_move'], '[Static]')}.")
+            lines.extend([
+                f"[SHOT {i + 1}]",
+                f"Setting: {self.environment}{f', {shot['environment_modifier']}' if shot['environment_modifier'] else ''}",
+                f"Camera: {shot_spec['type']}, {shot_spec['lens']}mm lens, {shot_spec['framing']}",
+                f"Motion: {CAMERA_MOVES.get(shot['camera_move'], 'locked off')}",
+                f"Subject action: {self.subject} {shot['action']}.",
+                f"Lighting: {LIGHTING_PRESETS.get(lighting_key, LIGHTING_PRESETS['studio'])['model_tags']}.",
+                f"Color grade: {GRADE_PRESETS.get(self.style, GRADE_PRESETS['cinematic'])}.",
+                _material(self.subject),
+                f"Duration: {shot['duration']}s.",
+            ])
 
-            # Continuity: reference previous action
-            if i > 0 and self._previous_action:
-                lines.append(f"Following from: {self._previous_action}.")
-
-            lines.append(f"{self.subject} {shot['action']}.")
-
-            # Environment with optional modifier
-            env = self.environment
-            if shot["environment_modifier"]:
-                env = f"{env}, {shot['environment_modifier']}"
-            lines.append(f"Setting: {env}.")
-
-            # Emotional beat
             if shot["emotional_beat"]:
-                lines.append(f"Emotional tone: {shot['emotional_beat']}.")
-
-            lines.append(f"Lighting: {lighting_config['tags']}.")
-            lines.append(f"Style: {style_config['suffix'].lstrip(', ')}.")
-            lines.append(f"Duration: {shot['duration']}s.")
+                lines.append(f"Mood: {shot['emotional_beat']}.")
 
             self._previous_action = shot["action"]
 
-        # Final consistency lock
         if self.character_anchor:
             lines.append("")
             lines.append(self.character_anchor.consistency_block())
 
-        return "\n\n".join(lines)
+        lines.append("")
+        lines.append(f"[CONSTRAINTS] Avoid: {style_config['negatives']}")
+        lines.append(f"Negative prompt: {style_config['negatives']}")
+
+        return "\n".join(lines)
 
     @property
     def shot_count(self) -> int:
-        """Return the number of shots in the chain."""
         return len(self._shots)
 
     def get_shot(self, index: int) -> dict[str, str] | None:
-        """Return a specific shot by index."""
         if 0 <= index < len(self._shots):
             return self._shots[index]
         return None
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible aliases for existing imports
+# ---------------------------------------------------------------------------
+SHOT_TYPES = SHOT_SPECS
+VIDEO_STYLE_TEMPLATES = VIDEO_STYLE_MODELS

@@ -669,10 +669,6 @@ def build_enhanced_video_prompt(
     reference_images: list[str] | None = None,
 ) -> str:
     """Enhance a raw prompt with style-specific sections and constraints."""
-    from brandly_cli.style_presets import apply_style_preset
-
-    enhanced = apply_style_preset(prompt, style)
-
     style_config = VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS["cinematic"])
     lighting_key = style_config.get("lighting", "studio")
 
@@ -878,7 +874,7 @@ class ShotChain:
         lighting_key = style_config.get("lighting", "studio")
 
         lines = [
-            f"[MASTER CONTEXT]",
+            "[MASTER CONTEXT]",
             f"Subject: {self.subject}",
             f"Environment: {self.environment}",
             f"Style: {self.style}",
@@ -899,7 +895,7 @@ class ShotChain:
 
             lines.extend([
                 f"[SHOT {i + 1}]",
-                f"Setting: {self.environment}{f', {shot['environment_modifier']}' if shot['environment_modifier'] else ''}",
+                f"Setting: {self.environment}{', ' + shot['environment_modifier'] if shot['environment_modifier'] else ''}",
                 f"Camera: {shot_spec['type']}, {shot_spec['lens']}mm lens, {shot_spec['framing']}",
                 f"Motion: {CAMERA_MOVES.get(shot['camera_move'], 'locked off')}",
                 f"Subject action: {self.subject} {shot['action']}.",

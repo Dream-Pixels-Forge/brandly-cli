@@ -128,7 +128,7 @@ async def stitch_videos(
         ]
         rc, stderr = await _run(cmd)
         if rc != 0:
-            return {"error": stderr[:500]}
+            return {"error": _stderr_tail(stderr)}
         return _result(output, clips, [], color_grade)
 
     # --- multi-clip: simple concat -------------------------------------------
@@ -155,7 +155,10 @@ async def stitch_videos(
     offsets: list[float] = []
     offset = durations[0] - transition_duration
     for i in range(n - 1):
-        offsets.append(max(offset, 0.1))
+        # Guard against exact boundary: add small epsilon so ffmpeg doesn't
+        # reject an offset that lands exactly on the end of a stream.
+        offset_val = max(offset + 0.001, 0.1)
+        offsets.append(offset_val)
         offset += durations[i + 1] - transition_duration
 
     # Build video filter chain
@@ -177,37 +180,83 @@ async def stitch_videos(
     else:
         vf_chain += "[vout]"
 
-    # Build audio filter chain with acrossfade
-    af_chain = "[0:a]"
-    for i in range(1, n):
-        af_chain += f"[{i}:a]acrossfade=d={transition_duration}:c1=tri:c2=tri"
-        if i < n - 1:
-            af_chain += f"[a{i}];"
-        else:
-            af_chain += "[aout]"
+    # Detect whether ALL clips have audio. If any are audio-less, drop the
+    # acrossfade chain and output video-only (no silent-audio injection needed).
+    has_audio = all(_ffprobe_has_audio(c) for c in clips)
 
-    filter_complex = f"{vf_chain};{af_chain}"
+    if has_audio:
+        # Build audio filter chain with acrossfade
+        af_chain = "[0:a]"
+        for i in range(1, n):
+            af_chain += f"[{i}:a]acrossfade=d={transition_duration}:c1=tri:c2=tri"
+            if i < n - 1:
+                af_chain += f"[a{i}];"
+            else:
+                af_chain += "[aout]"
+        filter_complex = f"{vf_chain};{af_chain}"
 
-    cmd = [
-        "ffmpeg", "-y",
-        *inputs,
-        "-filter_complex", filter_complex,
-        "-map", "[final_v]" if grade_filter else "[vout]",
-        "-map", "[aout]",
-        "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "128k",
-        "-movflags", "+faststart",
-        str(output),
-    ]
+        cmd = [
+            "ffmpeg", "-y",
+            *inputs,
+            "-filter_complex", filter_complex,
+            "-map", "[final_v]" if grade_filter else "[vout]",
+            "-map", "[aout]",
+            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            str(output),
+        ]
+    else:
+        # Video-only path: no audio streams → no -map [aout] / -c:a
+        filter_complex = vf_chain
+        map_args = ["-map", "[final_v]" if grade_filter else "[vout]"]
+        cmd = [
+            "ffmpeg", "-y",
+            *inputs,
+            "-filter_complex", filter_complex,
+            *map_args,
+            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            str(output),
+        ]
 
     rc, stderr = await _run(cmd)
     concat_file.unlink(missing_ok=True)
 
     if rc != 0:
-        return {"error": stderr[:500]}
+        return {"error": _stderr_tail(stderr)}
 
     transitions_applied = [transition] * (n - 1)
     return _result(output, clips, transitions_applied, color_grade)
+
+
+def _ffprobe_has_audio(path: Path) -> bool:
+    """Return True if the file has at least one audio stream."""
+    if not _ffprobe_available():
+        return False
+    cmd = [
+        "ffprobe", "-v", "quiet",
+        "-select_streams", "a",
+        "-show_entries", "stream=codec_type",
+        "-of", "csv=p=0",
+        str(path),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, timeout=10)
+    if proc.returncode != 0:
+        return False
+    lines = proc.stdout.decode(errors="replace").strip().splitlines()
+    return any("audio" in line for line in lines)
+
+
+def _stderr_tail(stderr: str, n_chars: int = 500) -> str:
+    """Return the last ~n_chars of stderr, favouring lines matching error keywords."""
+    lines = stderr.splitlines()
+    # Prefer error-bearing lines at the tail
+    err_keywords = ("error", "Error", "invalid", "Unable", "no such", "Invalid", "Unable")
+    err_lines = [line for line in lines if any(k in line for k in err_keywords)]
+    if err_lines:
+        return "\n".join(err_lines[-10:])
+    return stderr[-n_chars:] if len(stderr) > n_chars else stderr
 
 
 async def _run(cmd: list[str]) -> tuple[int | None, str]:

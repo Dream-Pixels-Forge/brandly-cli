@@ -9,7 +9,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/brandly-cli.svg)](https://pypi.org/project/brandly-cli/)
 [![Python >=3.10](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-358_passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
+[![Tests](https://img.shields.io/badge/tests-327_passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![Lint](https://img.shields.io/badge/lint-ruff_clean-brightgreen.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![CI](https://github.com/Dream-Pixels-Forge/brandly-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli/actions)
 [![GitHub stars](https://img.shields.io/github/stars/Dream-Pixels-Forge/brandly-cli?style=social)](https://github.com/Dream-Pixels-Forge/brandly-cli/stargazers)
@@ -28,6 +28,19 @@ Brandly is an **autonomous video production pipeline** that turns product ideas 
 - **Director orchestrator** — an autonomous agent that guides the entire production process
 - **Credit budgeting** — track spend per phase against a project budget
 - **Style presets** — avoid AI slop with photorealistic, cinematic, editorial, commercial, and documentary presets
+
+### v0.3.12 Bug Fixes
+
+| Fix | Description |
+|-----|-------------|
+| **Auto credit spend recording** | `brandly video` / `brandly image` now auto-record credits via `CostTracker`; `brandly status` shows real spend — budget gate fires correctly (#18) |
+| **Windows Unicode crash fixed** | `cli()` reconfigures stdout/stderr to UTF-8 on Windows; all async Click commands (`jobs`, `edit`, `resize`, `concat`, `audio`, `captions`, `speed`, `batch`, `minimax_*`, `ark_*`) now actually run (#12) |
+| **Stitch stderr + no-audio clips** | ffmpeg errors now surface the *tail* of stderr (not the version banner); multi-clip xfade gracefully falls back to video-only when any input lacks an audio stream (#17) |
+| **Export ancestor-dir guard** | `brandly export` aborts with a clear message when `--output` is an ancestor of the project dir instead of silently copying nothing (#16) |
+| **Agnes 429/400 fixes** | Create-endpoint 429s now back off ≥60 s (respecting the 1 req/min limit); 400 body is surfaced; stale v2.0 tip removed; timeout message points at `job-resume` (#15) |
+| **Pipeline no longer a mock** | Director phases dispatch real work — `asset` calls `generate_video`, `audio` calls `generate_music`, `trends` calls `research_trends`, `validate` runs `quality_gate` (#14) |
+| **Phase artifact gating** | `brandly approve` now refuses to advance if required artifacts are missing (e.g. approving `asset` with zero clips) (#13) |
+| **Root auto-detection** | `_get_root` walks up from cwd looking for `.brandly` marker, preventing doubled-nested project trees when running from inside a project dir (#13) |
 
 ### v0.3.9 New Features
 

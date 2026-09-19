@@ -118,7 +118,19 @@ def _get_root(ctx: click.Context) -> Path:
     env_root = os.getenv("ROOT")
     if env_root:
         return Path(env_root)
-    return Path.cwd()
+    # Auto-detect: walk up from cwd looking for a .brandly marker.
+    # This prevents double-nesting when the user runs brandly from inside
+    # .brandly/<project-id>/ (the common case on Windows).
+    cwd = Path.cwd()
+    candidate = cwd
+    for _ in range(10):  # safety limit
+        if (candidate / ".brandly").is_dir():
+            return candidate
+        parent = candidate.parent
+        if parent == candidate:
+            break
+        candidate = parent
+    return cwd
 
 
 def _load_project_reference(project_id: str, root: Path) -> dict[str, Any] | None:
@@ -217,6 +229,14 @@ def cli(ctx: click.Context, root: str | None) -> None:
     ctx.ensure_object(dict)
     if root is not None:
         ctx.obj["root"] = root
+    # Ensure stdout/stderr are UTF-8 on Windows (charmap codecs cannot encode U+26A0 etc.)
+    if sys.platform == "win32":
+        for _s in (sys.stdout, sys.stderr):
+            if _s is not None and hasattr(_s, "reconfigure"):
+                try:
+                    _s.reconfigure(encoding="utf-8")
+                except Exception:
+                    pass
 
 
 # ---------------------------------------------------------------------------
@@ -458,6 +478,16 @@ def approve(ctx: click.Context, project_id: str, phase: str) -> None:
         sys.exit(1)
 
     _check_budget(ctx, project_id)
+
+    # Gate: verify that the phase actually produced its required artifacts.
+    missing = _check_phase_artifacts(project_id, phase, root)
+    if missing:
+        console.print(
+            f"[red]Cannot approve '{phase}': missing required artifacts.[/red]"
+        )
+        for label, path in missing:
+            console.print(f"  [red]✗[/red] {label}: {path}")
+        sys.exit(1)
 
     idx = PHASE_ORDER.index(phase)
     next_phase = PHASE_ORDER[idx + 1] if idx < len(PHASE_ORDER) - 1 else "done"
@@ -1170,6 +1200,8 @@ def image(
                 },
             )
         )
+        # Auto-record credit spend so budget gates can fire.
+        _record_media_spend(root, project_id, "image", model)
 
     _print_json(result)
 
@@ -1444,7 +1476,7 @@ def video(
             result = asyncio.run(poll_video(video_id, max_wait_seconds=max_wait, model_name=model))
         except TimeoutError as e:
             console.print(f"[red]Error: {e}[/red]")
-            console.print(f"[dim]Video ID: {video_id} - check status manually[/dim]")
+            console.print(f"[dim]Video ID: {video_id} — run 'brandly job-resume {video_id}' to poll.[/dim]")
             # Update plan to show timeout
             from brandly_cli.utils import write_generation_doc
 
@@ -1529,8 +1561,87 @@ def video(
     root = _get_root(ctx)
     pm = ProjectManager(root)
     asyncio.run(pm.update(project_id, {"current_phase": "asset"}))
+    # Auto-record credit spend so budget gates can fire.
+    _record_media_spend(root, project_id, "video", model)
 
     _print_json(task)
+
+
+def _record_media_spend(root: Path, project_id: str, kind: str, model_id: str) -> None:
+    """Auto-record credit spend after a successful media generation.
+
+    Looks up the model's ``cost_credits`` from constants and calls
+    CostTracker.record_spend, then syncs the result back into the
+    project's ``spent`` field so ``brandly status`` stays accurate.
+    """
+    from brandly_cli.constants import IMAGE_MODEL_INFO, VIDEO_MODEL_INFO
+
+    cost = (
+        VIDEO_MODEL_INFO.get(model_id, {}).get("cost_credits")
+        or IMAGE_MODEL_INFO.get(model_id, {}).get("cost_credits")
+        or 0
+    )
+    if cost <= 0:
+        return
+    ct = CostTracker(root / ".brandly")
+    pm = ProjectManager(root)
+    try:
+        proj = asyncio.run(pm.read(project_id))
+        budget = proj.budget if proj else None
+    except Exception:
+        budget = None
+    try:
+        result = asyncio.run(ct.record_spend(project_id, kind, kind, cost, budget_credits=budget))
+        asyncio.run(pm.update(project_id, {"spent": result["total_spent"]}))
+        console.print(
+            f"[dim]  Spent: {result['credits']} credits for {kind} ({model_id})  "
+            f"Total: {result['total_spent']}/{result['budget']}[/dim]"
+        )
+    except ValueError as e:
+        console.print(f"[yellow]⚠ Budget exceeded — {e}[/yellow]")
+    except Exception as e:
+        console.print(f"[dim]  Cost record failed (non-fatal): {e}[/dim]")
+
+
+def _check_phase_artifacts(
+    project_id: str, phase: str, root: Path
+) -> list[tuple[str, Path]]:
+    """Return a list of (label, path) for artifacts that a phase requires but does not have.
+
+    Currently covers the most common cases:
+    - ``asset``: at least one video clip OR at least one image in the project tree.
+    - ``audio``: at least one audio file under ``audio/``.
+    - ``re_edit``: at least one video under ``videos/`` (already present from asset).
+
+    Returns an empty list when the phase passes its gate.
+    """
+    proj_dir = layout.resolve_project_dir(root, project_id)
+    missing: list[tuple[str, Path]] = []
+
+    if phase == "asset":
+        videos = list((proj_dir / "videos").rglob("*.mp4"))
+        images = list((proj_dir / "images").rglob("*"))
+        images = [p for p in images if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+        refs = list((proj_dir / "refs").rglob("*"))
+        refs = [p for p in refs if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+        if not videos and not images and not refs:
+            missing.append(("video or image", proj_dir / "videos"))
+
+    elif phase == "audio":
+        audios = list((proj_dir / "audio").rglob("*"))
+        audios = [p for p in audios if p.suffix.lower() in (".mp3", ".wav", ".m4a", ".ogg")]
+        # A silent-track-only project is still acceptable if there are videos (voiceover optional)
+        if not audios:
+            videos = list((proj_dir / "videos").rglob("*.mp4"))
+            if not videos:
+                missing.append(("audio file", proj_dir / "audio"))
+
+    elif phase == "re_edit":
+        videos = list((proj_dir / "videos").rglob("*.mp4"))
+        if not videos:
+            missing.append(("video clip", proj_dir / "videos"))
+
+    return missing
 
 
 # ---------------------------------------------------------------------------
@@ -2027,6 +2138,21 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
 
     proj_dir = layout.resolve_project_dir(root, project_id)
     out_dir = Path(output) if output else proj_dir / "export"
+    out_dir = out_dir.resolve()
+    proj_dir_resolved = proj_dir.resolve()
+
+    # Guard: if out_dir is the same as or an ancestor of proj_dir, copying would
+    # recurse into itself. Error loudly so the user knows to pick a sibling dir.
+    try:
+        proj_dir_resolved.relative_to(out_dir)
+        console.print(
+            f"[red]Export aborted: output dir ({out_dir}) is the same as or an "
+            f"ancestor of the project dir ({proj_dir_resolved}).[/red]\n"
+            f"  Use a sibling or sub-folder, e.g. `--output {proj_dir_resolved.parent / 'export'}`"
+        )
+        sys.exit(1)
+    except ValueError:
+        pass  # out_dir is NOT an ancestor — proceed normally
 
     # Bookkeeping files at the project root are excluded from the export
     # by only scanning the user-facing top folders (refs/images/videos/audio/docs).
@@ -2049,7 +2175,7 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
                 continue
             # Skip files inside the export output directory to avoid recursion
             try:
-                f.relative_to(out_dir)
+                f.resolve().relative_to(out_dir)
                 continue
             except ValueError:
                 pass
@@ -2067,6 +2193,7 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
 
     if artifact_count == 0 and media_count == 0:
         console.print("[yellow]No artifacts to export.[/yellow]")
+        console.print("[dim]The project has no media or doc files under refs/, images/, videos/, audio/, or docs/.[/dim]")
         return
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2247,8 +2374,18 @@ def config(ctx: click.Context) -> None:
 
 
 def main() -> None:
-    """Entry point for brandly CLI."""
-    cli()
+    """Entry point for brandly CLI — catches unhandled exceptions and offers to report."""
+    try:
+        cli()
+    except Exception as exc:
+        # Let Click handle its own exit codes for --help, bad args, etc.
+        if isinstance(exc, SystemExit):
+            raise
+        if sys.stdout.isatty() or sys.stderr.isatty():
+            from brandly_cli.issue_tracker import report_from_exception
+            report_from_exception(exc)
+        else:
+            raise
 
 
 @cli.command()
@@ -2473,33 +2610,35 @@ def rate_limits(output: str) -> None:
 @click.option("-s", "--status", default=None, help="Filter by status (pending, completed, failed)")
 @click.option("-n", "--limit", default=20, help="Max number of jobs to show")
 @click.option("-o", "--output", type=click.Choice(["table", "json"]), default="table")
-async def jobs(status: str | None, limit: int, output: str) -> None:
+def jobs(status: str | None, limit: int, output: str) -> None:
     """List recent video generation jobs from the API."""
-    job_list = await list_jobs(status=status, limit=limit)
-    if output == "json":
-        _print_json(job_list)
-        return
-    if not job_list:
-        console.print("[dim]No jobs found.[/dim]")
-        return
-    table = Table(title=f"Video Jobs ({len(job_list)})")
-    table.add_column("ID", style="cyan", max_width=20)
-    table.add_column("Status", style="green")
-    table.add_column("Progress", style="yellow")
-    table.add_column("Model", style="dim")
-    table.add_column("Prompt Preview", style="dim")
-    table.add_column("Created", style="dim")
-    for j in job_list:
-        table.add_row(
-            j["video_id"][:20],
-            j["status"],
-            f"{j['progress']}%",
-            j.get("model", ""),
-            (j.get("prompt", "") or "")[:40],
-            (j.get("created_at", "") or "")[:16],
-        )
-    console.print(table)
-    console.print("[dim]Tip: Use 'brandly job resume <id>' to poll for completion[/dim]")
+    async def _jobs(status: str | None, limit: int, output: str) -> None:
+        job_list = await list_jobs(status=status, limit=limit)
+        if output == "json":
+            _print_json(job_list)
+            return
+        if not job_list:
+            console.print("[dim]No jobs found.[/dim]")
+            return
+        table = Table(title=f"Video Jobs ({len(job_list)})")
+        table.add_column("ID", style="cyan", max_width=20)
+        table.add_column("Status", style="green")
+        table.add_column("Progress", style="yellow")
+        table.add_column("Model", style="dim")
+        table.add_column("Prompt Preview", style="dim")
+        table.add_column("Created", style="dim")
+        for j in job_list:
+            table.add_row(
+                j["video_id"][:20],
+                j["status"],
+                f"{j['progress']}%",
+                j.get("model", ""),
+                (j.get("prompt", "") or "")[:40],
+                (j.get("created_at", "") or "")[:16],
+            )
+        console.print(table)
+        console.print("[dim]Tip: Use 'brandly job-resume <id>' to poll for completion[/dim]")
+    asyncio.run(_jobs(status, limit, output))
 
 
 @cli.command()
@@ -2618,7 +2757,7 @@ def agnes_chat(
 @click.option("--duration", default=None, help="Duration in seconds (alternative to --end)")
 @click.option("--codec", default="libx264", help="Video codec")
 @click.option("--preset", default="fast", help="Encoding preset")
-async def edit(
+def edit(
     input: str,
     output: str,
     start: float,
@@ -2628,16 +2767,18 @@ async def edit(
     preset: str,
 ) -> None:
     """Trim a video to a segment."""
-    result = await trim_video(
-        input, output, start=start, end=end,
-        duration=duration, codec=codec, preset=preset,
-    )
-    if "error" in result:
-        console.print(f"[red]Error: {result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]✓ Trimmed to {output}[/green]")
-    console.print(f"  Duration: {result.get('duration_seconds', '?')}s")
-    console.print(f"  Size: {human_size(result.get('size_bytes', 0))}")
+    async def _edit(input, output, start, end, duration, codec, preset):
+        result = await trim_video(
+            input, output, start=start, end=end,
+            duration=duration, codec=codec, preset=preset,
+        )
+        if "error" in result:
+            console.print(f"[red]Error: {result['error']}[/red]")
+            sys.exit(1)
+        console.print(f"[green]✓ Trimmed to {output}[/green]")
+        console.print(f"  Duration: {result.get('duration_seconds', '?')}s")
+        console.print(f"  Size: {human_size(result.get('size_bytes', 0))}")
+    asyncio.run(_edit(input, output, start, end, duration, codec, preset))
 
 
 @cli.command()
@@ -2647,7 +2788,7 @@ async def edit(
 @click.option("--height", default=None, type=int, help="Target height in pixels")
 @click.option("--aspect", default=None, help="Aspect ratio (16:9, 9:16, 1:1, 4:3)")
 @click.option("--codec", default="libx264", help="Video codec")
-async def resize(
+def resize(
     input: str,
     output: str,
     width: int | None,
@@ -2656,35 +2797,39 @@ async def resize(
     codec: str,
 ) -> None:
     """Resize a video to given dimensions or aspect ratio."""
-    result = await resize_video(
-        input, output, width=width, height=height,
-        aspect=aspect, codec=codec,
-    )
-    if "error" in result:
-        console.print(f"[red]Error: {result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]✓ Resized to {output}[/green]")
-    if width:
-        console.print(f"  Width: {width}px")
-    if height:
-        console.print(f"  Height: {height}px")
+    async def _resize(input, output, width, height, aspect, codec):
+        result = await resize_video(
+            input, output, width=width, height=height,
+            aspect=aspect, codec=codec,
+        )
+        if "error" in result:
+            console.print(f"[red]Error: {result['error']}[/red]")
+            sys.exit(1)
+        console.print(f"[green]✓ Resized to {output}[/green]")
+        if width:
+            console.print(f"  Width: {width}px")
+        if height:
+            console.print(f"  Height: {height}px")
+    asyncio.run(_resize(input, output, width, height, aspect, codec))
 
 
 @cli.command()
 @click.argument("inputs", nargs=-1, required=True, type=click.Path(exists=True))
 @click.argument("output", type=click.Path())
 @click.option("--codec", default="libx264", help="Video codec")
-async def concat(inputs: tuple[str, ...], output: str, codec: str) -> None:
+def concat(inputs: tuple[str, ...], output: str, codec: str) -> None:
     """Concatenate multiple videos into one."""
-    result = await concatenate_videos(list(inputs), output, codec=codec)
-    if "error" in result:
-        console.print(f"[red]Error: {result['error']}[/red]")
-        sys.exit(1)
-    console.print(
-        f"[green]✓ Concatenated {result.get('input_count', len(inputs))} "
-        f"videos → {output}[/green]"
-    )
-    console.print(f"  Duration: {result.get('duration_seconds', '?')}s")
+    async def _concat(inputs, output, codec):
+        result = await concatenate_videos(list(inputs), output, codec=codec)
+        if "error" in result:
+            console.print(f"[red]Error: {result['error']}[/red]")
+            sys.exit(1)
+        console.print(
+            f"[green]✓ Concatenated {result.get('input_count', len(inputs))} "
+            f"videos → {output}[/green]"
+        )
+        console.print(f"  Duration: {result.get('duration_seconds', '?')}s")
+    asyncio.run(_concat(inputs, output, codec))
 
 
 @cli.command()
@@ -2692,15 +2837,17 @@ async def concat(inputs: tuple[str, ...], output: str, codec: str) -> None:
 @click.argument("output", type=click.Path())
 @click.option("--format", "fmt", default="mp3", help="Audio format (mp3, wav, m4a)")
 @click.option("--bitrate", default="192k", help="Audio bitrate")
-async def audio(input: str, output: str, fmt: str, bitrate: str) -> None:
+def audio(input: str, output: str, fmt: str, bitrate: str) -> None:
     """Extract audio track from a video file."""
-    result = await extract_audio(input, output, format=fmt, bitrate=bitrate)
-    if "error" in result:
-        console.print(f"[red]Error: {result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]✓ Audio extracted to {output}[/green]")
-    console.print(f"  Format: {fmt}")
-    console.print(f"  Bitrate: {bitrate}")
+    async def _audio(input, output, fmt, bitrate):
+        result = await extract_audio(input, output, format=fmt, bitrate=bitrate)
+        if "error" in result:
+            console.print(f"[red]Error: {result['error']}[/red]")
+            sys.exit(1)
+        console.print(f"[green]✓ Audio extracted to {output}[/green]")
+        console.print(f"  Format: {fmt}")
+        console.print(f"  Bitrate: {bitrate}")
+    asyncio.run(_audio(input, output, fmt, bitrate))
 
 
 @cli.command()
@@ -2710,7 +2857,7 @@ async def audio(input: str, output: str, fmt: str, bitrate: str) -> None:
 @click.option("--font-size", default=24, type=int)
 @click.option("--position", default="bottom", type=click.Choice(["top", "middle", "bottom"]))
 @click.option("--codec", default="libx264")
-async def captions(
+def captions(
     input: str,
     output: str,
     text: str,
@@ -2719,14 +2866,16 @@ async def captions(
     codec: str,
 ) -> None:
     """Add burned-in subtitles to a video."""
-    result = await add_subtitles(
-        input, output, text,
-        font_size=font_size, position=position, codec=codec,
-    )
-    if "error" in result:
-        console.print(f"[red]Error: {result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]✓ Subtitles added to {output}[/green]")
+    async def _captions(input, output, text, font_size, position, codec):
+        result = await add_subtitles(
+            input, output, text,
+            font_size=font_size, position=position, codec=codec,
+        )
+        if "error" in result:
+            console.print(f"[red]Error: {result['error']}[/red]")
+            sys.exit(1)
+        console.print(f"[green]✓ Subtitles added to {output}[/green]")
+    asyncio.run(_captions(input, output, text, font_size, position, codec))
 
 
 @cli.command()
@@ -2734,15 +2883,17 @@ async def captions(
 @click.argument("output", type=click.Path())
 @click.argument("speed", type=float)
 @click.option("--codec", default="libx264")
-async def speed(
+def speed(
     input: str, output: str, speed: float, codec: str
 ) -> None:
     """Change video playback speed."""
-    result = await change_speed(input, output, speed, codec=codec)
-    if "error" in result:
-        console.print(f"[red]Error: {result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]✓ Speed changed to {speed}x → {output}[/green]")
+    async def _speed(input, output, speed, codec):
+        result = await change_speed(input, output, speed, codec=codec)
+        if "error" in result:
+            console.print(f"[red]Error: {result['error']}[/red]")
+            sys.exit(1)
+        console.print(f"[green]✓ Speed changed to {speed}x → {output}[/green]")
+    asyncio.run(_speed(input, output, speed, codec))
 
 
 # ---------------------------------------------------------------------------
@@ -2796,7 +2947,7 @@ def probe(input: str, output: str) -> None:
 @click.option("--character", default=None, help="Character description for consistency")
 @click.option("--reference-images", default=None, help="Comma-separated reference image URLs or local file paths")
 @click.pass_context
-async def batch(
+def batch(
     ctx: click.Context,
     project_id: str,
     base_prompt: str,
@@ -2808,78 +2959,78 @@ async def batch(
     reference_images: str | None,
 ) -> None:
     """Generate multiple video variants from a base prompt."""
-    root = _get_root(ctx)
-    if not is_valid_project_id(project_id):
-        console.print("[red]Invalid project ID.[/red]")
-        sys.exit(1)
+    async def _batch(ctx, project_id, base_prompt, style, model, count, wait, character, reference_images):
+        root = _get_root(ctx)
+        if not is_valid_project_id(project_id):
+            console.print("[red]Invalid project ID.[/red]")
+            sys.exit(1)
 
-    pm = ProjectManager(root)
-    proj = await pm.read(project_id)
-    if not proj:
-        console.print(f"[red]Project not found: {project_id}[/red]")
-        sys.exit(1)
+        pm = ProjectManager(root)
+        proj = await pm.read(project_id)
+        if not proj:
+            console.print(f"[red]Project not found: {project_id}[/red]")
+            sys.exit(1)
 
-    imgs: list[str] = []
-    if reference_images:
-        imgs = [u.strip() for u in reference_images.split(",") if u.strip()]
+        imgs: list[str] = []
+        if reference_images:
+            imgs = [u.strip() for u in reference_images.split(",") if u.strip()]
 
-    console.print(f"[bold]Batch generating {count} variant{'s' if count > 1 else ''}[/bold]")
-    console.print(f"  Project: {project_id}")
-    console.print(f"  Style: {style} | Model: {model}")
-    console.print()
+        console.print(f"[bold]Batch generating {count} variant{'s' if count > 1 else ''}[/bold]")
+        console.print(f"  Project: {project_id}")
+        console.print(f"  Style: {style} | Model: {model}")
+        console.print()
 
-    results = []
-    for i in range(count):
-        variant_prompt = f"{base_prompt}"
-        if count > 1:
-            variant_prompt += f"\n\nVariation {i + 1}: Unique camera angle and composition."
-        console.print(f"[dim]Generating variant {i + 1}/{count}...[/dim]")
-        try:
-            task = await create_video_task(
-                variant_prompt,
-                model=model,
-                duration=5,
-                aspect_ratio="16:9",
-                reference_images=imgs,
-            )
-        except Exception as e:
-            # One-at-a-time fallback: a failed variant (e.g. a 429 rate-limit)
-            # must not abort the whole batch — record it and move on.
-            console.print(
-                f"[yellow]⚠ Variant {i + 1} failed to submit ({e}); "
-                f"continuing with the next variant.[/yellow]"
-            )
-            results.append(
-                {
-                    "variant": i + 1,
-                    "status": "failed",
-                    "error": str(e),
-                    "created_one_at_a_time": True,
-                }
-            )
-            continue
-        video_id = task.get("video_id", "")
-        if wait and video_id:
-            console.print("[dim]Waiting for completion...[/dim]")
+        results = []
+        for i in range(count):
+            variant_prompt = f"{base_prompt}"
+            if count > 1:
+                variant_prompt += f"\n\nVariation {i + 1}: Unique camera angle and composition."
+            console.print(f"[dim]Generating variant {i + 1}/{count}...[/dim]")
             try:
-                result = await poll_video(video_id, max_wait_seconds=300)
-                task["url"] = result.get("url")
-                task["final_status"] = result.get("status")
-            except TimeoutError:
-                task["final_status"] = "timeout"
-        results.append(task)
-        msg = (
-            f"  {'✓' if task.get('url') else '↺'} "
-            f"Variant {i + 1}: {task.get('status', 'pending')}"
-        )
-        console.print(msg)
-        if task.get("url"):
-            console.print(f"    URL: {task['url']}")
+                task = await create_video_task(
+                    variant_prompt,
+                    model=model,
+                    duration=5,
+                    aspect_ratio="16:9",
+                    reference_images=imgs,
+                )
+            except Exception as e:
+                console.print(
+                    f"[yellow]⚠ Variant {i + 1} failed to submit ({e}); "
+                    f"continuing with the next variant.[/yellow]"
+                )
+                results.append(
+                    {
+                        "variant": i + 1,
+                        "status": "failed",
+                        "error": str(e),
+                        "created_one_at_a_time": True,
+                    }
+                )
+                continue
+            video_id = task.get("video_id", "")
+            if wait and video_id:
+                console.print("[dim]Waiting for completion...[/dim]")
+                try:
+                    result = await poll_video(video_id, max_wait_seconds=300)
+                    task["url"] = result.get("url")
+                    task["final_status"] = result.get("status")
+                except TimeoutError:
+                    task["final_status"] = "timeout"
+            results.append(task)
+            msg = (
+                f"  {'✓' if task.get('url') else '↺'} "
+                f"Variant {i + 1}: {task.get('status', 'pending')}"
+            )
+            console.print(msg)
+            if task.get("url"):
+                console.print(f"    URL: {task['url']}")
 
-    console.print(
-        f"\n[green]✓ Batch complete: "
-        f"{sum(1 for r in results if r.get('url'))}/{count} generated[/green]"
-    )
+        console.print(
+            f"\n[green]✓ Batch complete: "
+            f"{sum(1 for r in results if r.get('url'))}/{count} generated[/green]"
+        )
+    asyncio.run(_batch(ctx, project_id, base_prompt, style, model, count, wait, character, reference_images))
 
 
 # ---------------------------------------------------------------------------
@@ -3007,7 +3158,7 @@ def _ffprobe_available() -> bool:
 @click.option("--style", "style_setting", default=None,
               help="Art style for image-01-live (e.g. cinematic, anime, oil-painting)")
 @click.option("-o", "--output", type=click.Choice(["table", "json"]), default="table")
-async def minimax_image(
+def minimax_image(
     prompt: str,
     model: str,
     ratio: str,
@@ -3020,39 +3171,41 @@ async def minimax_image(
     output: str,
 ) -> None:
     """Generate images using MiniMax API."""
-    subject_ref = None
-    if subject:
-        subject_ref = [{"type": "character", "image_file": subject}]
+    async def _minimax_image(prompt, model, ratio, width, height, count, subject, seed, style_setting, output):
+        subject_ref = None
+        if subject:
+            subject_ref = [{"type": "character", "image_file": subject}]
 
-    style_obj = {"style": style_setting} if style_setting else None
+        style_obj = {"style": style_setting} if style_setting else None
 
-    result = await minimax_generate_image(
-        prompt,
-        model=model,
-        aspect_ratio=ratio,
-        width=width,
-        height=height,
-        n=count,
-        subject_reference=subject_ref,
-        seed=seed,
-        image_style_setting=style_obj,
-    )
+        result = await minimax_generate_image(
+            prompt,
+            model=model,
+            aspect_ratio=ratio,
+            width=width,
+            height=height,
+            n=count,
+            subject_reference=subject_ref,
+            seed=seed,
+            image_style_setting=style_obj,
+        )
 
-    if output == "json":
-        _print_json(result)
-        return
+        if output == "json":
+            _print_json(result)
+            return
 
-    console.print("[bold]MiniMax Image Generation[/bold]")
-    console.print(f"  Model: {result.get('model', model)}")
-    console.print(f"  Success: {result.get('success_count', 0)}")
-    console.print(f"  Failed: {result.get('failed_count', 0)}")
-    urls = result.get("urls", [])
-    if urls:
-        console.print("[bold]Generated Images:[/bold]")
-        for i, url in enumerate(urls, 1):
-            console.print(f"  {i}. [link={url}]{url}[/link]")
-    else:
-        console.print("[yellow]No images generated.[/yellow]")
+        console.print("[bold]MiniMax Image Generation[/bold]")
+        console.print(f"  Model: {result.get('model', model)}")
+        console.print(f"  Success: {result.get('success_count', 0)}")
+        console.print(f"  Failed: {result.get('failed_count', 0)}")
+        urls = result.get("urls", [])
+        if urls:
+            console.print("[bold]Generated Images:[/bold]")
+            for i, url in enumerate(urls, 1):
+                console.print(f"  {i}. [link={url}]{url}[/link]")
+        else:
+            console.print("[yellow]No images generated.[/yellow]")
+    asyncio.run(_minimax_image(prompt, model, ratio, width, height, count, subject, seed, style_setting, output))
 
 
 @cli.command()
@@ -3068,7 +3221,7 @@ async def minimax_image(
 @click.option("--reference-audios", default=None, help="Comma-separated reference audio URLs")
 @click.option("--wait", is_flag=True, help="Wait for completion")
 @click.option("-o", "--output", type=click.Choice(["table", "json"]), default="table")
-async def minimax_video(
+def minimax_video(
     prompt: str,
     model: str,
     resolution: str,
@@ -3083,55 +3236,57 @@ async def minimax_video(
     output: str,
 ) -> None:
     """Generate videos using MiniMax API."""
-    imgs = [
-        u.strip() for u in reference_images.split(",") if u.strip()
-    ] if reference_images else None
-    vids = [
-        u.strip() for u in reference_videos.split(",") if u.strip()
-    ] if reference_videos else None
-    auds = [
-        u.strip() for u in reference_audios.split(",") if u.strip()
-    ] if reference_audios else None
+    async def _minimax_video(prompt, model, resolution, duration, ratio, first_frame, last_frame, reference_images, reference_videos, reference_audios, wait, output):
+        imgs = [
+            u.strip() for u in reference_images.split(",") if u.strip()
+        ] if reference_images else None
+        vids = [
+            u.strip() for u in reference_videos.split(",") if u.strip()
+        ] if reference_videos else None
+        auds = [
+            u.strip() for u in reference_audios.split(",") if u.strip()
+        ] if reference_audios else None
 
-    result = await minimax_create_video(
-        prompt,
-        model=model,
-        resolution=resolution,
-        duration=duration,
-        ratio=ratio,
-        first_frame=first_frame,
-        last_frame=last_frame,
-        reference_images=imgs,
-        reference_videos=vids,
-        reference_audios=auds,
-    )
+        result = await minimax_create_video(
+            prompt,
+            model=model,
+            resolution=resolution,
+            duration=duration,
+            ratio=ratio,
+            first_frame=first_frame,
+            last_frame=last_frame,
+            reference_images=imgs,
+            reference_videos=vids,
+            reference_audios=auds,
+        )
 
-    if output == "json":
-        _print_json(result)
-        return
+        if output == "json":
+            _print_json(result)
+            return
 
-    task_id = result.get("task_id", "")
-    console.print("[bold]MiniMax Video Generation[/bold]")
-    console.print(f"  Model: {model}")
-    console.print(f"  Task ID: {task_id}")
-    console.print(f"  Status: {result.get('status', 'pending')}")
+        task_id = result.get("task_id", "")
+        console.print("[bold]MiniMax Video Generation[/bold]")
+        console.print(f"  Model: {model}")
+        console.print(f"  Task ID: {task_id}")
+        console.print(f"  Status: {result.get('status', 'pending')}")
 
-    if wait and task_id:
-        console.print("[dim]Waiting for completion...[/dim]")
-        try:
-            final = await minimax_poll_video(task_id, max_wait_seconds=600)
-            console.print(f"  Final Status: {final.get('status')}")
-            if final.get("url"):
-                console.print(f"[green]  URL: {final['url']}[/green]")
-            if final.get("error"):
-                console.print(f"[red]  Error: {final['error']}[/red]")
-        except TimeoutError:
-            console.print("[yellow]⚠ Generation timed out. Check status manually.[/yellow]")
-            console.print("  Use: brandly minimax-jobs to view pending tasks")
-        except Exception as e:
-            console.print(f"[red]Error: {e}[/red]")
-    else:
-        console.print("[dim]Tip: Use 'brandly minimax-jobs' to check status[/dim]")
+        if wait and task_id:
+            console.print("[dim]Waiting for completion...[/dim]")
+            try:
+                final = await minimax_poll_video(task_id, max_wait_seconds=600)
+                console.print(f"  Final Status: {final.get('status')}")
+                if final.get("url"):
+                    console.print(f"[green]  URL: {final['url']}[/green]")
+                if final.get("error"):
+                    console.print(f"[red]  Error: {final['error']}[/red]")
+            except TimeoutError:
+                console.print("[yellow]⚠ Generation timed out. Check status manually.[/yellow]")
+                console.print("  Use: brandly minimax-jobs to view pending tasks")
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/red]")
+        else:
+            console.print("[dim]Tip: Use 'brandly minimax-jobs' to check status[/dim]")
+    asyncio.run(_minimax_video(prompt, model, resolution, duration, ratio, first_frame, last_frame, reference_images, reference_videos, reference_audios, wait, output))
 
 
 @cli.command()
@@ -3139,34 +3294,36 @@ async def minimax_video(
               help="Filter by status (queued, running, succeeded, failed, cancelled)")
 @click.option("-n", "--limit", default=20, help="Max number of jobs to show")
 @click.option("-o", "--output", type=click.Choice(["table", "json"]), default="table")
-async def minimax_jobs(status: str | None, limit: int, output: str) -> None:
+def minimax_jobs(status: str | None, limit: int, output: str) -> None:
     """List recent MiniMax video generation jobs."""
-    job_list = await minimax_list_jobs(status=status, limit=limit)
-    if output == "json":
-        _print_json(job_list)
-        return
-    if not job_list:
-        console.print("[dim]No MiniMax jobs found.[/dim]")
-        return
-    table = Table(title=f"MiniMax Video Jobs ({len(job_list)})")
-    table.add_column("Task ID", style="cyan", max_width=18)
-    table.add_column("Status", style="green")
-    table.add_column("Model", style="dim")
-    table.add_column("Resolution", style="dim")
-    table.add_column("Duration", style="dim")
-    table.add_column("Created", style="dim")
-    table.add_column("URL", style="blue", max_width=35)
-    for j in job_list:
-        table.add_row(
-            j["task_id"][:18],
-            j["status"],
-            j.get("model", ""),
-            j.get("resolution", ""),
-            f"{j.get('duration', '?')}s",
-            (j.get("created_at") or "")[:16],
-            (j.get("url") or "")[:35],
-        )
-    console.print(table)
+    async def _minimax_jobs(status, limit, output):
+        job_list = await minimax_list_jobs(status=status, limit=limit)
+        if output == "json":
+            _print_json(job_list)
+            return
+        if not job_list:
+            console.print("[dim]No MiniMax jobs found.[/dim]")
+            return
+        table = Table(title=f"MiniMax Video Jobs ({len(job_list)})")
+        table.add_column("Task ID", style="cyan", max_width=18)
+        table.add_column("Status", style="green")
+        table.add_column("Model", style="dim")
+        table.add_column("Resolution", style="dim")
+        table.add_column("Duration", style="dim")
+        table.add_column("Created", style="dim")
+        table.add_column("URL", style="blue", max_width=35)
+        for j in job_list:
+            table.add_row(
+                j["task_id"][:18],
+                j["status"],
+                j.get("model", ""),
+                j.get("resolution", ""),
+                f"{j.get('duration', '?')}s",
+                (j.get("created_at") or "")[:16],
+                (j.get("url") or "")[:35],
+            )
+        console.print(table)
+    asyncio.run(_minimax_jobs(status, limit, output))
 
 
 # ---------------------------------------------------------------------------
@@ -3322,43 +3479,45 @@ def ark_video(
 @click.option("--status", default=None, help="Filter by status")
 @click.option("-n", "--limit", default=20, help="Max number of jobs to show")
 @click.option("-o", "--output", type=click.Choice(["table", "json"]), default="table")
-async def ark_jobs(status: str | None, limit: int, output: str) -> None:
+def ark_jobs(status: str | None, limit: int, output: str) -> None:
     """List recent BytePlus Ark (Seedance) video jobs."""
-    job_list = await ark_list_jobs(status=status, limit=limit)
-    if output == "json":
-        _print_json(job_list)
-        return
-    if not job_list:
-        console.print("[dim]No Ark jobs found.[/dim]")
-        return
-    table = Table(title=f"Ark Video Jobs ({len(job_list)})")
-    table.add_column("Task ID", style="cyan", max_width=18)
-    table.add_column("Status", style="green")
-    table.add_column("Model", style="dim")
-    table.add_column("Created", style="dim")
-    table.add_column("URL", style="blue", max_width=40)
-    for j in job_list:
-        table.add_row(
-            j["task_id"][:18],
-            j["status"],
-            j.get("model", ""),
-            (j.get("created_at") or "")[:16],
-            (j.get("url") or "")[:40],
-        )
-    console.print(table)
+    async def _ark_jobs(status, limit, output):
+        job_list = await ark_list_jobs(status=status, limit=limit)
+        if output == "json":
+            _print_json(job_list)
+            return
+        if not job_list:
+            console.print("[dim]No Ark jobs found.[/dim]")
+            return
+        table = Table(title=f"Ark Video Jobs ({len(job_list)})")
+        table.add_column("Task ID", style="cyan", max_width=18)
+        table.add_column("Status", style="green")
+        table.add_column("Model", style="dim")
+        table.add_column("Created", style="dim")
+        table.add_column("URL", style="blue", max_width=40)
+        for j in job_list:
+            table.add_row(
+                j["task_id"][:18],
+                j["status"],
+                j.get("model", ""),
+                (j.get("created_at") or "")[:16],
+                (j.get("url") or "")[:40],
+            )
+        console.print(table)
+    asyncio.run(_ark_jobs(status, limit, output))
 
 
 @cli.command(name="ark-cancel")
 @click.argument("task_id")
-async def ark_cancel(task_id: str) -> None:
+def ark_cancel(task_id: str) -> None:
     """Cancel an in-progress BytePlus Ark video generation job."""
-    result = await ark_cancel_job(task_id)
-    console.print(f"Status: {result['status']}")
-    if result.get("error"):
-        console.print(f"[red]Error: {result['error']}[/red]")
+    async def _ark_cancel(task_id):
+        result = await ark_cancel_job(task_id)
+        console.print(f"Status: {result['status']}")
+        if result.get("error"):
+            console.print(f"[red]Error: {result['error']}[/red]")
+    asyncio.run(_ark_cancel(task_id))
 
-
-    main()
 
 
 # ---------------------------------------------------------------------------
@@ -3681,3 +3840,84 @@ def share(file_path: str, provider: str, root: str | None) -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# report — submit an issue to GitHub with user consent
+# ---------------------------------------------------------------------------
+
+
+@cli.command(name="report")
+@click.option(
+    "--error", "-e", default=None,
+    help="Error message to report (otherwise interactive prompt)",
+)
+@click.option(
+    "--project", "-p", default=None, help="Project ID to attach context to",
+)
+@click.option(
+    "--root", default=None, help="Brandly root directory",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Show issue body without submitting",
+)
+@click.option(
+    "--auto", is_flag=True, help="Submit without asking (requires prior consent or GITHUB_TOKEN)",
+)
+def report(
+    error: str | None,
+    project: str | None,
+    root: str | None,
+    dry_run: bool,
+    auto: bool,
+) -> None:
+    """Report a bug or feature request to the GitHub issues tracker.
+
+    Prints a preview of the issue body and asks for confirmation before
+    submitting — unless --auto is passed (or auto-consent was previously
+    granted via a prior interactive report).
+    """
+    from brandly_cli.issue_tracker import (
+        ask_permission,
+        collect_context,
+        format_issue_body,
+        submit_issue,
+    )
+
+    root_path = Path(root) if root else _get_root(click.get_current_context(silent=True) or click.Context(cli))
+    exc = None
+    if error:
+        exc = RuntimeError(error)
+    ctx = collect_context(error=exc, project_id=project, root=root_path)
+    body = format_issue_body(ctx)
+
+    if dry_run:
+        console.print("[bold]Issue preview (dry run):[/bold]")
+        console.print(body)
+        return
+
+    if auto:
+        console.print("[dim]Submitting issue to GitHub...[/dim]")
+        result = submit_issue(ctx, body)
+        if result.get("ok"):
+            console.print(f"[green]✓ Issue opened: {result['url']}[/green]")
+            console.print(f"  Number: #{result.get('number')}")
+        else:
+            console.print(
+                f"[red]Report failed: {result.get('error') or result}[/red]"
+            )
+        return
+
+    if ask_permission(ctx, body):
+        console.print("[dim]Submitting issue to GitHub...[/dim]")
+        result = submit_issue(ctx, body)
+        if result.get("ok"):
+            console.print(f"[green]✓ Issue opened: {result['url']}[/green]")
+            console.print(f"  Number: #{result.get('number')}")
+        else:
+            console.print(
+                f"[red]Report failed: {result.get('error') or result}[/red]"
+            )
+    else:
+        console.print("[dim]Issue report skipped.[/dim]")
+

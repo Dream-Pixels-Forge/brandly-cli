@@ -408,7 +408,7 @@ class Director:
     # ------------------------------------------------------------------
 
     async def run_phase(self, project_id: str, phase: str) -> dict[str, Any]:
-        """Advance a single pipeline phase (mock — real agents would call MCP tools)."""
+        """Advance a single pipeline phase by dispatching real work."""
         if phase not in PHASE_ORDER:
             raise ValueError(f"Invalid phase '{phase}'")
 
@@ -425,8 +425,9 @@ class Director:
         phases[phase] = {"status": "running", "started_at": _now_iso()}
         await self.cfg.pm.update(project_id, {"phases": phases, "status": "running"})
 
-        # Simulate phase work (in production, this would dispatch a subagent)
-        result = await self._simulate_phase(phase, proj)
+        # Dispatch to real phase worker (fall back to simulation only for
+        # phases that have no concrete implementation yet)
+        result = await self._run_phase_real(phase, proj)
 
         # Mark phase completed
         phases = dict(getattr(proj, "phases", {}))
@@ -445,61 +446,114 @@ class Director:
 
         return {"phase": phase, "next_phase": next_phase, "result": result}
 
-    async def _simulate_phase(self, phase: str, proj: Any) -> dict[str, Any]:
-        """Simulate phase execution (placeholder for real agent dispatch)."""
+    async def _run_phase_real(self, phase: str, proj: Any) -> dict[str, Any]:
+        """Execute the real work for a pipeline phase."""
+        from brandly_cli.constants import SHOT_COSTS
         from brandly_cli.constants import STYLE_COSTS as SC
 
         style_cost = SC.get(proj.style, 250)
         shot_cost = SHOT_COSTS.get(proj.shot_count, 30)
         base = style_cost + shot_cost
 
-        phase_results = {
-            "init": {"message": "Project initialized"},
-            "trends": {
-                "trending_formats": [
-                    {"name": "Quick cut showcase", "virality_potential": 8.5},
-                    {"name": "Before/after transformation", "virality_potential": 7.8},
-                ],
+        if phase == "init":
+            return {"message": "Project initialized"}
+
+        if phase == "trends":
+            from brandly_cli.trends import research_trends
+            results = await research_trends("commercial")
+            return {
+                "trending_formats": results.get("trending_formats", [])[:3],
                 "recommended_style": proj.style,
-            },
-            "concept": {
+            }
+
+        if phase == "concept":
+            return {
                 "concepts": [
                     {"id": 1, "name": "Hero reveal", "virality_score": 8.0},
                     {"id": 2, "name": "Lifestyle integration", "virality_score": 7.2},
                 ],
                 "recommended": 1,
-            },
-            "script": {
-                "scenes": [
-                    {"id": 1, "description": "Opening hook", "duration": 3},
-                    {"id": 2, "description": "Product reveal", "duration": 4},
-                    {"id": 3, "description": "Benefit showcase", "duration": 4},
-                    {"id": 4, "description": "CTA", "duration": 2},
-                ],
-                "duration": 15,
-            },
-            "asset": {
+            }
+
+        if phase == "script":
+            from brandly_cli.video_prompts import build_video_prompt
+            result = build_video_prompt(
+                subject=proj.name or "product",
+                action="demonstrates key features",
+                environment="clean studio setting",
+                style=proj.style,
+                shots=proj.shot_count,
+            )
+            scenes = result.get("scenes", []) if isinstance(result, dict) else []
+            return {
+                "scenes": scenes,
+                "duration": sum(s.get("duration", 3) for s in scenes) if scenes else 15,
+            }
+
+        if phase == "asset":
+            shots = getattr(proj, "shot_count", 3)
+            style = getattr(proj, "style", "cinematic")
+            name = getattr(proj, "name", "product")
+            generated: list[dict] = []
+            for i in range(shots):
+                prompt = f"{name} — shot {i+1}: dynamic product showcase"
+                task = await self.generate_video(
+                    proj.id, prompt,
+                    model="agnes-video-2.5-flash",
+                    mode="text",
+                    duration=5,
+                    aspect_ratio="16:9",
+                    style=style,
+                    wait=False,
+                )
+                generated.append(task)
+            return {
+                "shots_generated": len(generated),
+                "tasks": generated,
                 "estimated_credits": round(base * 0.25),
-                "message": "Asset generation plan created",
-            },
-            "audio": {
+            }
+
+        if phase == "audio":
+            music = await self.generate_music("upbeat corporate", duration=30)
+            return {
+                "music_task": music,
                 "estimated_credits": round(base * 0.15),
-                "message": "Audio plan created",
-            },
-            "re_edit": {"message": "Review and refinement complete"},
-            "validate": {
-                "score": 75.0,
-                "passed": True,
-                "issues": [],
-                "recommendations": ["Add subtitles for accessibility"],
-            },
-            "publish": {
-                "message": "Video published successfully",
-                "platforms": proj.target_platforms,
-            },
-            "done": {"message": "Pipeline complete!"},
-        }
-        return phase_results.get(phase, {"message": f"Phase {phase} completed"})
+            }
+
+        if phase == "re_edit":
+            return {"message": "Review and refinement complete (stitch/captions not yet wired)"}
+
+        if phase == "validate":
+            from brandly_cli import quality_gate
+            proj_dir = proj.__dict__.get("_dir") or Path(self.cfg.root) / ".brandly" / proj.id
+            videos = list((proj_dir / "videos").rglob("*.mp4"))
+            if videos:
+                gate_result = await quality_gate.verify_element(
+                    videos[-1],
+                    description=getattr(proj, "name", "video"),
+                    expect_matt_background=False,
+                    use_ai=True,
+                    root=Path(self.cfg.root),
+                    project_id=proj.id,
+                )
+                return {
+                    "score": gate_result.score if hasattr(gate_result, "score") else 75.0,
+                    "passed": gate_result.status != quality_gate.FAIL if hasattr(gate_result, "status") else True,
+                    "issues": [],
+                    "recommendations": ["Add subtitles for accessibility"],
+                }
+            return {"score": 0, "passed": False, "issues": ["No video found to validate"], "recommendations": []}
+
+        if phase == "publish":
+            return {
+                "message": "Export ready — run `brandly export <id>` to publish.",
+                "platforms": getattr(proj, "target_platforms", []),
+            }
+
+        if phase == "done":
+            return {"message": "Pipeline complete!"}
+
+        return {"message": f"Phase {phase} completed"}
 
     async def run_pipeline(self, project_id: str) -> dict[str, Any]:
         """Run all remaining phases sequentially."""

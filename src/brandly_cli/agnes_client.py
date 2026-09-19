@@ -130,12 +130,17 @@ async def _retry_with_backoff(
     base_delay: float = 1.0,
     max_delay: float = 60.0,
     jitter: bool = True,
+    min_429_delay: float = 0.0,
 ) -> Any:
     """Retry an async request with exponential backoff for 429/503 errors.
 
     Non-retryable conditions (4xx with semantic error codes like
     ``model_not_found``) are raised immediately so the user gets a clear
     error rather than burning 4 attempts on something that will never work.
+
+    ``min_429_delay`` enforces a floor on the wait time when a 429 is
+    encountered (e.g. 60.0 s for a 1-req/min rate-limited endpoint).
+    Defaults to 0.0 (no floor) so existing callers are unaffected.
 
     Returns the response on success or raises the last error.
     """
@@ -179,9 +184,10 @@ async def _retry_with_backoff(
                     pass
 
             if is_permanent:
-                # Real semantic error, not a transient outage
+                # Real semantic error, not a transient outage — surface the API body.
+                detail = body_text.strip()[:500] if body_text.strip() else "(empty body)"
                 console.print(
-                    f"[red]✗ Permanent error ({permanent_hint}) — not retrying.[/red]"
+                    f"[red]✗ Permanent error ({permanent_hint}): {detail} — not retrying.[/red]"
                 )
                 raise
 
@@ -203,6 +209,9 @@ async def _retry_with_backoff(
                         wait_time = float(retry_after)
                     except ValueError:
                         pass
+                # Enforce caller-specified minimum for 429 (e.g. 1 req/min limit)
+                if min_429_delay > 0 and wait_time < min_429_delay:
+                    wait_time = min_429_delay
 
                 console.print(
                     f"[yellow]⚠ Rate limited (429). "
@@ -444,6 +453,7 @@ async def create_video_task(
             base_delay=2.0,         # Longer initial wait for transient 503 recovery
             max_delay=120.0,        # Cap at 2min per retry attempt
             jitter=True,            # Avoid thundering herd on retries
+            min_429_delay=60.0,     # 1 req/min limit on create endpoint
         )
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
@@ -451,9 +461,9 @@ async def create_video_task(
                 "[red]Error: Rate limit exceeded. Agnes video 2.5-flash has a 1 req/min rate limit.[/red]"
             )
             console.print(
-                "[dim]Tip: Wait at least 60 seconds between requests, or switch to "
-                "agnes-video-v2.0 for production use (higher cost, no rate limit).[/dim]"
+                "[dim]Tip: Wait at least 60 seconds between requests.[/dim]"
             )
+            raise
         elif e.response.status_code == 503:
             console.print(
                 "[yellow]Warning: Agnes API returned 503 (service unavailable).[/yellow]"
@@ -592,7 +602,7 @@ async def poll_video(
 
     raise TimeoutError(
         f"Agnes video generation timed out after {max_wait_seconds}s. "
-        f"Task ID: {video_id}. Check status manually with: brandly status {video_id}"
+        f"Task ID: {video_id}. Check status manually with: brandly job-resume {video_id}"
     )
 
 

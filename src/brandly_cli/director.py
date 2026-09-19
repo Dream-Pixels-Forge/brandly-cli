@@ -484,7 +484,7 @@ class Director:
                 style=proj.style,
                 shots=proj.shot_count,
             )
-            scenes = result.get("scenes", []) if isinstance(result, dict) else []
+            scenes: list[dict[str, Any]] = result.get("scenes", []) if isinstance(result, dict) else []
             return {
                 "scenes": scenes,
                 "duration": sum(s.get("duration", 3) for s in scenes) if scenes else 15,

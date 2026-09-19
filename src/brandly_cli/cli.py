@@ -1574,11 +1574,13 @@ def _record_media_spend(root: Path, project_id: str, kind: str, model_id: str) -
     CostTracker.record_spend, then syncs the result back into the
     project's ``spent`` field so ``brandly status`` stays accurate.
     """
+    from typing import cast
+
     from brandly_cli.constants import IMAGE_MODEL_INFO, VIDEO_MODEL_INFO
 
     cost = (
-        VIDEO_MODEL_INFO.get(model_id, {}).get("cost_credits")
-        or IMAGE_MODEL_INFO.get(model_id, {}).get("cost_credits")
+        cast(dict[str, Any], VIDEO_MODEL_INFO).get(model_id, {}).get("cost_credits")
+        or cast(dict[str, Any], IMAGE_MODEL_INFO).get(model_id, {}).get("cost_credits")
         or 0
     )
     if cost <= 0:

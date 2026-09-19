@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -22,7 +23,7 @@ CONSENT_FILE_NAME = ".brandly_report_consent.json"
 def _app_data_dir() -> Path:
     """Return a writeable app-data dir for brandly consent state."""
     if sys.platform == "win32":
-        base = Path.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")
+        base = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming")))
     elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
     else:
@@ -52,7 +53,7 @@ def _save_consent(state: dict[str, Any]) -> None:
 
 def collect_context(
     *,
-    error: Exception | None = None,
+    error: Exception | BaseException | None = None,
     project_id: str | None = None,
     root: str | Path | None = None,
     extra: dict[str, Any] | None = None,
@@ -204,14 +205,14 @@ def _pick_title(ctx: dict[str, Any]) -> str:
 
 def _resolve_token() -> str | None:
     for key in ("GITHUB_TOKEN", "GH_TOKEN"):
-        val = sys.environ.get(key)
+        val = os.environ.get(key)
         if val:
             return val.strip()
     # Try ~/.config/gh/hosts.yml style config — simple fallback
     gh_config = Path.home() / ".config" / "gh" / "hosts.yml"
     if gh_config.exists():
         try:
-            import yaml
+            import yaml  # type: ignore[import-untyped]
             cfg = yaml.safe_load(gh_config.read_text())
             for _host, entry in (cfg or {}).items():
                 if isinstance(entry, dict) and entry.get("oauth_token"):

@@ -39,5 +39,8 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-      - name: Release to PyPI
+      - name: Release to PyPI (skip if already published)
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+

@@ -9,7 +9,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/brandly-cli.svg)](https://pypi.org/project/brandly-cli/)
 [![Python >=3.10](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-358_passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
+[![Tests](https://img.shields.io/badge/tests-411_passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![Lint](https://img.shields.io/badge/lint-ruff_clean-brightgreen.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![CI](https://github.com/Dream-Pixels-Forge/brandly-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli/actions)
 [![GitHub stars](https://img.shields.io/github/stars/Dream-Pixels-Forge/brandly-cli?style=social)](https://github.com/Dream-Pixels-Forge/brandly-cli/stargazers)
@@ -28,6 +28,21 @@ Brandly is an **autonomous video production pipeline** that turns product ideas 
 - **Director orchestrator** — an autonomous agent that guides the entire production process
 - **Credit budgeting** — track spend per phase against a project budget
 - **Style presets** — avoid AI slop with photorealistic, cinematic, editorial, commercial, and documentary presets
+- **Production plan as source of truth** — every generation registers on `docs/plan/production_plan.md`; `brandly produce` generates multi-shot films one shot at a time (Agnes: 1 request/min)
+- **Smaller reference payloads** — large local images auto-convert to webp/jpeg before upload
+
+### v0.3.15 New Features + Issue Fixes (#19–#24)
+
+| Fix | Description |
+|-----|-------------|
+| **Image converter** | `src/brandly_cli/image_convert.py` — large local references auto-shrink to webp/jpeg (JPEG opaque, WebP alpha; `BRANDLY_IMAGE_CONVERT=off` to disable) — 1.7 MB PNG → 410 KB JPEG |
+| **`brandly produce` (shot-by-shot)** | New command: registers ALL shots on the production plan first, then generates one at a time with a 60 s wait (1 req/min). No batch/parallel mode; resumable (COMPLETED shots skipped, failures stay PENDING) |
+| **Scoped auto-refs (#20)** | `brandly video --no-auto-refs` / `--auto-ref-category <name>` — stop payload bloat + style bleed in multi-look projects |
+| **Style follows `--style` (#21)** | `create_video_task` takes `style_preset`; no more hardcoded cinematic suffix on stylised work (e.g. monochrome sumi-e) |
+| **Reference import (#23)** | `brandly reference <id> --image <path> [--no-generate]` — adopt client-supplied plates as `primary_reference`, zero credit spend |
+| **Visible create errors (#24)** | Failures print `ExceptionType: detail` (no more empty messages); create timeout 60 s → 180 s |
+| **Graceful `brandly jobs` (#19)** | 404 degrades to a dim hint (`brandly job-resume <id>`) instead of error spam |
+| **Rate-limited `brandly batch`** | Variants submit one at a time (60 s spacing) + style-preset parity; kept as the future batch path when Agnes supports true batch |
 
 ### v0.3.12 Bug Fixes
 

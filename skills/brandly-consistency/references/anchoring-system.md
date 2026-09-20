@@ -187,5 +187,5 @@ brandly image --prompt "Character reference sheet: Maya, front/side/3/4 views,
 
 # Use the generated image as reference in video
 brandly video <project_id> --prompt "$(cat shots/shot_01.txt)" \
-  --reference-images ".brandly/projects/<id>/artifacts/images/maya-ref.png" --wait
+  --reference-images ".brandly/<project_id>/images/character/maya-ref.png" --wait
 ```

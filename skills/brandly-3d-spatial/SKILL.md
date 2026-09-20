@@ -51,8 +51,7 @@ Agnes Video 2.5 Flash does NOT support video input. Instead, it uses:
 ```
 .brandly/{project}/
 ├── docs/           # Plans, bibles, storyboards
-├── refs/           # Primary reference images
-├── images/         # Generated images by category
+├── images/         # Reference images by category (prop/, character/, ...)
 ├── videos/         # Generated videos by category
 ├── audio/          # Audio files by category
 ├── 3d-spatial/     # Blender spatial references

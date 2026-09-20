@@ -62,6 +62,16 @@ def _resolve_image_url(path_or_url: str) -> str:
         console.print(f"[yellow]⚠ Image file not found:[/yellow] {path_or_url}")
         return path_or_url  # let API return a clear error
 
+    # Issue #24/#20: shrink large local images (PNG plates, multi-MB files)
+    # to webp/jpeg before base64-encoding. No-op for small/remote files;
+    # disable with BRANDLY_IMAGE_CONVERT=off.
+    from brandly_cli.image_convert import maybe_convert
+
+    converted = maybe_convert(path_or_url)
+    if converted.startswith("data:"):
+        console.print(f"[dim]Converted to smaller format: {p.name}[/dim]")
+        return converted
+
     mime = mimetypes.guess_type(p.name)[0] or "image/png"
     data = base64.b64encode(p.read_bytes()).decode()
     console.print(f"[dim]Encoded local file: {p.name} ({mime}, {p.stat().st_size // 1024}KB)[/dim]")
@@ -375,6 +385,7 @@ async def create_video_task(
     last_frame: str | None = None,
     reference_images: list[str] | None = None,
     reference_audios: list[str] | None = None,
+    style_preset: str | None = None,
 ) -> dict[str, Any]:
     """Create a video generation task and return {id, video_id, status, progress}.
 
@@ -386,10 +397,18 @@ async def create_video_task(
     ``mode="auto"`` (the default) infers the mode from the inputs:
     keyframe when a start/end frame is provided, reference when reference
     images are provided, otherwise text.
+
+    ``style_preset`` (issue #21) controls the style-preset suffix: pass a
+    preset name to apply it, or ``None``/``"none"`` to disable. It no longer
+    hardcodes ``cinematic`` regardless of the requested style.
     """
     from brandly_cli.style_presets import apply_style_preset
 
-    enhanced = apply_style_preset(prompt, "cinematic")
+    enhanced = (
+        apply_style_preset(prompt, style_preset)
+        if style_preset and style_preset != "none"
+        else prompt
+    )
 
     if mode == "auto":
         mode = infer_video_mode(
@@ -460,7 +479,9 @@ async def create_video_task(
         )
 
     async def _request() -> Any:
-        async with httpx.AsyncClient(timeout=60) as client:
+        # 180s: large reference payloads (even after webp/jpeg conversion)
+        # need headroom on the slow create endpoint (issue #24).
+        async with httpx.AsyncClient(timeout=180) as client:
             resp = await client.post(
                 f"{AGNES_BASE_URL}/videos",
                 headers=_headers(),
@@ -671,6 +692,18 @@ async def list_jobs(
             }
             for j in jobs
         ]
+    except httpx.HTTPStatusError as e:
+        # Issue #19: the default Agnes base URL does not expose GET /videos
+        # — degrade gracefully instead of warning about a 404.
+        if e.response.status_code == 404:
+            console.print(
+                "[dim]Job listing is not supported on this Agnes endpoint "
+                f"({AGNES_BASE_URL}). Use 'brandly job-resume <video_id>' "
+                "instead.[/dim]"
+            )
+            return []
+        console.print(f"[yellow]⚠ Could not fetch jobs: {e}[/yellow]")
+        return []
     except Exception as e:
         console.print(f"[yellow]⚠ Could not fetch jobs: {e}[/yellow]")
         return []

@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +84,7 @@ from brandly_cli.style_presets import apply_style_preset
 from brandly_cli.sync import SYNC_HANDLERS, TOOLS, detect_tools, sync_keys
 from brandly_cli.types import PhaseResult
 from brandly_cli.utils import (
+    _read_production_plan_rows,
     download_file,
     ellipsize,
     generate_project_id,
@@ -808,6 +810,21 @@ def build_reference_prompt(subject_type: str, subject: str) -> str:
     default=True,
     help="Run the quality gate (AI check) on the generated sheet (default: on)",
 )
+@click.option(
+    "--image",
+    "import_image",
+    default=None,
+    help="Import an existing local image file as the project's primary "
+    "reference instead of generating one (issue #23: adopt client-supplied "
+    "plates without spending credits).",
+)
+@click.option(
+    "--no-generate",
+    "no_generate",
+    is_flag=True,
+    default=False,
+    help="With --image: skip generation entirely and just register the file.",
+)
 @click.pass_context
 def reference(
     ctx: click.Context,
@@ -819,6 +836,8 @@ def reference(
     ratio: str,
     model: str,
     run_gate: bool,
+    import_image: str | None,
+    no_generate: bool,
 ) -> None:
     """Generate the primary reference image for a project.
 
@@ -840,6 +859,111 @@ def reference(
     if not prompt:
         console.print(f"[red]Unknown subject type: {subject_type}[/red]")
         sys.exit(1)
+
+    # ------------------------------------------------------------------
+    # Issue #23: import an existing local plate as the primary reference.
+    # No generation, no credit spend — just register and lock the file.
+    # ------------------------------------------------------------------
+    if import_image:
+        if not no_generate:
+            console.print(
+                "[yellow]⚠ --image implies --no-generate: the existing file is "
+                "registered as-is (no new image is generated).[/yellow]"
+            )
+        src = Path(import_image)
+        if not src.is_file():
+            console.print(f"[red]Image not found: {src}[/red]")
+            sys.exit(1)
+
+        root = _get_root(ctx)
+        category = layout.image_category_for_subject(subject_type)
+        target_dir = layout.media_dir(
+            layout.project_dir(root, project_id), "images", category
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
+        stem = sanitize_filename(src.stem) or "plate"
+        dest = target_dir / f"reference_{subject_type}_{stem}{src.suffix or '.png'}"
+        shutil.copyfile(src, dest)
+        console.print(f"[green]✓ Imported reference plate:[/green] {dest}")
+
+        from brandly_cli.utils import write_generation_plan
+
+        plan, plan_reused = write_generation_plan(
+            project_id,
+            "reference",
+            root=root,
+            prompt=subject,
+            model="imported",
+            style=style_preset or "default",
+            extra_config={
+                "subject_type": subject_type,
+                "role": "primary_reference",
+                "imported_from": str(src),
+            },
+            source="brandly reference --image",
+        )
+        console.print(f"[dim]Plan {'reused' if plan_reused else 'written'}: {plan}[/dim]")
+
+        reference_meta = {
+            "subject_type": subject_type,
+            "skill": subject_skill,
+            "subject": subject,
+            "image_path": str(dest),
+            "source_url": "",
+            "generated_at": now_iso(),
+            "model": "imported",
+            "style_preset": style_preset,
+            "imported_from": str(src),
+        }
+        pm = ProjectManager(root)
+        update_result = asyncio.run(
+            pm.update(  # type: ignore[arg-type]
+                project_id, {"primary_reference": reference_meta}
+            )
+        )
+        if update_result is None:
+            console.print("[red]✗ Failed to update project metadata.[/red]")
+            sys.exit(1)
+        console.print("[green]✓ Project primary_reference metadata updated.[/green]")
+
+        approved, note = _human_review_gate(
+            "reference", f"the imported {subject_type} reference for '{subject}'"
+        )
+        if note:
+            _write_review_note(
+                root, project_id, "reference", note, extra=f"subject: {subject}"
+            )
+        if not approved:
+            console.print(
+                "[red]✗ Imported reference rejected at the human gate — the "
+                "plan stays PENDING; remove it or import a different file.[/red]"
+            )
+            sys.exit(1)
+        console.print("[green]✓ Human gate passed — reference approved.[/green]")
+
+        from brandly_cli.utils import write_generation_doc
+
+        write_generation_doc(
+            project_id,
+            "reference",
+            dest,
+            root=root,
+            prompt=subject,
+            model="imported",
+            style=style_preset,
+            metadata={
+                "subject_type": subject_type,
+                "imported_from": str(src),
+                "role": "primary_reference",
+            },
+            source="brandly reference --image",
+            plan_file=str(plan),
+        )
+        console.print(
+            f"\n[bold]Next:[/bold] run [cyan]brandly video {project_id} ...[/cyan] — "
+            f"the imported reference will be auto-injected as a reference image."
+        )
+        return
 
     # Add the project's idea as additional context (for multi-asset campaigns)
     root = _get_root(ctx)
@@ -1297,6 +1421,20 @@ def image(
     default=None,
     help="Comma-separated reference audio URLs (reference mode)",
 )
+@click.option(
+    "--no-auto-refs",
+    "auto_refs_enabled",
+    flag_value=False,
+    default=True,
+    help="Do NOT auto-inject every project image as a reference (issue #20: "
+    "prevents payload bloat and style bleed between visual worlds).",
+)
+@click.option(
+    "--auto-ref-category",
+    default=None,
+    help="Scope auto-injected references to one image category "
+    "(e.g. 'prop', 'character', 'location') instead of all images.",
+)
 @click.pass_context
 def video(
     ctx: click.Context,
@@ -1317,6 +1455,8 @@ def video(
     allow_referenceless: bool,
     run_gate: bool,
     reference_audios: str | None,
+    auto_refs_enabled: bool,
+    auto_ref_category: str | None,
 ) -> None:
     """Generate an AI video via Agnes AI.
 
@@ -1338,7 +1478,18 @@ def video(
 
     # Auto-detect project artifacts as additional reference images
     root = _get_root(ctx)
-    auto_refs = get_reference_image_urls(project_id, root)
+    auto_refs = get_reference_image_urls(project_id, root) if auto_refs_enabled else []
+    # Issue #20: optionally scope auto-injected references to one category
+    # (e.g. images/prop/, images/location/) so each scene is anchored to
+    # exactly its own plates instead of receiving the whole images tree.
+    if auto_ref_category:
+        marker = f"images{os.sep}{auto_ref_category}{os.sep}"
+        auto_refs = [p for p in auto_refs if marker in p or f"images/{auto_ref_category}/" in p]
+        if not auto_refs:
+            console.print(
+                f"[yellow]⚠ No images found in category '{auto_ref_category}' — "
+                "auto references are empty for this run.[/yellow]"
+            )
 
     # Read the project's primary_reference metadata (set by `brandly reference`)
     reference: dict[str, Any] | None = _load_project_reference(project_id, root)
@@ -1499,10 +1650,26 @@ def video(
                 last_frame=last_frame,
                 reference_images=imgs if imgs else None,
                 reference_audios=auds,
+                # Issue #21: the preset follows --style instead of being
+                # hardcoded — cinematic only for cinematic; disabled for
+                # non-photographic styles (sumi-e ink, cel animation, ...).
+                style_preset="cinematic" if style == "cinematic" else None,
             )
         )
     except Exception as e:
-        console.print(f"[red]Error creating video task: {e}[/red]")
+        # Issue #24: never print an empty message — show the exception type
+        # and whatever detail we have (timeout exceptions often have none).
+        detail = str(e).strip()
+        console.print(
+            f"[red]Error creating video task: {type(e).__name__}: "
+            f"{detail or '(no error message — likely a timeout; see retry log above)'}"
+            f"[/red]"
+        )
+        console.print(
+            "[dim]Tip: large reference payloads can time out the create endpoint — "
+            "references are now auto-converted to smaller webp/jpeg copies; use "
+            "--no-auto-refs / --auto-ref-category to slim the request further.[/dim]"
+        )
         from brandly_cli.utils import upsert_production_plan
 
         upsert_production_plan(
@@ -1685,6 +1852,185 @@ def video(
     _record_media_spend(root, project_id, "video", model)
 
     _print_json(task)
+
+
+# ---------------------------------------------------------------------------
+# produce — shot-by-shot generation driven by the production plan
+# (issue #22, per production directive: NO batch generation. The production
+# plan is the source of truth: every shot is prepared on it first, then
+# generation is pulled from the plan one shot at a time at the Agnes
+# rate limit of 1 request per minute.)
+# ---------------------------------------------------------------------------
+
+
+def _generate_shot(
+    project_id: str,
+    shot: dict[str, Any],
+    *,
+    ctx: click.Context,
+    root: Path,
+) -> bool:
+    """Generate ONE shot through the standard ``brandly video`` pipeline.
+
+    This keeps every per-shot safeguard: pre-generation plan, quality gate,
+    human gate, generation doc and credit recording. Returns True when the
+    shot finished successfully.
+    """
+    references = shot.get("references")
+    if isinstance(references, list):
+        references = ",".join(str(r) for r in references if str(r).strip())
+
+    try:
+        ctx.invoke(
+            video,
+            project_id=project_id,
+            prompt=str(shot.get("prompt", "")),
+            duration=int(shot.get("duration", 5)),
+            style=str(shot.get("style", "cinematic")),
+            reference_images=references or None,
+            wait=True,
+            require_reference=False,
+        )
+    except SystemExit as exc:
+        return exc.code in (0, None)
+    return True
+
+
+@cli.command()
+@click.argument("project_id")
+@click.option(
+    "--shots",
+    "shots_file",
+    required=True,
+    help="Path to a shot list JSON file: "
+    '[{"name": "shot-1", "prompt": "...", "duration": 5, "style": "cinematic", '
+    '"references": "a.png,b.png"}, ...]',
+)
+@click.option(
+    "--interval",
+    default=60.0,
+    show_default=True,
+    help="Seconds to wait BETWEEN shot generations (Agnes: 1 request per minute).",
+)
+@click.pass_context
+def produce(
+    ctx: click.Context,
+    project_id: str,
+    shots_file: str,
+    interval: float,
+) -> None:
+    """Generate a multi-shot film shot by shot from the production plan.
+
+    The production plan is the source of truth: ALL shots are first
+    registered on it (docs/plan/production_plan.md), then generation is
+    pulled from the plan one shot at a time — there is deliberately NO batch
+    or parallel mode, honouring the Agnes 1 request/minute rate limit.
+
+    Shots already COMPLETED in the production plan are skipped, so the run
+    is resumable: fix a failed shot and run the same command again.
+    """
+    if not is_valid_project_id(project_id):
+        console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(1)
+
+    root = _get_root(ctx)
+    path = Path(shots_file)
+    if not path.is_file():
+        console.print(f"[red]Shot list not found: {path}[/red]")
+        sys.exit(1)
+    try:
+        shots = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as e:
+        console.print(f"[red]Invalid shot list JSON: {e}[/red]")
+        sys.exit(1)
+    if not isinstance(shots, list) or not shots:
+        console.print("[red]Shot list must be a non-empty JSON array.[/red]")
+        sys.exit(1)
+
+    # ---- Phase 1: prepare ALL shots on the production plan (source of truth)
+    from brandly_cli.utils import (
+        production_plan_path,
+        upsert_production_plan,
+        write_generation_plan,
+    )
+
+    model = "agnes-video-2.5-flash"
+    prepared: list[tuple[dict[str, Any], str, Path]] = []
+    for idx, shot in enumerate(shots, start=1):
+        name = str(shot.get("name") or f"shot-{idx}")
+        slug = sanitize_filename(name.lower()) or f"shot-{idx}"
+        asset_type = f"video-shot-{slug}"
+        plan, plan_reused = write_generation_plan(
+            project_id,
+            asset_type,
+            root=root,
+            prompt=str(shot.get("prompt", "")),
+            model=model,
+            style=str(shot.get("style", "cinematic")),
+            extra_config={
+                "shot": name,
+                "duration": f"{shot.get('duration', 5)}s",
+                "role": "shot",
+            },
+            source="brandly produce",
+        )
+        prepared.append((shot, name, plan))
+        console.print(
+            f"[dim]Shot {name}: plan {'reused' if plan_reused else 'written'}: "
+            f"{plan.name}[/dim]"
+        )
+
+    plan_doc = production_plan_path(project_id, root=root)
+    console.print(
+        f"[green]✓ {len(prepared)} shot(s) registered on the production plan:[/green] "
+        f"{plan_doc}"
+    )
+
+    # ---- Phase 2: generate from the plan, one shot at a time (NO batch).
+    rows = _read_production_plan_rows(plan_doc)
+    for idx, (shot, name, plan) in enumerate(prepared):
+        status = rows.get(plan.name, {}).get("status", "PENDING")
+        if status == "COMPLETED":
+            console.print(f"[dim]Shot {name} already COMPLETED — skipping.[/dim]")
+            continue
+        if idx > 0:
+            console.print(
+                f"[dim]Rate limit (Agnes 1 request/min): waiting {interval:.0f}s "
+                f"before shot {name}...[/dim]"
+            )
+            time.sleep(interval)
+        console.print(f"[bold]▶ Shot {name}[/bold]")
+        ok = _generate_shot(project_id, shot, ctx=ctx, root=root)
+        slug = sanitize_filename(name.lower()) or f"shot-{idx + 1}"
+        if ok:
+            upsert_production_plan(
+                project_id,
+                root=root,
+                plan_file=str(plan),
+                asset_type=f"video-shot-{slug}",
+                model=model,
+                status="COMPLETED",
+                source="brandly produce",
+            )
+            console.print(f"[green]✓ Shot {name} completed.[/green]")
+        else:
+            upsert_production_plan(
+                project_id,
+                root=root,
+                plan_file=str(plan),
+                asset_type=f"video-shot-{slug}",
+                model=model,
+                status="FAILED",
+                source="brandly produce",
+            )
+            console.print(
+                f"[red]✗ Shot {name} failed — stopping. Remaining shots stay "
+                f"PENDING on the production plan; fix and re-run the same "
+                f"command to resume.[/red]"
+            )
+            sys.exit(1)
+
+    console.print(f"[green]✓ Production complete — see {plan_doc}[/green]")
 
 
 def _record_media_spend(root: Path, project_id: str, kind: str, model_id: str) -> None:
@@ -3302,6 +3648,12 @@ def probe(input: str, output: str) -> None:
     help="Model to use (2.5-flash is the current default)",
 )
 @click.option("-n", "--count", default=3, help="Number of variants to generate")
+@click.option(
+    "--interval",
+    default=60.0,
+    show_default=True,
+    help="Seconds to wait between variant submissions (Agnes: 1 request/min).",
+)
 @click.option("--wait", is_flag=True, help="Wait for each generation to complete")
 @click.option("--character", default=None, help="Character description for consistency")
 @click.option("--reference-images", default=None, help="Comma-separated reference image URLs or local file paths")
@@ -3313,12 +3665,19 @@ def batch(
     style: str,
     model: str,
     count: int,
+    interval: float,
     wait: bool,
     character: str | None,
     reference_images: str | None,
 ) -> None:
-    """Generate multiple video variants from a base prompt."""
-    async def _batch(ctx, project_id, base_prompt, style, model, count, wait, character, reference_images):
+    """Generate multiple video variants from a base prompt.
+
+    Variants are submitted one at a time with a 60 s wait between requests
+    (Agnes 1 request/minute rate limit). For multi-shot films use
+    ``brandly produce`` instead — the production-plan-driven, shot-by-shot
+    workflow.
+    """
+    async def _batch(ctx, project_id, base_prompt, style, model, count, interval, wait, character, reference_images):
         root = _get_root(ctx)
         if not is_valid_project_id(project_id):
             console.print("[red]Invalid project ID.[/red]")
@@ -3341,6 +3700,13 @@ def batch(
 
         results = []
         for i in range(count):
+            # 1 request/minute: wait between consecutive submissions.
+            if i > 0:
+                console.print(
+                    f"[dim]Rate limit (Agnes 1 request/min): waiting {interval:.0f}s "
+                    f"before variant {i + 1}...[/dim]"
+                )
+                time.sleep(interval)
             variant_prompt = f"{base_prompt}"
             if count > 1:
                 variant_prompt += f"\n\nVariation {i + 1}: Unique camera angle and composition."
@@ -3352,6 +3718,9 @@ def batch(
                     duration=5,
                     aspect_ratio="16:9",
                     reference_images=imgs,
+                    # Parity with `brandly video` (issue #21 fix): cinematic
+                    # style keeps the cinematic preset, others get none.
+                    style_preset="cinematic" if style == "cinematic" else None,
                 )
             except Exception as e:
                 console.print(
@@ -3389,7 +3758,7 @@ def batch(
             f"\n[green]✓ Batch complete: "
             f"{sum(1 for r in results if r.get('url'))}/{count} generated[/green]"
         )
-    asyncio.run(_batch(ctx, project_id, base_prompt, style, model, count, wait, character, reference_images))
+    asyncio.run(_batch(ctx, project_id, base_prompt, style, model, count, interval, wait, character, reference_images))
 
 
 # ---------------------------------------------------------------------------

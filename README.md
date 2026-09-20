@@ -213,6 +213,13 @@ brandly share output.mp4
 | `brandly video <id>` | Generate a video via Agnes AI (with 503 resilience) |
 | `brandly music` | Generate background music |
 | `brandly tts <text>` | Generate voiceover via TTS |
+| `brandly produce <id> --shots shots.json` | Multi-shot film: registers ALL shots on the production plan (source of truth), then generates **one shot at a time** with a 60 s wait (Agnes: 1 request/min). No batch/parallel mode; resumable |
+
+Large local reference images are auto-converted to smaller webp/jpeg payloads
+before upload (disable with `BRANDLY_IMAGE_CONVERT=off`). Scope auto-injected
+references with `brandly video --no-auto-refs` / `--auto-ref-category <name>`,
+and adopt client-supplied plates with
+`brandly reference <id> --image <path> [--no-generate]`.
 
 ### Post-Production
 

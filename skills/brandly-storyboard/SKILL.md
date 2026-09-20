@@ -193,18 +193,26 @@ Before generating, verify:
 
 ## CLI Execution Pattern
 
-```bash
-# Generate each shot sequentially (reference images auto-detected from project artifacts)
-for shot in shot_1 shot_2 shot_3; do
-  brandly video <project_id> \
-    --prompt "$(cat $shot.txt)" \
-    --wait
-done
+**The production plan is the source of truth.** Write the storyboard as a
+shot-list JSON file, then generate with `brandly produce` — it registers
+every shot on `docs/plan/production_plan.md` first, then generates
+**one shot at a time** with a 60s wait between requests (Agnes:
+1 request/minute). Never call `brandly video` in a loop or batch —
+that bypasses the production plan and violates the rate limit.
 
-# Or batch with explicit ordering
-brandly video <project_id> --prompt "SHOT 1: ..." --wait
-brandly video <project_id> --prompt "SHOT 2: ..." --wait
-brandly video <project_id> --prompt "SHOT 3: ..." --wait
+```bash
+# shots.json — the storyboard in machine form (one entry per shot)
+cat > shots.json <<'EOF'
+[
+  {"name": "shot-1", "prompt": "Establishing: city at dawn, product on table, slow push-in", "duration": 5, "style": "cinematic", "references": "loc_city.png,prop_bottle.png"},
+  {"name": "shot-2", "prompt": "Tracking: hand reaches for the product", "duration": 4, "style": "cinematic", "references": "char_maya.png"},
+  {"name": "shot-3", "prompt": "ECU: condensation on the bottle", "duration": 4, "style": "cinematic", "references": "prop_bottle.png"}
+]
+EOF
+
+# Shot-by-shot production pulled from the production plan (resumable:
+# COMPLETED shots are skipped on re-run)
+brandly produce <project_id> --shots shots.json
 ```
 
 ---

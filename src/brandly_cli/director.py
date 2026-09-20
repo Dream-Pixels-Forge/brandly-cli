@@ -18,6 +18,7 @@ from brandly_cli.ark_client import (
 )
 from brandly_cli.audio_client import generate_music, generate_tts
 from brandly_cli.constants import (
+    DEFAULT_AGNES_VIDEO_MODEL,
     PHASE_ORDER,
     SHOT_COSTS,
     STYLE_COSTS,
@@ -303,17 +304,24 @@ class Director:
         project_id: str,
         prompt: str,
         *,
-        model: str = "agnes-video-v2.0",
-        mode: str = "text",
+        model: str = DEFAULT_AGNES_VIDEO_MODEL,
+        mode: str = "auto",
         duration: int = 5,
         aspect_ratio: str = "16:9",
         style: str = "cinematic",
         character: str | None = None,
         reference_images: list[str] | None = None,
+        first_frame: str | None = None,
+        last_frame: str | None = None,
         wait: bool = False,
         max_wait: int = 300,
     ) -> dict[str, Any]:
-        """Generate a video with enhanced prompt engineering and character consistency."""
+        """Generate a video with enhanced prompt engineering and character consistency.
+
+        ``mode="auto"`` (default) infers the mode from the inputs:
+        keyframe when a start/end frame is provided, reference when
+        reference images are provided, otherwise text.
+        """
         # Enhance prompt with style and consistency hints
         enhanced = build_enhanced_video_prompt(
             prompt, style, character=character, reference_images=reference_images
@@ -336,6 +344,8 @@ class Director:
                 mode=mode,
                 duration=duration,
                 aspect_ratio=aspect_ratio,
+                first_frame=first_frame,
+                last_frame=last_frame,
                 reference_images=reference_images,
             )
             video_id = task["video_id"]
@@ -362,7 +372,7 @@ class Director:
                     "task_id": task.get("id"),
                     "video_id": video_id,
                     "model": model,
-                    "mode": mode,
+                    "mode": task.get("mode") or mode,
                     "prompt": prompt,
                     "url": task.get("url"),
                     "status": task.get("status"),

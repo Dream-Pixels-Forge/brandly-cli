@@ -16,9 +16,12 @@ Layout — one folder per project, keyed by the readable project id (slug):
                 bible/       production bibles
                 storyboard/  storyboards / shot lists
                 tmp/         transient working docs (gen records, fail docs)
-            refs/            primary reference images (identity locking)
             images/
                 prop/  location/  character/  vehicle/  mecha/  animal/  plant/  general/
+                keyframe/ (start/end frame images used for video keyframe mode,
+                          e.g. start_frame_kitchen.png, end_frame_exterior_house.png)
+                (reference images live in the matching sub-folder —
+                 e.g. an object reference goes to images/prop/)
             videos/
                 scenes/  insert/  transition/  general/
             audio/
@@ -28,11 +31,6 @@ Layout — one folder per project, keyed by the readable project id (slug):
             project.json
             cost.json
             export/
-
-Back-compat: existing trees stored under the legacy
-``.brandly/projects/{id}/`` layout are still readable via
-:func:`resolve_project_dir`; new projects are always created in the
-top-level ``.brandly/{id}/`` layout.
 """
 
 from __future__ import annotations
@@ -55,6 +53,7 @@ IMAGE_CATEGORIES: tuple[str, ...] = (
     "mecha",
     "animal",
     "plant",
+    "keyframe",
     "general",
 )
 
@@ -78,7 +77,8 @@ SPATIAL_CATEGORIES: tuple[str, ...] = (
     "general",      # Other spatial references
 )
 
-#: Map a reference ``subject_type`` to an ``images/`` category.
+#: Map a reference ``subject_type`` to the ``images/`` sub-folder where its
+#: reference images are stored (all references live under images/).
 SUBJECT_TO_IMAGE_CATEGORY: dict[str, str] = {
     "object": "prop",
     "location": "location",
@@ -87,6 +87,7 @@ SUBJECT_TO_IMAGE_CATEGORY: dict[str, str] = {
     "animal": "animal",
     "plant": "plant",
     "mecha": "mecha",
+    "keyframe": "keyframe",
 }
 
 #: Every category across all media folders, for eager creation.
@@ -111,29 +112,13 @@ def brandly_dir(root: str | Path) -> Path:
 
 
 def project_dir(root: str | Path, project_id: str) -> Path:
-    """Return the **new** canonical project dir: ``.brandly/{project_id}/``."""
+    """Return the canonical project dir: ``.brandly/{project_id}/``."""
     return brandly_dir(root) / project_id
 
 
-def legacy_project_dir(root: str | Path, project_id: str) -> Path:
-    """Return the **legacy** project dir: ``.brandly/projects/{project_id}/``."""
-    return brandly_dir(root) / "projects" / project_id
-
-
 def resolve_project_dir(root: str | Path, project_id: str) -> Path:
-    """Return the project dir to *read* from, preferring the new layout.
-
-    Order: new ``.brandly/{id}/`` (if it holds a ``project.json``) →
-    legacy ``.brandly/projects/{id}/`` (if it holds a ``project.json``) →
-    new dir (created on demand).
-    """
-    new_dir = project_dir(root, project_id)
-    if (new_dir / "project.json").exists():
-        return new_dir
-    legacy_dir = legacy_project_dir(root, project_id)
-    if (legacy_dir / "project.json").exists():
-        return legacy_dir
-    return new_dir
+    """Return the canonical project dir: ``.brandly/{project_id}/``."""
+    return project_dir(root, project_id)
 
 
 # ---------------------------------------------------------------------------
@@ -144,11 +129,6 @@ def resolve_project_dir(root: str | Path, project_id: str) -> Path:
 def docs_dir(proj_dir: Path, category: str = "tmp") -> Path:
     """Return ``<proj>/docs/{category}`` (unknown category → 'tmp')."""
     return proj_dir / "docs" / _check(category, DOC_CATEGORIES, "tmp")
-
-
-def refs_dir(proj_dir: Path) -> Path:
-    """Return ``<proj>/refs/`` for primary reference images."""
-    return proj_dir / "refs"
 
 
 def media_dir(proj_dir: Path, top: str, category: str = "general") -> Path:
@@ -248,7 +228,6 @@ def ensure_project_dirs(proj_dir: str | Path) -> None:
     proj_dir = Path(proj_dir)
     for cat in DOC_CATEGORIES:
         (proj_dir / "docs" / cat).mkdir(parents=True, exist_ok=True)
-    refs_dir(proj_dir).mkdir(parents=True, exist_ok=True)
     for cat in IMAGE_CATEGORIES:
         (proj_dir / "images" / cat).mkdir(parents=True, exist_ok=True)
     for cat in VIDEO_CATEGORIES:
@@ -268,12 +247,16 @@ _IMAGE_EXTS = ("*.png", "*.jpg", "*.jpeg", "*.webp")
 
 
 def discover_images(proj_dir: Path) -> list[Path]:
-    """Return every image under ``refs/`` and ``images/`` (sorted, stable)."""
+    """Return every image under ``images/`` (all sub-folders, sorted, stable).
+
+    Reference images live in the matching ``images/`` sub-folder, so no
+    separate refs tree is scanned.
+    """
     found: list[Path] = []
-    for base in (refs_dir(proj_dir), proj_dir / "images"):
-        if base.exists():
-            for ext in _IMAGE_EXTS:
-                found.extend(base.rglob(ext))
+    base = proj_dir / "images"
+    if base.exists():
+        for ext in _IMAGE_EXTS:
+            found.extend(base.rglob(ext))
     # Stable, de-duplicated ordering.
     seen: set[Path] = set()
     unique: list[Path] = []

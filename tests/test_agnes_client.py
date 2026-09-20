@@ -15,6 +15,7 @@ from brandly_cli.agnes_client import (
     create_video_task,
     generate_image,
     get_video_status,
+    infer_video_mode,
     list_jobs,
     poll_video,
 )
@@ -242,15 +243,81 @@ class TestGenerateImage:
 # ---------------------------------------------------------------------------
 
 
+class TestInferVideoMode:
+    """`--mode auto` inference: keyframe > reference > text."""
+
+    def test_keyframe_when_first_frame(self) -> None:
+        assert infer_video_mode(first_frame="a.png") == "keyframe"
+
+    def test_keyframe_when_last_frame_only(self) -> None:
+        assert infer_video_mode(last_frame="b.png") == "keyframe"
+
+    def test_keyframe_beats_reference(self) -> None:
+        assert (
+            infer_video_mode(
+                first_frame="a.png",
+                last_frame="b.png",
+                reference_images=["ref.png"],
+            )
+            == "keyframe"
+        )
+
+    def test_reference_when_images(self) -> None:
+        assert infer_video_mode(reference_images=["ref.png"]) == "reference"
+
+    def test_text_when_nothing(self) -> None:
+        assert infer_video_mode() == "text"
+
+
 class TestCreateVideoTask:
     async def test_success(self, mock_api_key: str) -> None:
         mock_data = {"id": "task-001", "video_id": "vid-001", "status": "pending", "progress": 0}
         with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
             mock_ctx.return_value = _make_mock_client(mock_data)
-            result = await create_video_task("a cat walking", model="agnes-video-v2.0")
+            result = await create_video_task("a cat walking")
 
         assert result["video_id"] == "vid-001"
         assert result["status"] == "pending"
+        # Default model is the only Agnes video model now
+        assert result["mode"] == "text"
+
+    async def test_auto_mode_resolves_to_keyframe(self, mock_api_key: str) -> None:
+        mock_data = {"id": "task-003", "video_id": "vid-003", "status": "pending"}
+        with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
+            mock_ctx.return_value = _make_mock_client(mock_data)
+            result = await create_video_task(
+                "transition", first_frame="https://x.invalid/a.png"
+            )
+
+        assert result["mode"] == "keyframe"
+        call_args = mock_ctx.return_value.__aenter__.return_value.post.call_args
+        body = call_args.kwargs.get("json") or call_args[1]["json"]
+        assert body["mode"] == "keyframe"
+        assert body["first_frame"] == "https://x.invalid/a.png"
+
+    async def test_auto_mode_resolves_to_reference(self, mock_api_key: str) -> None:
+        mock_data = {"id": "task-004", "video_id": "vid-004", "status": "pending"}
+        with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
+            mock_ctx.return_value = _make_mock_client(mock_data)
+            result = await create_video_task(
+                "consistent character", reference_images=["https://x.invalid/ref.png"]
+            )
+
+        assert result["mode"] == "reference"
+        call_args = mock_ctx.return_value.__aenter__.return_value.post.call_args
+        body = call_args.kwargs.get("json") or call_args[1]["json"]
+        assert body["mode"] == "reference"
+        assert body["images"] == ["https://x.invalid/ref.png"]
+
+    async def test_keyframe_mode_without_frames_degrades_to_text(
+        self, mock_api_key: str
+    ) -> None:
+        mock_data = {"id": "task-005", "video_id": "vid-005", "status": "pending"}
+        with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
+            mock_ctx.return_value = _make_mock_client(mock_data)
+            result = await create_video_task("test", mode="keyframe")
+
+        assert result["mode"] == "text"
 
     async def test_flash_model_uses_seconds(self, mock_api_key: str) -> None:
         mock_data = {"id": "task-002", "video_id": "vid-002", "status": "pending"}

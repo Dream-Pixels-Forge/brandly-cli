@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 from rich.console import Console
 
-from brandly_cli.constants import DEFAULT_AGNES_IMAGE_MODEL
+from brandly_cli.constants import DEFAULT_AGNES_IMAGE_MODEL, DEFAULT_AGNES_VIDEO_MODEL
 from brandly_cli.utils import now_iso
 
 console = Console()
@@ -342,11 +342,30 @@ async def generate_image(
 # ---------------------------------------------------------------------------
 
 
+def infer_video_mode(
+    *,
+    first_frame: str | None = None,
+    last_frame: str | None = None,
+    reference_images: list[str] | None = None,
+) -> str:
+    """Infer the video generation mode from the inputs actually provided.
+
+    - ``keyframe``  — a start/first frame (or end/last frame) is provided.
+    - ``reference`` — reference image(s) are provided (character/object consistency).
+    - ``text``      — plain text-to-video, no image inputs.
+    """
+    if first_frame or last_frame:
+        return "keyframe"
+    if reference_images:
+        return "reference"
+    return "text"
+
+
 async def create_video_task(
     prompt: str,
     *,
-    model: str = "agnes-video-v2.0",
-    mode: str = "text",
+    model: str = DEFAULT_AGNES_VIDEO_MODEL,
+    mode: str = "auto",
     duration: int | None = None,
     aspect_ratio: str = "16:9",
     size: str = "720P",
@@ -359,19 +378,40 @@ async def create_video_task(
 ) -> dict[str, Any]:
     """Create a video generation task and return {id, video_id, status, progress}.
 
-    Supports three modes (API accepts these values directly):
-    - text: plain text-to-video generation
+    Supported modes (the API accepts these values directly):
+    - text: plain text-to-video generation (no image inputs)
     - keyframe: transition between first_frame and last_frame images
     - reference: use reference_images/audios to maintain character/object consistency
+
+    ``mode="auto"`` (the default) infers the mode from the inputs:
+    keyframe when a start/end frame is provided, reference when reference
+    images are provided, otherwise text.
     """
     from brandly_cli.style_presets import apply_style_preset
 
     enhanced = apply_style_preset(prompt, "cinematic")
-    is_v25_flash = "flash" in model or "2.5-flash" in model
 
-    # API accepts mode values directly: "text", "keyframe", "reference"
+    if mode == "auto":
+        mode = infer_video_mode(
+            first_frame=first_frame, last_frame=last_frame, reference_images=reference_images
+        )
     if mode not in ("text", "keyframe", "reference"):
         console.print(f"[yellow]⚠ Unknown mode '{mode}', falling back to 'text'[/yellow]")
+        mode = "text"
+
+    # Guard: warn if the chosen mode is missing its required inputs, and
+    # degrade to text so the task can still be created.
+    if mode == "keyframe" and not first_frame and not last_frame:
+        console.print(
+            "[yellow]⚠ Keyframe mode needs --first-frame or --last-frame; "
+            "falling back to text mode.[/yellow]"
+        )
+        mode = "text"
+    elif mode == "reference" and not reference_images:
+        console.print(
+            "[yellow]⚠ Reference mode needs reference images; "
+            "falling back to text mode.[/yellow]"
+        )
         mode = "text"
 
     body: dict[str, Any] = {
@@ -390,6 +430,11 @@ async def create_video_task(
     )
     body["prompt"] = enhanced + consistency_hint
 
+    # Video 2.5 Flash workflow: duration 4-12s, 720P
+    body["seconds"] = str(max(4, min(12, duration or 5)))
+    body["size"] = size or "720P"
+    body["aspect_ratio"] = aspect_ratio
+
     # Resolve local file paths to data: URLs
     if first_frame:
         first_frame = _resolve_image_url(first_frame)
@@ -398,43 +443,21 @@ async def create_video_task(
     if reference_images:
         reference_images = _resolve_image_urls(reference_images)
 
-    if is_v25_flash:
-        # Video 2.5 Flash: duration 4-12s, size fixed at 720P
-        body["seconds"] = str(max(4, min(12, duration or 5)))
-        body["size"] = "720P"
-        body["aspect_ratio"] = aspect_ratio
-        if mode == "keyframe":
-            if first_frame:
-                body["first_frame"] = first_frame
-            if last_frame:
-                body["last_frame"] = last_frame
-        elif mode == "reference":
-            if reference_images:
-                body["images"] = reference_images
-            if reference_audios:
-                body["audios"] = reference_audios
-            # Add reference hint for consistency
-            body["prompt"] += (
-                "\n\nReference image anchored: Preserve exact appearance, lighting, "
-                "and composition from the provided reference image(s)."
-            )
-    else:
-        # v2.0 style (legacy)
-        frame_count = min(441, (duration or 5) * 24) + 1 if duration else 121
-        body["num_frames"] = frame_count
-        body["frame_rate"] = 24
-        if aspect_ratio:
-            body["ratio"] = aspect_ratio
-        if mode == "keyframe" and reference_images:
-            body["extra_body"] = {"image": reference_images, "mode": "keyframes"}
-        elif mode == "reference" and reference_images:
-            body["extra_body"] = {"image": reference_images, "mode": "multi_reference"}
-        elif reference_images:
-            body["image"] = reference_images[0]
-            body["prompt"] += (
-                "\n\nReference image anchored: Preserve exact appearance, lighting, "
-                "and composition from the provided reference image."
-            )
+    if mode == "keyframe":
+        if first_frame:
+            body["first_frame"] = first_frame
+        if last_frame:
+            body["last_frame"] = last_frame
+    elif mode == "reference":
+        if reference_images:
+            body["images"] = reference_images
+        if reference_audios:
+            body["audios"] = reference_audios
+        # Add reference hint for consistency
+        body["prompt"] += (
+            "\n\nReference image anchored: Preserve exact appearance, lighting, "
+            "and composition from the provided reference image(s)."
+        )
 
     async def _request() -> Any:
         async with httpx.AsyncClient(timeout=60) as client:
@@ -478,6 +501,7 @@ async def create_video_task(
         "video_id": data.get("video_id") or data.get("task_id") or data.get("id"),
         "status": data.get("status", "pending"),
         "progress": data.get("progress", 0),
+        "mode": mode,
         "created_at": data.get("created_at"),
     }
 

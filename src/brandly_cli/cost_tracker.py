@@ -61,24 +61,16 @@ class ProjectCostState:
 class CostTracker:
     """Tracks credit spend per project and enforces budget gates.
 
-    ``base`` is the ``.brandly`` directory. Each project's cost state lives at
-    ``.brandly/{project_id}/cost.json`` (new layout); the legacy
-    ``.brandly/projects/{project_id}/cost.json`` location is used as a
-    fallback for older installs.
+    ``base`` is the ``.brandly`` directory. Each project's cost state lives
+    at ``.brandly/{project_id}/cost.json``.
     """
 
     def __init__(self, base: str | Path) -> None:
         self.base = Path(base)
 
     def _resolve_project_dir(self, project_id: str) -> Path:
-        """New layout first; fall back to the legacy ``projects/`` tree."""
-        new_dir = self.base / project_id
-        if (new_dir / "project.json").exists() or (new_dir / "cost.json").exists():
-            return new_dir
-        legacy_dir = self.base / "projects" / project_id
-        if (legacy_dir / "project.json").exists() or (legacy_dir / "cost.json").exists():
-            return legacy_dir
-        return new_dir
+        """Return the canonical project dir: ``.brandly/{project_id}/``."""
+        return self.base / project_id
 
     def _cost_path(self, project_id: str) -> Path:
         return self._resolve_project_dir(project_id) / "cost.json"

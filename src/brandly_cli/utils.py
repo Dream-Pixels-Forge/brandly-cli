@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -219,6 +220,27 @@ def sanitize_filename(name: str, max_len: int = 80) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _plan_signature(
+    asset_type: str,
+    prompt: str,
+    model: str,
+    style: str,
+    config: dict[str, Any],
+) -> str:
+    """Stable hash of a generation config — detects an unchanged plan."""
+    payload = json.dumps(
+        {
+            "asset": asset_type,
+            "prompt": prompt,
+            "model": model,
+            "style": style,
+            "config": config,
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
 def write_generation_plan(
     project_id: str,
     asset_type: str,
@@ -228,27 +250,69 @@ def write_generation_plan(
     model: str,
     style: str,
     extra_config: dict[str, Any] | None = None,
-) -> Path:
+    source: str = "",
+) -> tuple[Path, bool]:
     """Write a generation plan BEFORE attempting API calls.
+
+    If a plan with an identical configuration already exists it is REUSED
+    instead of creating a new file — e.g. when retrying after a failed
+    generation. A new plan is only created when something in the
+    configuration (asset type, prompt, model, style, extra config) changed.
 
     Creates: {root}/.brandly/{id}/docs/plan/plan_{asset_type}_{timestamp}.md
 
     This ensures we have a record of what we INTENDED to generate,
-    even if the API call fails.
+    even if the API call fails. Every plan is registered in the production
+    plan document (``docs/plan/production_plan.md``) with its origin.
+
+    Args:
+        source: Which command/workflow created this plan
+            (e.g. ``"brandly video"``) — recorded in the production plan.
+
+    Returns:
+        (plan_path, reused) where ``reused`` is True when an existing plan
+        with the same configuration was returned.
     """
     from datetime import datetime, timezone
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     base = Path(root) if root else Path.cwd()
-    docs_dir = layout.docs_dir(
+    plan_dir = layout.docs_dir(
         layout.resolve_project_dir(base, project_id), "plan"
     )
-    docs_dir.mkdir(parents=True, exist_ok=True)
+    plan_dir.mkdir(parents=True, exist_ok=True)
 
     config = extra_config or {}
+    signature = _plan_signature(asset_type, prompt, model, style, config)
+
+    # Reuse an existing plan when nothing changed (retry after failure)
+    marker = f"<!-- plan-signature: {signature} -->"
+    rows = _read_production_plan_rows(
+        production_plan_path(project_id, root=root)
+    )
+    for plan_file in sorted(plan_dir.glob(f"plan_{asset_type}_*.md")):
+        try:
+            content = plan_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if marker in content:
+            prev_status = rows.get(plan_file.name, {}).get("status", "PENDING")
+            status = "PENDING" if prev_status in ("", "FAILED") else prev_status
+            upsert_production_plan(
+                project_id,
+                root=root,
+                plan_file=str(plan_file),
+                asset_type=asset_type,
+                model=model,
+                status=status,
+                source=source,
+            )
+            return plan_file, True
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
     md_content = f"""# Generation Plan: {asset_type.title()}
 
+{marker}
 **Project:** {project_id}
 **Planned:** {datetime_iso()}
 **Status:** PENDING
@@ -280,10 +344,125 @@ def write_generation_plan(
 - Use this to track generation intent vs actual output
 """
 
-    plan_path = docs_dir / f"plan_{asset_type}_{ts}.md"
+    plan_path = plan_dir / f"plan_{asset_type}_{ts}.md"
+    if plan_path.exists():
+        # A different config was written within the same second — use a
+        # disambiguated filename so both plans survive.
+        for i in range(2, 100):
+            candidate = plan_dir / f"plan_{asset_type}_{ts}_{i}.md"
+            if not candidate.exists():
+                plan_path = candidate
+                break
     plan_path.write_text(md_content, encoding="utf-8")
 
-    return plan_path
+    upsert_production_plan(
+        project_id,
+        root=root,
+        plan_file=str(plan_path),
+        asset_type=asset_type,
+        model=model,
+        status="PENDING",
+        source=source,
+    )
+
+    return plan_path, False
+
+
+# ---------------------------------------------------------------------------
+# Production plan — single source of truth for where each plan comes from
+# ---------------------------------------------------------------------------
+
+_PRODUCTION_PLAN_FILE = "production_plan.md"
+
+
+def production_plan_path(project_id: str, *, root: Path | None = None) -> Path:
+    """Return the production plan document: ``docs/plan/production_plan.md``."""
+    base = Path(root) if root else Path.cwd()
+    return (
+        layout.docs_dir(layout.resolve_project_dir(base, project_id), "plan")
+        / _PRODUCTION_PLAN_FILE
+    )
+
+
+def _read_production_plan_rows(path: Path) -> dict[str, dict[str, str]]:
+    """Parse the production plan table into ``{plan_filename: {col: value}}``."""
+    rows: dict[str, dict[str, str]] = {}
+    if not path.exists():
+        return rows
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line.startswith("|") or line.startswith("|--") or line.startswith(
+            "| Plan"
+        ):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 7 or cells[0] in ("Plan", ""):
+            continue
+        rows[cells[0]] = {
+            "asset": cells[1],
+            "model": cells[2],
+            "source": cells[3],
+            "status": cells[4],
+            "created": cells[5],
+            "updated": cells[6],
+        }
+    return rows
+
+
+def _write_production_plan(
+    path: Path, rows: dict[str, dict[str, str]]
+) -> None:
+    lines = [
+        "# Production Plan",
+        "",
+        "Single source of truth for every generation plan in this project.",
+        "Each row records where the plan came from (source command) and its status.",
+        "",
+        "| Plan | Asset | Model | Source | Status | Created | Updated |",
+        "|------|-------|-------|--------|--------|---------|---------|",
+    ]
+    for name in sorted(rows):
+        r = rows[name]
+        lines.append(
+            f"| {name} | {r['asset']} | {r['model']} | {r['source']} "
+            f"| {r['status']} | {r['created']} | {r['updated']} |"
+        )
+    lines.append("")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def upsert_production_plan(
+    project_id: str,
+    *,
+    root: Path | None = None,
+    plan_file: str,
+    asset_type: str,
+    model: str,
+    status: str,
+    source: str = "",
+) -> Path:
+    """Register/update one plan in the production plan document.
+
+    The production plan (``docs/plan/production_plan.md``) is the single
+    source of truth for where each generation plan came from. Rows are
+    keyed by plan filename; existing rows keep their creation time.
+    """
+    path = production_plan_path(project_id, root=root)
+    rows = _read_production_plan_rows(path)
+    key = os.path.basename(plan_file)
+    prev = rows.get(key, {})
+    now = datetime_iso()
+    rows[key] = {
+        "asset": asset_type,
+        "model": model,
+        "source": source or prev.get("source", "—"),
+        "status": status,
+        "created": prev.get("created", now),
+        "updated": now,
+    }
+    _write_production_plan(path, rows)
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +480,8 @@ def write_generation_doc(
     model: str,
     style: str | None = None,
     metadata: dict[str, Any] | None = None,
+    source: str = "",
+    plan_file: str | None = None,
 ) -> Path:
     """Write a generation document (JSON + Markdown) for user reference.
 
@@ -308,7 +489,10 @@ def write_generation_doc(
     - {root}/.brandly/{id}/docs/tmp/{type}_{timestamp}.json
     - {root}/.brandly/{id}/docs/tmp/{type}_{timestamp}.md
 
-    Also updates any pending plan files for this asset type.
+    Also updates any pending plan files for this asset type, and marks
+    the matching plan COMPLETED in the production plan document
+    (the source of truth for where each plan came from) when
+    ``plan_file`` is given.
     """
     from datetime import datetime, timezone
 
@@ -369,6 +553,18 @@ def write_generation_doc(
 
     # Update any pending plans
     _update_plans(project_id, asset_type, output_path, doc_meta)
+
+    # Mark the plan COMPLETED in the production plan (source of truth)
+    if plan_file:
+        upsert_production_plan(
+            project_id,
+            root=root,
+            plan_file=plan_file,
+            asset_type=asset_type,
+            model=model,
+            status="COMPLETED",
+            source=source,
+        )
 
     return json_path
 
@@ -470,9 +666,8 @@ def load_sheet_reference(skill_name: str, root: Path | None = None) -> dict[str,
 def detect_project_artifacts(project_id: str, root: Path | None = None) -> dict[str, list[str]]:
     """Detect existing artifacts in a project that can be used as references.
 
-    Looks for:
-    - Image files in artifacts/images/
-    - Any saved reference images
+    Reference images live under ``images/`` (in the matching sub-folder),
+    so a single scan of the images tree finds everything.
 
     Args:
         project_id: Project ID
@@ -487,17 +682,8 @@ def detect_project_artifacts(project_id: str, root: Path | None = None) -> dict[
         "images": [],
     }
 
-    # New layout: reference images live in refs/ and images/.
     for img in layout.discover_images(proj_dir):
         result["images"].append(str(img))
-
-    # Back-compat: legacy artifacts/images/ + docs/*.png trees.
-    legacy = layout.legacy_project_dir(base, project_id)
-    for base_dir in (legacy / "artifacts" / "images", legacy / "docs"):
-        if base_dir.exists():
-            for img in base_dir.glob("*.{png,jpg,jpeg}"):
-                if str(img) not in result["images"]:
-                    result["images"].append(str(img))
 
     return result
 

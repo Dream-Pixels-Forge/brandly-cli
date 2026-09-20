@@ -334,7 +334,6 @@ IMAGE_MODEL_INFO: dict[ImageModel, dict[str, Any]] = {
 }
 
 VideoModel = Literal[
-    "agnes-video-v2.0",
     "agnes-video-2.5-flash",
     "kling-1.5",
     "hailuo-2.3",
@@ -347,7 +346,6 @@ VideoModel = Literal[
 ]
 
 VIDEO_MODELS: list[VideoModel] = [
-    "agnes-video-v2.0",
     "agnes-video-2.5-flash",
     "kling-1.5",
     "hailuo-2.3",
@@ -360,18 +358,6 @@ VIDEO_MODELS: list[VideoModel] = [
 ]
 
 VIDEO_MODEL_INFO: dict[VideoModel, dict[str, Any]] = {
-    "agnes-video-v2.0": {
-        "name": "Agnes Video v2.0",
-        "category": "video",
-        "provider": "Agnes AI",
-        "speed": "standard",
-        "quality": "high",
-        "cost_credits": 50,
-        "max_duration": "60s",
-        "max_resolution": "1080p",
-        "features": ["text-to-video", "image-to-video", "character consistency"],
-        "description": "Reliable production-quality video generation",
-    },
     "agnes-video-2.5-flash": {
         "name": "Agnes Video 2.5 Flash",
         "category": "video",

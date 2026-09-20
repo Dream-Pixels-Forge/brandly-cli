@@ -1,14 +1,10 @@
 """Project state manager — CRUD for ``.brandly/{id}/project.json``.
 
-The canonical layout (v0.3.5+) stores each project directly under
+The canonical layout stores each project directly under
 ``.brandly/{project_id}/`` with eagerly created sub-folders for
-``docs/`` (plan, bible, storyboard, tmp), ``refs/``, ``images/``,
-``videos/``, ``audio/``.
-
-Projects created by older releases under the legacy
-``.brandly/projects/{id}/`` layout are still readable; new writes always
-go to the new layout. See :mod:`brandly_cli.layout` for the single source
-of truth on paths.
+``docs/`` (plan, bible, storyboard, tmp), ``images/``, ``videos/``,
+``audio/``. See :mod:`brandly_cli.layout` for the single source of truth
+on paths.
 """
 
 from __future__ import annotations
@@ -26,9 +22,7 @@ class ProjectManager:
 
     def __init__(self, root_dir: str | Path) -> None:
         self.root = Path(root_dir)
-        # Legacy base dirs (kept for back-compat reads).
-        self.legacy_projects_dir = self.root / ".brandly" / "projects"
-        # New layout: .brandly/{id}/ with per-category subfolders.
+        # Projects live at .brandly/{id}/ with per-category subfolders.
 
     # ------------------------------------------------------------------
     # Path helpers
@@ -48,20 +42,12 @@ class ProjectManager:
         return safe_id
 
     def _project_path(self, project_id: str) -> Path:
-        """Return the canonical (new-layout) ``project.json`` path.
-
-        Writes always target the new layout; reads use
-        :meth:`_resolve_project_dir` so legacy trees still resolve.
-        """
+        """Return the canonical ``project.json`` path."""
         return layout.project_dir(self.root, self._validate_id(project_id)) / "project.json"
 
     def _resolve_project_dir(self, project_id: str) -> Path:
-        """Return the dir to *read* from, preferring the new layout."""
+        """Return the canonical project dir."""
         return layout.resolve_project_dir(self.root, self._validate_id(project_id))
-
-    def _new_project_dir(self, project_id: str) -> Path:
-        """Return the new-layout project dir (used for writes)."""
-        return layout.project_dir(self.root, self._validate_id(project_id))
 
     # ------------------------------------------------------------------
     # CRUD
@@ -69,18 +55,14 @@ class ProjectManager:
 
     async def create(self, data: ProjectData) -> str:
         """Create a new project and persist it. Returns project ID."""
-        proj_dir = self._new_project_dir(data.id)
+        proj_dir = self._resolve_project_dir(data.id)
         proj_dir.mkdir(parents=True, exist_ok=True)
         layout.ensure_project_dirs(proj_dir)
         write_json(proj_dir / "project.json", data.to_dict())
         return data.id
 
     async def read(self, project_id: str) -> ProjectData | None:
-        """Load a project by ID, or return None if not found.
-
-        Reads the new layout first; falls back to the legacy
-        ``.brandly/projects/{id}/`` tree so older installs keep working.
-        """
+        """Load a project by ID, or return None if not found."""
         path = self._resolve_project_dir(project_id) / "project.json"
         if not path.exists():
             return None
@@ -114,39 +96,28 @@ class ProjectManager:
             merged[key] = value
         merged["updated_at"] = _now_iso()
         updated = ProjectData.model_validate(merged)
-        # Writes always go to the new layout; legacy files are left in place.
         write_json(self._project_path(project_id), updated.to_dict())
         return updated
 
     async def delete(self, project_id: str) -> bool:
-        """Delete both new-layout and legacy project dirs. Returns True if removed."""
+        """Delete the project dir. Returns True if removed."""
         import shutil
 
         safe_id = self._validate_id(project_id)
-        removed = False
-        for d in (
-            layout.project_dir(self.root, safe_id),
-            layout.legacy_project_dir(self.root, safe_id),
-        ):
-            if d.exists():
-                shutil.rmtree(d, ignore_errors=True)
-                removed = True
-        return removed
+        d = layout.project_dir(self.root, safe_id)
+        if d.exists():
+            shutil.rmtree(d, ignore_errors=True)
+            return True
+        return False
 
     async def list_all(self) -> list[str]:
-        """Return list of project IDs across new + legacy layouts."""
+        """Return list of project IDs."""
         seen: set[str] = set()
         results: list[str] = []
         candidates: list[Path] = []
-        new_base = layout.brandly_dir(self.root)
-        if new_base.exists():
-            for d in new_base.iterdir():
-                # Skip legacy 'projects', global files, and dot-folders.
-                if d.is_dir() and not d.name.startswith(".") and d.name != "projects":
-                    candidates.append(d)
-        legacy_base = self.legacy_projects_dir
-        if legacy_base.exists():
-            for d in legacy_base.iterdir():
+        base = layout.brandly_dir(self.root)
+        if base.exists():
+            for d in base.iterdir():
                 if d.is_dir() and not d.name.startswith("."):
                     candidates.append(d)
         for d in candidates:

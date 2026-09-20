@@ -17,6 +17,41 @@ description: >
 
 This skill covers professional video and image generation using **Agnes AI** through the `brandly-cli` toolset. It emphasizes **character consistency**, **cinematic prompting**, and **reference image anchoring** for production-quality output.
 
+## Pipeline & Folder Structure
+
+Everything lives under `.brandly/<project_id>/` (single layout, no legacy `refs/` tree, no `.brandly/projects/`):
+
+```
+.brandly/<project_id>/
+    docs/plan/            generation plans + production_plan.md (source of truth)
+    docs/bible/  docs/storyboard/  docs/tmp/   (bibles, shot lists, gen/fail docs)
+    images/prop/ location/ character/ vehicle/ mecha/ animal/ plant/ keyframe/ general/
+    videos/scenes/ insert/ transition/ general/
+    audio/soundtrack/ sfx/ foley/ voiceover/ general/
+    3d-spatial/cameras/ keyframes/ depthmaps/ general/
+    project.json  cost.json  export/
+```
+
+Key rules:
+
+- **All reference images live in `images/<category>/`** — never a separate refs folder.
+  Objects → `images/prop/` (`prop_*.png`), characters → `images/character/`
+  (`char_*.png`), locations → `images/location/` (`loc_*.png`).
+- **Keyframe mode**: `--first-frame`/`--last-frame` local files are archived into
+  `images/keyframe/` as `start_frame_<name>.png` / `end_frame_<name>.png`.
+- **`docs/plan/production_plan.md` is the single source of truth** for where each
+  generation plan came from: every plan registers with its source command
+  (`brandly reference` / `brandly image` / `brandly video` / `brandly job-resume`)
+  and its status (PENDING → COMPLETED / FAILED).
+- **Plan reuse**: re-running with an unchanged config REUSES the existing plan
+  (e.g. retry after a failure). A new plan file is created only when something
+  in the config (prompt, model, style, mode, …) changes.
+- **Human-in-the-loop gates**: `brandly reference`, `brandly video` (after the
+  video is downloaded), and `brandly gate` ask up to 3 confirmation questions
+  before continuing, to make sure the result matches expectations. Rejecting
+  writes a review note to `docs/tmp/review_<stage>_<ts>.md`. In non-interactive
+  (piped/EOF) runs the defaults auto-approve.
+
 ## Quick Start
 
 ```bash
@@ -26,15 +61,22 @@ brandly init --name "Campaign" --idea "description" --style cinematic --shots 4 
 # Generate a cinematic prompt
 brandly prompt -s "Product name" -a "what happens" -e "where" -n 4 --style cinematic -c "character description"
 
-# Generate video (Agnes AI — project_id is required, stored as first arg)
-brandly video <project_id> --prompt "your prompt" --style cinematic --character "description" --reference-images "url1" --wait
+# Generate the primary reference image first (saves to images/<category>/,
+# auto-injected into later video calls)
+brandly reference <project_id> --subject-type object \
+  --subject "Nike Air Max 1, white colorway, visible Air unit" --style-preset commercial
+
+# Generate video (Agnes AI — polls + downloads to videos/scenes/ by default)
+brandly video <project_id> -p "your prompt" --style cinematic \
+  --reference-images "url1"
+# Keyframe mode (auto-detected when frames are provided):
+brandly video <project_id> -p "..." --first-frame start.png --last-frame end.png
 
 # Generate image (Agnes AI — no project needed)
-brandly image --prompt "description" --style-preset photorealistic --size 2K
+brandly image -p "description" --style-preset photorealistic --size 2K
 
-# Alternative: MiniMax image/video (no project needed)
-brandly minimax-image "prompt" --model image-01 --ratio 16:9
-brandly minimax-video "prompt" --model MiniMax-H3 --duration 5 --wait
+# A job that timed out? Poll + download later:
+brandly job-resume <video_id> --project-id <project_id>
 ```
 
 ---
@@ -80,20 +122,40 @@ brandly prompt \
   -c "elegant woman, mid-20s, long blonde hair in loose waves, wearing a flowing red silk dress, delicate jewelry"
 ```
 
-### Step 3: Generate Video with Reference Images
+### Step 3: Generate Video
 ```bash
 brandly video <project_id> \
-  --prompt "generated prompt from step 2" \
+  -p "generated prompt from step 2" \
   --style cinematic \
   --character "elegant woman, mid-20s, long blonde hair" \
-  --reference-images "https://example.com/reference.jpg" \
-  --wait
+  --reference-images "https://example.com/reference.jpg"
 ```
+
+By default `brandly video` **waits for the job and downloads the MP4** to
+`videos/scenes/`, then runs the human review gate. Use `--no-wait` to create
+the task and exit; poll + download later with
+`brandly job-resume <video_id> --project-id <project_id>` (job-resume also
+marks the plan COMPLETED in the production plan).
+
+### Video Modes
+
+`--mode` defaults to `auto`, which resolves to the first applicable mode:
+
+| Mode | When it applies | Behavior |
+|------|----------------|----------|
+| `keyframe` | `--first-frame` and/or `--last-frame` provided | Frames the video between the given start/end frames; local frame files are archived to `images/keyframe/` (`start_frame_*` / `end_frame_*`) |
+| `reference` | Reference images provided (auto-injected primary reference or `--reference-images`) | Image-to-video generation anchored on the references |
+| `text` | Nothing else provided | Pure text-to-video generation |
+
+Pass `--mode text` explicitly to force text mode even when references exist.
+A chosen mode missing its required inputs degrades to text mode with a
+warning (e.g. `--mode keyframe` without frames). The resolved mode is
+printed and recorded in the generation plan.
 
 ### Step 4: Generate Images
 ```bash
 brandly image \
-  --prompt "product hero shot" \
+  -p "product hero shot" \
   --style-preset commercial \
   --size 2K \
   --ratio 16:9
@@ -228,6 +290,13 @@ For production-quality campaigns, follow this sequence:
 
 Skipping steps 1–4 will result in inconsistent, unpredictable output.
 
+As you execute, track everything in `docs/plan/production_plan.md` —
+the single source of truth for each plan's origin (`brandly reference`,
+`brandly image`, `brandly video`, `brandly job-resume`) and status
+(PENDING → COMPLETED / FAILED). Approving the human gates is what flips
+statuses to COMPLETED; a rejection leaves the plan PENDING so the next run
+reuses it instead of creating a new one.
+
 ## Step 0: Always Generate a Reference First
 
 Before any video generation, generate a **single primary reference image**
@@ -252,12 +321,19 @@ brandly reference <project_id> --subject-type location \
   --style-preset cinematic --size 2K --ratio 16:9
 ```
 
-After the reference is saved, the next `brandly video` call will print:
+After the reference is saved (objects land in `images/prop/` as
+`prop_<subject>_<timestamp>.png`), the next `brandly video` call will print:
 
 ```
-✓ Primary reference: object (reference_object_2026-09-01T18-20-00.png)
+✓ Primary reference: object (prop_nike_air_max_1_2026-09-01T18-20-00.png)
 Reference images: 2
 ```
+
+The reference command ends with a **human review gate**: it asks whether the
+result matches expectations before continuing (reject → review note in
+`docs/tmp/review_reference_*.md`, exit 1; approve → the plan is marked
+COMPLETED in `production_plan.md`). In non-interactive runs the gate
+auto-approves.
 
 For high-stakes or multi-shot campaigns, pass `--require-reference` to
 make the CLI fail fast if the reference is missing or deleted.
@@ -368,7 +444,7 @@ brandly export <project_id>
 ## API Notes
 
 - **Image models** (Agnes): `agnes-image-2.5-flash` (current default — latest gen, same API contract as 2.1, sizes 1K-4K), `agnes-image-2.1-flash` / `agnes-image-2.0-flash` (legacy)
-- **Video models** (Agnes): `agnes-video-2.5-flash` (current default — 720P, 4-12s, ≤5 ref images, ≤3 ref audios, no ref video), `agnes-video-v2.0` (legacy, 1080p max)
+- **Video models** (Agnes): `agnes-video-2.5-flash` (only Agnes video model — 720P, 4-12s, ≤5 ref images, ≤3 ref audios, no ref video; rate-limited to 1 req/min)
 - **MiniMax image**: `image-01`, `image-01-live` — subject reference, `--seed` reproducibility, `--style` art settings (live)
 - **MiniMax video**: `MiniMax-H3` (ref video/audio, 2K, native synchronized stereo audio via [sound] prompt tag), `MiniMax-H3-Max` (fast, first/last frame only)
 - **Negative prompts**: Not supported by Agnes API — use prompt engineering via style presets instead
@@ -387,7 +463,10 @@ Run `brandly rate-limits` for the live table. Headlines:
 ## Troubleshooting
 
 ### Video Takes Too Long
-- 2.5-flash (default): ~20-60s for a 5s clip; poll with `--wait`
+- `brandly video` waits and downloads by default; a timeout does **not**
+  abort the job — run `brandly job-resume <video_id> --project-id <id>` to
+  poll and download later (this also marks the plan COMPLETED)
+- Use `--no-wait` to create the task and exit immediately
 - On 429s, check provider limits with `brandly rate-limits` before retrying
 - MiniMax H3 is concurrency-limited (2 free / 15 paid parallel tasks), not per-minute RPM
 

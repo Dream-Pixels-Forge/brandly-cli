@@ -9,12 +9,9 @@ from brandly_cli import layout
 
 class TestLayoutStructure:
     def test_project_dir_is_top_level(self, tmp_path: Path) -> None:
-        """New layout stores projects directly under .brandly/, not .brandly/projects/."""
+        """Projects are stored directly under .brandly/, not .brandly/projects/."""
         d = layout.project_dir(tmp_path, "my-project")
         assert d == tmp_path / ".brandly" / "my-project"
-        assert layout.legacy_project_dir(tmp_path, "my-project") == (
-            tmp_path / ".brandly" / "projects" / "my-project"
-        )
 
     def test_ensure_project_dirs_creates_full_tree(self, tmp_path: Path) -> None:
         proj = layout.project_dir(tmp_path, "p1")
@@ -23,12 +20,12 @@ class TestLayoutStructure:
         # docs categories
         for cat in ("plan", "bible", "storyboard", "tmp"):
             assert (proj / "docs" / cat).is_dir()
-        # refs
-        assert (proj / "refs").is_dir()
+        # no duplicate refs folder — references live under images/
+        assert not (proj / "refs").exists()
         # image categories
         for cat in (
             "prop", "location", "character", "vehicle",
-            "mecha", "animal", "plant", "general",
+            "mecha", "animal", "plant", "keyframe", "general",
         ):
             assert (proj / "images" / cat).is_dir()
         # video categories
@@ -37,6 +34,9 @@ class TestLayoutStructure:
         # audio categories
         for cat in ("soundtrack", "sfx", "foley", "voiceover", "general"):
             assert (proj / "audio" / cat).is_dir()
+        # 3d-spatial categories
+        for cat in ("cameras", "keyframes", "depthmaps", "general"):
+            assert (proj / "3d-spatial" / cat).is_dir()
         # export
         assert (proj / "export").is_dir()
 
@@ -72,12 +72,14 @@ class TestLayoutStructure:
         assert layout.image_category_for_subject("character") == "character"
         assert layout.image_category_for_subject("location") == "location"
         assert layout.image_category_for_subject("mecha") == "mecha"
+        assert layout.image_category_for_subject("keyframe") == "keyframe"
         assert layout.image_category_for_subject("unknown_type") == "general"
 
-    def test_discover_images_finds_refs_and_images(self, tmp_path: Path) -> None:
+    def test_discover_images_scans_images_tree(self, tmp_path: Path) -> None:
+        """All reference images live under images/ (no separate refs tree)."""
         proj = layout.project_dir(tmp_path, "p1")
         layout.ensure_project_dirs(proj)
-        (proj / "refs" / "reference_object_1.png").write_bytes(b"x")
+        (proj / "images" / "prop" / "reference_object_1.png").write_bytes(b"x")
         (proj / "images" / "character" / "char_1.png").write_bytes(b"x")
         found = {p.name for p in layout.discover_images(proj)}
         assert "reference_object_1.png" in found
@@ -121,27 +123,25 @@ class TestLayoutStructure:
         assert layout.image_name_token("Nike Air Max 1") == "nike_air_max_1"
         assert layout.image_name_token("A--B  C") == "a_b_c"
         assert layout.image_name_token("!!!") == "image"  # no valid chars -> fallback
-    def test_resolve_prefers_new_layout_and_falls_back_to_legacy(
+    def test_resolve_project_dir_returns_new_layout(
         self, tmp_path: Path
     ) -> None:
-        # legacy-only project
-        legacy = layout.legacy_project_dir(tmp_path, "legacy-only")
+        # resolve is a plain alias for project_dir now (no legacy fallback)
+        assert layout.resolve_project_dir(tmp_path, "p1") == layout.project_dir(
+            tmp_path, "p1"
+        )
+
+        # a stale .brandly/projects/<id>/ dir is ignored
+        legacy = tmp_path / ".brandly" / "projects" / "legacy-only"
         legacy.mkdir(parents=True, exist_ok=True)
         (legacy / "project.json").write_text("{}")
-        assert layout.resolve_project_dir(tmp_path, "legacy-only") == legacy
+        assert layout.resolve_project_dir(tmp_path, "legacy-only") == (
+            tmp_path / ".brandly" / "legacy-only"
+        )
 
-        # new layout wins when both exist
-        new = layout.project_dir(tmp_path, "both")
-        new.mkdir(parents=True, exist_ok=True)
-        (new / "project.json").write_text("{}")
-        legacy2 = layout.legacy_project_dir(tmp_path, "both")
-        legacy2.mkdir(parents=True, exist_ok=True)
-        (legacy2 / "project.json").write_text("{}")
-        assert layout.resolve_project_dir(tmp_path, "both") == new
-
-        # neither exists -> new dir returned (created on demand)
-        assert layout.resolve_project_dir(tmp_path, "new-only") == layout.project_dir(
-            tmp_path, "new-only"
+        # neither exists -> the canonical dir is returned
+        assert layout.resolve_project_dir(tmp_path, "new-only") == (
+            tmp_path / ".brandly" / "new-only"
         )
 
 

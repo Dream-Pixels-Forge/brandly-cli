@@ -37,7 +37,7 @@ def runner(project_dir: Path, tmp_path: Path) -> CliRunner:
 def _write_project(project_dir: Path, project_id: str, **overrides: object) -> Path:
     """Write a minimal project.json to disk.
 
-    `project_dir` is the .brandly/projects root (as returned by the fixture),
+    `project_dir` is the .brandly root (as returned by the fixture),
     so the file lands at project_dir/<id>/project.json.
     """
     proj_file = project_dir / project_id / "project.json"
@@ -234,11 +234,11 @@ def test_reference_generates_image_and_saves_metadata(
     }
 
     # _save_artifact tries real network — mock it to return a deterministic path
-    def fake_save(url, project_id, kind, root=None, prompt_hint=""):  # noqa: ANN001
-        refs_dir = root / ".brandly" / project_id / "refs"
-        refs_dir.mkdir(parents=True, exist_ok=True)
+    def fake_save(url, project_id, kind, root=None, prompt_hint="", category=None):  # noqa: ANN001
+        target_dir = root / ".brandly" / project_id / "images" / (category or "general")
+        target_dir.mkdir(parents=True, exist_ok=True)
         target = (
-            refs_dir
+            target_dir
             / f"images_reference-{prompt_hint.replace(' ', '_')[:30]}.png"
         )
         target.write_bytes(b"\x89PNG\r\n\x1a\nfake")
@@ -279,11 +279,10 @@ def test_reference_generates_image_and_saves_metadata(
     assert proj_data["primary_reference"]["style_preset"] == "commercial"
     assert "Nike Air Max 1" in proj_data["primary_reference"]["subject"]
 
-    # Reference image file must exist
-    refs_dir = project_dir / pid / "refs"
-    # object sheets are named with the `prop_` prefix (see layout.build_sheet_filename)
-    ref_files = list(refs_dir.glob("prop_*.png"))
-    assert len(ref_files) >= 1, f"expected a prop_*.png in {refs_dir}"
+    # Reference image file must exist — objects live in images/prop/
+    prop_dir = project_dir / pid / "images" / "prop"
+    ref_files = list(prop_dir.glob("prop_*.png"))
+    assert len(ref_files) >= 1, f"expected a prop_*.png in {prop_dir}"
     assert all(f.stat().st_size > 0 for f in ref_files)
 
 
@@ -318,54 +317,6 @@ def test_reference_image_api_failure_writes_fail_doc(
 
 
 # ---------------------------------------------------------------------------
-# brandly anchor (DEPRECATED alias) — must still work and forward
-# ---------------------------------------------------------------------------
-
-
-def test_anchor_alias_forwards_to_reference(
-    runner: CliRunner, project_dir: Path
-) -> None:
-    """`brandly anchor --sheet X -d Y` should still work (deprecation alias)."""
-    pid = generate_project_id()
-    _write_project(project_dir, pid)
-
-    fake_result = {
-        "url": "https://example.invalid/alias-ref.png",
-        "id": "alias-task-123",
-    }
-
-    def fake_save(url, project_id, kind, root=None, prompt_hint=""):  # noqa: ANN001
-        refs_dir = root / ".brandly" / project_id / "refs"
-        refs_dir.mkdir(parents=True, exist_ok=True)
-        target = refs_dir / f"images_{prompt_hint.replace(' ', '_')[:30]}.png"
-        target.write_bytes(b"\x89PNG\r\n\x1a\nfake")
-        return target
-
-    with (
-        patch("brandly_cli.cli.generate_image", AsyncMock(return_value=fake_result)),
-        patch("brandly_cli.cli._save_artifact", side_effect=fake_save),
-    ):
-        result = runner.invoke(
-            cli,
-            [
-                "anchor",
-                pid,
-                "--sheet",
-                "object",
-                "-d",
-                "Test subject",
-            ],
-        )
-
-    assert result.exit_code == 0, f"anchor alias failed: {result.output}"
-    assert "deprecated" in result.output
-    assert "Reference image saved" in result.output
-    # primary_reference should be written (proving the alias actually forwarded)
-    proj_data = json.loads((project_dir / pid / "project.json").read_text())
-    assert "primary_reference" in proj_data
-
-
-# ---------------------------------------------------------------------------
 # brandly video — reference detection
 # ---------------------------------------------------------------------------
 
@@ -393,6 +344,7 @@ def test_video_warns_when_no_reference(runner: CliRunner, project_dir: Path) -> 
                 "Test prompt",
                 "--style",
                 "cinematic",
+                "--no-wait",
             ],
         )
 
@@ -431,9 +383,10 @@ def test_video_picks_up_primary_reference(
     """When project has primary_reference metadata, video uses it as first ref."""
     pid = generate_project_id()
     # Write project WITH primary_reference metadata and a real reference image
-    refs_dir = project_dir / pid / "refs"
-    refs_dir.mkdir(parents=True, exist_ok=True)
-    ref_file = refs_dir / "reference_object_2026-01-01_000000.png"
+    # (primary references live in images/<category>/ — objects in images/prop/)
+    prop_dir = project_dir / pid / "images" / "prop"
+    prop_dir.mkdir(parents=True, exist_ok=True)
+    ref_file = prop_dir / "prop_reference_2026-01-01_000000.png"
     ref_file.write_bytes(b"\x89PNG\r\n\x1a\nfake reference")
     _write_project(
         project_dir,
@@ -469,6 +422,7 @@ def test_video_picks_up_primary_reference(
                 "--style",
                 "cinematic",
                 "--require-reference",
+                "--no-wait",
             ],
         )
 
@@ -502,34 +456,11 @@ def test_video_stale_reference_metadata_falls_back_to_warning(
             "Test prompt",
             "--style",
             "cinematic",
+            "--no-wait",
         ],
     )
 
     # The warn-but-proceed path should kick in (no --require-reference)
-    assert "No primary reference" in result.output
-
-
-def test_video_deprecated_anchor_flag_still_works(
-    runner: CliRunner, project_dir: Path
-) -> None:
-    """--require-anchor / --allow-anchorless should still work as deprecated aliases."""
-    pid = generate_project_id()
-    _write_project(project_dir, pid)
-
-    # --require-anchor should still fail with exit code 2
-    result = runner.invoke(
-        cli,
-        [
-            "video",
-            pid,
-            "-p",
-            "Test prompt",
-            "--style",
-            "cinematic",
-            "--require-anchor",
-        ],
-    )
-    assert result.exit_code == 2
     assert "No primary reference" in result.output
 
 

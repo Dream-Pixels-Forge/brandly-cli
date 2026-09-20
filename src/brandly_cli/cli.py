@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -168,16 +169,14 @@ def _save_artifact(
     .brandly/{project_id}/{images|videos|audio}/{category}/.
 
     ``category`` routes the file into a sub-folder (e.g. 'scenes' for video,
-    'soundtrack' for music). Omit it to use the 'general' default.
+    'prop' for object references, 'soundtrack' for music). Omit it to use
+    the 'general' default.
     """
     if not url:
         return None
     proj_dir = layout.project_dir(root, project_id)
-    if type_label == "refs":
-        artifacts_dir = layout.refs_dir(proj_dir)
-    else:
-        media_category = category if category else "general"
-        artifacts_dir = layout.media_dir(proj_dir, type_label, media_category)
+    media_category = category if category else "general"
+    artifacts_dir = layout.media_dir(proj_dir, type_label, media_category)
     ext = Path(url.split("?")[0]).suffix or (".mp3" if type_label == "audio" else "")
     if not ext:
         ext = ".bin"
@@ -827,7 +826,8 @@ def reference(
     key asset (object, character, location, etc.) across all subsequent
     `brandly video` generations. Should be the FIRST generation step.
 
-    The generated image is saved to .brandly/<project_id>/refs/
+    The generated image is saved to
+    .brandly/<project_id>/images/<category>/ (e.g. images/prop/ for objects)
     with the prefix `reference_<subject_type>_*` and is auto-detected by
     `brandly video` (auto-injected as the strongest reference image).
     """
@@ -863,7 +863,7 @@ def reference(
     # Write pre-generation plan
     from brandly_cli.utils import write_generation_plan
 
-    plan = write_generation_plan(
+    plan, plan_reused = write_generation_plan(
         project_id,
         "reference",
         root=root,
@@ -876,8 +876,9 @@ def reference(
             "ratio": ratio,
             "role": "primary_reference",
         },
+        source="brandly reference",
     )
-    console.print(f"[dim]Plan written: {plan}[/dim]")
+    console.print(f"[dim]Plan {'reused' if plan_reused else 'written'}: {plan}[/dim]")
 
     console.print(
         f"[dim]Generating {subject_type} reference with model {model} "
@@ -902,6 +903,17 @@ def reference(
                 f"**Subject:** {subject}\n\n**Status:** FAILED\n",
                 encoding="utf-8",
             )
+            from brandly_cli.utils import upsert_production_plan
+
+            upsert_production_plan(
+                project_id,
+                root=root,
+                plan_file=str(plan),
+                asset_type="reference",
+                model=model,
+                status="FAILED",
+                source="brandly reference",
+            )
         sys.exit(1)
 
     url = result.get("url") or ""
@@ -913,13 +925,14 @@ def reference(
 
     from brandly_cli.utils import write_generation_doc
 
-    # Primary references live in refs/ — the identity-locking folder.
+    # Primary references live in images/<category>/ — the matching sub-folder.
     saved = _save_artifact(
         url,
         project_id,
-        "refs",
+        "images",
         root=root,
         prompt_hint=f"reference_{subject_type}_{subject}",
+        category=layout.image_category_for_subject(subject_type),
     )
     if saved:
         # Rename to the conventional sheet name:
@@ -934,21 +947,6 @@ def reference(
             new_path = saved  # fall back to the original name if rename fails
         saved = new_path
         console.print(f"[green]✓ Reference image saved:[/green] {saved}")
-        write_generation_doc(
-            project_id,
-            "reference",
-            saved,
-            root=root,
-            prompt=prompt,
-            model=model,
-            style=style_preset,
-            metadata={
-                "subject_type": subject_type,
-                "size": size,
-                "ratio": ratio,
-                "source_url": url,
-            },
-        )
 
         # Persist the primary reference metadata on the project so downstream
         # tools (e.g. `brandly video`) can read it.
@@ -992,6 +990,44 @@ def reference(
                     "[yellow]⚠ Quality gate failed — review or regenerate the "
                     "sheet before using it as a reference.[/yellow]"
                 )
+
+        # Human-in-the-loop gate: confirm the result matches expectations
+        approved, note = _human_review_gate(
+            "reference", f"the {subject_type} reference for '{subject}'"
+        )
+        if note:
+            _write_review_note(
+                root, project_id, "reference", note, extra=f"subject: {subject}"
+            )
+        if not approved:
+            console.print(
+                "[red]✗ Reference rejected at the human gate — adjust the prompt "
+                "or subject details and regenerate.[/red]"
+            )
+            sys.exit(1)
+        console.print("[green]✓ Human gate passed — reference approved.[/green]")
+
+        # Only after approval: write the generation doc and flip the plan to
+        # COMPLETED in the production plan (a rejection keeps it PENDING so
+        # the next run reuses the same plan).
+        write_generation_doc(
+            project_id,
+            "reference",
+            saved,
+            root=root,
+            prompt=prompt,
+            model=model,
+            style=style_preset,
+            metadata={
+                "subject_type": subject_type,
+                "size": size,
+                "ratio": ratio,
+                "source_url": url,
+            },
+            source="brandly reference",
+            plan_file=str(plan),
+        )
+
         console.print(
             f"\n[bold]Next:[/bold] run [cyan]brandly video {project_id} ...[/cyan] — the "
             f"primary reference image will be auto-injected as a reference image."
@@ -999,45 +1035,6 @@ def reference(
     else:
         console.print("[yellow]⚠ Could not save reference artifact[/yellow]")
         sys.exit(1)
-
-
-# Backwards-compatible alias for the previous name.
-@cli.command(name="anchor", hidden=True)
-@click.argument("project_id")
-@click.option(
-    "--sheet",
-    "subject_type",
-    required=True,
-    type=click.Choice(list(REFERENCE_SUBJECTS.keys())),
-    help="Deprecated: use --subject-type",
-)
-@click.option(
-    "--description",
-    "-d",
-    "subject",
-    required=True,
-    help="Deprecated: use --subject",
-)
-@click.option("--style-preset", default="commercial", type=click.Choice(STYLE_PRESET_OPTIONS))
-@click.option("--size", default="2K")
-@click.option("--ratio", default="16:9")
-@click.option("--model", default="agnes-image-2.1-flash")
-@click.pass_context
-def anchor(
-    ctx: click.Context,
-    project_id: str,
-    subject_type: str,
-    subject: str,
-    style_preset: str,
-    size: str,
-    ratio: str,
-    model: str,
-) -> None:
-    """DEPRECATED: use `brandly reference` instead. Kept for backwards compatibility."""
-    console.print(
-        "[yellow]⚠ 'brandly anchor' is deprecated, use 'brandly reference' instead.[/yellow]"
-    )
-    ctx.forward(reference)
 
 
 # ---------------------------------------------------------------------------
@@ -1105,10 +1102,11 @@ def image(
             console.print(f"[dim]Found {len(auto_refs)} artifact(s) for reference[/dim]")
 
     # Write pre-generation plan BEFORE API call
+    plan_file_ref: str | None = None
     if project_id:
         from brandly_cli.utils import write_generation_plan
 
-        plan = write_generation_plan(
+        plan, plan_reused = write_generation_plan(
             project_id,
             "image",
             root=root,
@@ -1116,8 +1114,10 @@ def image(
             model=model,
             style=style_preset or "default",
             extra_config={"size": size, "ratio": ratio},
+            source="brandly image",
         )
-        console.print(f"[dim]Plan written: {plan}[/dim]")
+        plan_file_ref = str(plan)
+        console.print(f"[dim]Plan {'reused' if plan_reused else 'written'}: {plan}[/dim]")
 
     console.print(
         f"[dim]Generating image with model {model} ({style_preset or 'default'} style)...[/dim]"
@@ -1139,6 +1139,18 @@ def image(
                 f"**Error:** {e}\n\n**Prompt:** {prompt}\n\n**Status:** FAILED\n",
                 encoding="utf-8",
             )
+            from brandly_cli.utils import upsert_production_plan
+
+            if plan_file_ref:
+                upsert_production_plan(
+                    project_id,
+                    root=root,
+                    plan_file=plan_file_ref,
+                    asset_type="image",
+                    model=model,
+                    status="FAILED",
+                    source="brandly image",
+                )
         sys.exit(1)
 
     url = result.get("url") or ""
@@ -1162,6 +1174,8 @@ def image(
                 model=model,
                 style=style_preset,
                 metadata={"size": size, "ratio": ratio, "source_url": url},
+                source="brandly image",
+                plan_file=plan_file_ref,
             )
             console.print(f"  Doc → {saved.parent.parent / 'docs'}")
         else:
@@ -1180,6 +1194,8 @@ def image(
                 model=model,
                 style=style_preset,
                 metadata={"size": size, "ratio": ratio, "note": "base64 output"},
+                source="brandly image",
+                plan_file=plan_file_ref,
             )
 
     if project_id:
@@ -1227,14 +1243,18 @@ def image(
 )
 @click.option(
     "--mode",
-    default="text",
-    type=click.Choice(["text", "keyframe", "reference"]),
-    help="Generation mode: text-to-video, keyframe transition, or reference-based",
+    default="auto",
+    type=click.Choice(["auto", "text", "keyframe", "reference"]),
+    help=(
+        "Generation mode. 'auto' (default) infers it: keyframe when a start/"
+        "end frame is provided, reference when reference images are provided, "
+        "text otherwise."
+    ),
 )
 @click.option("--duration", "-d", default=10, help="Duration in seconds (default: 10)")
 @click.option("--aspect-ratio", default="16:9", help="Aspect ratio")
-@click.option("--first-frame", default=None, help="First frame image URL or local file path (keyframe mode)")
-@click.option("--last-frame", default=None, help="Last frame image URL or local file path (keyframe mode)")
+@click.option("--first-frame", default=None, help="Start frame image URL or local file path (keyframe mode)")
+@click.option("--last-frame", default=None, help="End frame image URL or local file path (keyframe mode)")
 @click.option(
     "--reference-images",
     "-r",
@@ -1247,8 +1267,13 @@ def image(
     default=None,
     help="Character description for identity locking (e.g. 'woman in red dress, blonde hair')",
 )
-@click.option("--wait", is_flag=True, help="Poll until generation completes")
-@click.option("--max-wait", default=300, help="Max wait seconds (default: 300)")
+@click.option(
+    "--wait/--no-wait",
+    "wait",
+    default=True,
+    help="Poll until generation completes and download the video to disk (default: on)",
+)
+@click.option("--max-wait", default=600, help="Max wait seconds (default: 600)")
 @click.option(
     "--require-reference/--no-require-reference",
     "require_reference",
@@ -1256,24 +1281,10 @@ def image(
     help="If set, fail when project has no primary reference image.",
 )
 @click.option(
-    "--require-anchor/--no-require-anchor",
-    "require_reference",
-    default=None,
-    hidden=True,
-    help="DEPRECATED: use --require-reference / --no-require-reference.",
-)
-@click.option(
     "--allow-referenceless",
     "allow_referenceless",
     is_flag=True,
     help="Bypass the require-reference check (escape hatch for re-runs/edge cases).",
-)
-@click.option(
-    "--allow-anchorless",
-    "allow_referenceless",
-    is_flag=True,
-    hidden=True,
-    help="DEPRECATED: use --allow-referenceless.",
 )
 @click.option(
     "--gate/--no-gate",
@@ -1313,6 +1324,13 @@ def video(
     generated first via `brandly reference`. The reference is auto-injected
     as the FIRST reference image (strongest influence). Use --require-reference
     to fail if the reference is missing.
+
+    By default the command polls until generation completes and downloads
+    the video to .brandly/<project>/videos/scenes/ (disable with --no-wait).
+
+    Mode is auto-inferred unless --mode is given explicitly:
+    text (no image inputs) → reference (reference images provided) →
+    keyframe (start/end frame provided).
     """
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
@@ -1419,7 +1437,7 @@ def video(
             break
 
     console.print(f"[dim]Creating video task with model {model} (style: {style})...[/dim]")
-    # Note: v2.0 is reliable; 2.5-flash is free but rate-limited (1 req/min)
+    # Note: 2.5-flash is the only Agnes video model; rate-limited (1 req/min)
     console.print(f"[dim]Model: {model} | Style: {style} | Mode: {mode}[/dim]")
     if character:
         console.print(f"[dim]Character anchor: {character[:60]}...[/dim]")
@@ -1431,7 +1449,7 @@ def video(
     # Write pre-generation plan BEFORE API call
     from brandly_cli.utils import write_generation_plan
 
-    plan = write_generation_plan(
+    plan, plan_reused = write_generation_plan(
         project_id,
         "video",
         root=root,
@@ -1445,8 +1463,29 @@ def video(
             "reference_images": len(imgs),
             "sheet_reference": loaded_skill,
         },
+        source="brandly video",
     )
-    console.print(f"[dim]Plan written: {plan}[/dim]")
+    console.print(f"[dim]Plan {'reused' if plan_reused else 'written'}: {plan}[/dim]")
+
+    # Archive local keyframes into the project (images/keyframe/)
+    if project_id and (first_frame or last_frame) and mode in ("auto", "keyframe"):
+        for label, frame in (("start_frame", first_frame), ("end_frame", last_frame)):
+            if not frame:
+                continue
+            frame_path = Path(frame)
+            if not frame_path.is_file():
+                continue  # remote URL or missing local file
+            keyframe_dir = layout.media_dir(
+                layout.project_dir(root, project_id), "images", "keyframe"
+            )
+            keyframe_dir.mkdir(parents=True, exist_ok=True)
+            slug = layout.image_name_token(frame_path.stem) or "frame"
+            target = keyframe_dir / f"{label}_{slug}{frame_path.suffix or '.png'}"
+            try:
+                shutil.copyfile(frame_path, target)
+                console.print(f"[dim]Keyframe archived: {target}[/dim]")
+            except OSError:
+                pass
 
     try:
         task = asyncio.run(
@@ -1464,11 +1503,25 @@ def video(
         )
     except Exception as e:
         console.print(f"[red]Error creating video task: {e}[/red]")
+        from brandly_cli.utils import upsert_production_plan
+
+        upsert_production_plan(
+            project_id,
+            root=root,
+            plan_file=str(plan),
+            asset_type="video",
+            model=model,
+            status="FAILED",
+            source="brandly video",
+        )
         sys.exit(1)
 
     video_id = task["video_id"]
     console.print(f"[green]✓ Task created:[/green] {video_id}")
     console.print(f"  Status: {task['status']}  Progress: {task['progress']}%")
+    if task.get("mode"):
+        mode = task["mode"]
+        console.print(f"  Mode: {mode}")
 
     if wait:
         console.print(f"[dim]Polling (max {max_wait}s)...[/dim]")
@@ -1476,9 +1529,15 @@ def video(
             result = asyncio.run(poll_video(video_id, max_wait_seconds=max_wait, model_name=model))
         except TimeoutError as e:
             console.print(f"[red]Error: {e}[/red]")
-            console.print(f"[dim]Video ID: {video_id} — run 'brandly job-resume {video_id}' to poll.[/dim]")
+            console.print(
+                f"[dim]Video ID: {video_id} — run "
+                f"'brandly job-resume {video_id} --project-id {project_id}' to poll later.[/dim]"
+            )
             # Update plan to show timeout
-            from brandly_cli.utils import write_generation_doc
+            from brandly_cli.utils import (
+                upsert_production_plan,
+                write_generation_doc,
+            )
 
             write_generation_doc(
                 project_id,
@@ -1489,6 +1548,16 @@ def video(
                 model=model,
                 style=style,
                 metadata={"video_id": video_id, "status": "timeout", "error": str(e)},
+                source="brandly video",
+            )
+            upsert_production_plan(
+                project_id,
+                root=root,
+                plan_file=str(plan),
+                asset_type="video",
+                model=model,
+                status="FAILED",
+                source="brandly video",
             )
             sys.exit(1)
         except Exception as e:
@@ -1501,7 +1570,6 @@ def video(
         task["final_status"] = result.get("status")
         # Always save video to disk if URL exists
         if url:
-            root = _get_root(ctx)
             saved = _save_artifact(
                 url,
                 project_id,
@@ -1512,27 +1580,32 @@ def video(
             )
             if saved:
                 console.print(f"  Saved → {saved}")
-                # Write generation document
-                from brandly_cli.utils import write_generation_doc
-
-                write_generation_doc(
-                    project_id,
-                    "video",
-                    saved,
-                    root=root,
-                    prompt=enhanced,
-                    model=model,
-                    style=style,
-                    metadata={
-                        "duration": duration,
-                        "aspect_ratio": aspect_ratio,
-                        "source_url": url,
-                        "video_id": video_id,
-                    },
+                # Record the job so `brandly job-resume <id>` can locate the project.
+                # (The generation doc + plan COMPLETED upsert happen after the
+                # human gate approves, or later via `job-resume`.)
+                pm = ProjectManager(root)
+                asyncio.run(
+                    pm.update(
+                        project_id,
+                        {
+                            "last_video_job": {
+                                "video_id": video_id,
+                                "url": url,
+                                "saved_path": str(saved),
+                                "mode": mode,
+                                "model": model,
+                                "created_at": now_iso(),
+                            }
+                        },
+                    )
                 )
-                console.print(f"  Doc → {saved.parent.parent / 'docs'}")
             else:
                 console.print("[yellow]⚠ Could not save artifact, but URL is available[/yellow]")
+    else:
+        console.print(
+            f"[dim]Not waiting (use --wait to poll). To download when the video "
+            f"is ready, run:\n  brandly job-resume {video_id} --project-id {project_id}[/dim]"
+        )
 
     # Quality gate: verify the generated video before the next step.
     if run_gate:
@@ -1556,6 +1629,53 @@ def video(
                     "[yellow]⚠ Quality gate failed — review or regenerate "
                     "before editing/publishing.[/yellow]"
                 )
+
+    # Human-in-the-loop gate: confirm the video before the next step
+    # (only when an artifact was actually downloaded and saved).
+    _media_local = locals().get("saved")
+    _media_local = (
+        _media_local
+        if isinstance(_media_local, Path) and _media_local.exists()
+        else None
+    )
+    if _media_local:
+        approved, note = _human_review_gate(
+            "video", f"video {video_id} ({_media_local.name})"
+        )
+        if note:
+            _write_review_note(
+                root, project_id, "video", note, extra=f"video_id: {video_id}"
+            )
+        if not approved:
+            console.print(
+                "[red]✗ Video rejected at the human gate — regenerate with an "
+                "adjusted prompt (the plan is reused until the config changes).[/red]"
+            )
+            sys.exit(1)
+        console.print("[green]✓ Human gate passed — video approved.[/green]")
+
+        # Only after approval: write the generation doc and flip the plan to
+        # COMPLETED in the production plan.
+        from brandly_cli.utils import write_generation_doc
+
+        write_generation_doc(
+            project_id,
+            "video",
+            _media_local,
+            root=root,
+            prompt=enhanced,
+            model=model,
+            style=style,
+            metadata={
+                "duration": duration,
+                "aspect_ratio": aspect_ratio,
+                "source_url": url,
+                "video_id": video_id,
+            },
+            source="brandly video",
+            plan_file=str(plan),
+        )
+        console.print(f"  Doc → {_media_local.parent.parent / 'docs'}")
 
     # Persist to project
     root = _get_root(ctx)
@@ -1624,9 +1744,7 @@ def _check_phase_artifacts(
         videos = list((proj_dir / "videos").rglob("*.mp4"))
         images = list((proj_dir / "images").rglob("*"))
         images = [p for p in images if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
-        refs = list((proj_dir / "refs").rglob("*"))
-        refs = [p for p in refs if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
-        if not videos and not images and not refs:
+        if not videos and not images:
             missing.append(("video or image", proj_dir / "videos"))
 
     elif phase == "audio":
@@ -1964,6 +2082,49 @@ def gate(
     exit_code = 0 if result.status == quality_gate.PASS else (
         1 if result.status == quality_gate.WARN else 2
     )
+
+    # Human-in-the-loop: confirm the gate result matches expectations before
+    # the next step (a human can override a non-pass result).
+    agree, note = _human_review_gate(
+        "gate",
+        f"the gate result ({result.status.upper()}) for {element_path.name}",
+        default=result.status == quality_gate.PASS,
+    )
+    if note:
+        _write_review_note(
+            root,
+            project_id,
+            "gate",
+            note,
+            extra=f"element: {element_path}\ngate status: {result.status}\n",
+        )
+    if not agree:
+        if result.status != quality_gate.PASS:
+            try:
+                override = click.confirm(
+                    f"[gate] Override the {result.status} result and continue anyway?",
+                    default=False,
+                )
+            except click.exceptions.Abort:
+                override = False
+            if override:
+                console.print(
+                    f"[yellow]⚠ Human override: continuing despite the "
+                    f"{result.status} result.[/yellow]"
+                )
+                exit_code = 0
+            else:
+                console.print(
+                    "[red]✗ Gate result not approved — rework the element "
+                    "and re-run the gate.[/red]"
+                )
+        else:
+            console.print(
+                "[red]✗ PASS result not confirmed — treat the element as "
+                "rework until it matches expectations.[/red]"
+            )
+            exit_code = 1
+
     sys.exit(exit_code)
 
 
@@ -1974,7 +2135,7 @@ def _latest_project_media(root: Path, project_id: str) -> Path | None:
         return None
     media_exts = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mov"}
     files: list[Path] = []
-    for top in ("refs", "images", "videos", "audio"):
+    for top in ("images", "videos", "audio"):
         base = proj_dir / top
         if base.exists():
             for f in base.rglob("*"):
@@ -2014,6 +2175,61 @@ def _print_gate_report(result: Any) -> None:
     console.print(
         "[dim]Report: .brandly/<project>/docs/tmp/ (gate_<kind>_<ts>.md)[/dim]"
     )
+
+
+def _human_review_gate(stage: str, label: str, default: bool = True) -> tuple[bool, str]:
+    """Human-in-the-loop gate: ask up to 3 questions before continuing.
+
+    Confirms the generated result matches what's expected. In
+    non-interactive mode (EOF on stdin) the defaults are used, so piped
+    runs auto-approve unless input is provided.
+
+    Returns:
+        (approved, note) — ``approved`` is False when the result was
+        rejected, ``note`` carries the optional free-text issue.
+    """
+    try:
+        q1 = click.confirm(
+            f"[{stage} gate] Does {label} match what you expected?", default=default
+        )
+    except click.exceptions.Abort:
+        q1 = default
+    if q1:
+        try:
+            q2 = click.confirm(
+                f"[{stage} gate] Approve {label} and continue to the next step?",
+                default=True,
+            )
+        except click.exceptions.Abort:
+            q2 = True
+        return q2, ""
+    try:
+        note = click.prompt(
+            f"[{stage} gate] What didn't match? (short note)",
+            default="no note",
+            show_default=False,
+        )
+    except click.exceptions.Abort:
+        note = "no note (non-interactive)"
+    return False, note
+
+
+def _write_review_note(
+    root: Path, project_id: str, stage: str, note: str, extra: str = ""
+) -> Path:
+    """Save a human-gate review note under ``docs/tmp`` for the record."""
+    docs_dir = layout.docs_dir(layout.project_dir(root, project_id), "tmp")
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    ts = now_iso().replace(":", "-").replace(".", "_")
+    note_path = docs_dir / f"review_{stage}_{ts}.md"
+    note_path.write_text(
+        f"# Human Gate Review: {stage}\n\n"
+        f"**Status:** REJECTED\n"
+        f"**Note:** {note}\n\n"
+        f"{extra}\n",
+        encoding="utf-8",
+    )
+    return note_path
 
 
 
@@ -2157,14 +2373,14 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
         pass  # out_dir is NOT an ancestor — proceed normally
 
     # Bookkeeping files at the project root are excluded from the export
-    # by only scanning the user-facing top folders (refs/images/videos/audio/docs).
+    # by only scanning the user-facing top folders (images/videos/audio/docs).
 
     artifact_count = 0
     media_count = 0
     media_exts = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mp3", ".wav", ".mpga"}
-    # User-facing media + docs + refs live in these top folders of the project dir.
+    # User-facing media + docs live in these top folders of the project dir
+    # (reference images are included via their images/ sub-folder).
     for search_dir in [
-        proj_dir / "refs",
         proj_dir / "images",
         proj_dir / "videos",
         proj_dir / "audio",
@@ -2195,7 +2411,7 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
 
     if artifact_count == 0 and media_count == 0:
         console.print("[yellow]No artifacts to export.[/yellow]")
-        console.print("[dim]The project has no media or doc files under refs/, images/, videos/, audio/, or docs/.[/dim]")
+        console.print("[dim]The project has no media or doc files under images/, videos/, audio/, or docs/.[/dim]")
         return
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2643,21 +2859,162 @@ def jobs(status: str | None, limit: int, output: str) -> None:
     asyncio.run(_jobs(status, limit, output))
 
 
+def _find_project_by_video_id(root: Path, video_id: str) -> str | None:
+    """Find the project whose project.json records the given video_id."""
+    brandly = layout.brandly_dir(root)
+    if not brandly.exists():
+        return None
+    for proj_file in sorted(brandly.glob("*/project.json")):
+        try:
+            raw = proj_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if video_id in raw:
+            return proj_file.parent.name
+    return None
+
+
 @cli.command()
 @click.argument("video_id")
-def job_resume(video_id: str) -> None:
-    """Poll and wait for a video generation job to complete."""
-    from brandly_cli.agnes_client import get_video_status
+@click.option(
+    "--project-id",
+    default=None,
+    help="Project to save the video under (default: auto-detect from project.json)",
+)
+@click.option("--max-wait", default=600, help="Max wait seconds while polling (default: 600)")
+@click.option(
+    "--model",
+    default="agnes-video-2.5-flash",
+    help="Agnes video model name used when polling (2.5-flash is the current default)",
+)
+@click.option("--no-download", is_flag=True, help="Only report status, do not download the video")
+@click.pass_context
+def job_resume(
+    ctx: click.Context,
+    video_id: str,
+    project_id: str | None,
+    max_wait: int,
+    model: str,
+    no_download: bool,
+) -> None:
+    """Poll a video job to completion and download the video to disk.
+
+    If the job is still running, polls until it completes (or --max-wait is
+    reached). Once a URL is available the video is downloaded to
+    .brandly/<project>/videos/scenes/ — use --no-download to skip saving.
+    """
+    from brandly_cli.agnes_client import get_video_status, poll_video
+
+    root = _get_root(ctx)
+
+    # Locate the owning project (explicit, auto-detected, or none).
+    if project_id is not None and not is_valid_project_id(project_id):
+        console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(1)
+    if project_id is None:
+        project_id = _find_project_by_video_id(root, video_id)
 
     console.print(f"[dim]Checking status for {video_id}...[/dim]")
-    result = asyncio.run(get_video_status(video_id))
+    try:
+        result = asyncio.run(get_video_status(video_id, model_name=model))
+    except Exception as e:
+        console.print(f"[red]Status check failed: {e}[/red]")
+        console.print(
+            "[dim]If the job is still queued, retry later — polling retries "
+            "rate-limit errors automatically.[/dim]"
+        )
+        sys.exit(1)
+
     status = result.get("status", "unknown")
     console.print(f"  Status: {status}")
     console.print(f"  Progress: {result.get('progress', 0)}%")
-    if result.get("url"):
-        console.print(f"[green]  URL: {result['url']}[/green]")
     if result.get("error"):
         console.print(f"[red]  Error: {result['error']}[/red]")
+
+    # Poll until completion if still in progress.
+    if status not in ("completed", "failed"):
+        console.print(f"[dim]Job still running — polling (max {max_wait}s)...[/dim]")
+        try:
+            result = asyncio.run(
+                poll_video(video_id, max_wait_seconds=max_wait, model_name=model)
+            )
+        except TimeoutError as e:
+            console.print(f"[yellow]⚠ {e}[/yellow]")
+            console.print(f"[dim]Re-run 'brandly job-resume {video_id}' later.[/dim]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]Error polling video: {e}[/red]")
+            sys.exit(1)
+        status = result.get("status", "unknown")
+        console.print(f"  Status: {status}")
+
+    if status == "failed":
+        console.print(f"[red]✗ Job failed: {result.get('error') or 'unknown error'}[/red]")
+        sys.exit(1)
+    if status != "completed":
+        console.print(f"[yellow]⚠ Job not completed yet (status: {status}).[/yellow]")
+        console.print(f"[dim]Re-run 'brandly job-resume {video_id}' later.[/dim]")
+        return
+
+    url = result.get("url") or ""
+    console.print(f"[green]  URL: {url or 'none'}[/green]")
+    if not url:
+        console.print("[yellow]⚠ No download URL available for this job.[/yellow]")
+        return
+    if no_download:
+        return
+
+    if project_id is None:
+        console.print(
+            "[yellow]⚠ Could not detect the owning project — passing "
+            "--project-id will save the video to the project tree.[/yellow]"
+        )
+        console.print(f"[dim]URL: {url}[/dim]")
+        return
+
+    saved = _save_artifact(
+        url,
+        project_id,
+        "videos",
+        root=root,
+        prompt_hint=video_id[:20],
+        category="scenes",
+    )
+    if saved:
+        console.print(f"[green]✓ Video downloaded:[/green] {saved}")
+        pm = ProjectManager(root)
+        asyncio.run(
+            pm.update(
+                project_id,
+                {
+                    "last_video_job": {
+                        "video_id": video_id,
+                        "url": url,
+                        "saved_path": str(saved),
+                        "model": model,
+                        "created_at": now_iso(),
+                    }
+                },
+            )
+        )
+        # Mark the newest video plan COMPLETED in the production plan.
+        plan_dir = layout.docs_dir(layout.project_dir(root, project_id), "plan")
+        plan_files = sorted(plan_dir.glob("plan_video_*.md")) if plan_dir.exists() else []
+        if plan_files:
+            from brandly_cli.utils import upsert_production_plan
+
+            upsert_production_plan(
+                project_id,
+                root=root,
+                plan_file=str(plan_files[-1]),
+                asset_type="video",
+                model=model,
+                status="COMPLETED",
+                source="brandly job-resume",
+            )
+    else:
+        console.print("[yellow]⚠ Could not save the video, but the URL is available.[/yellow]")
+        console.print(f"[dim]URL: {url}[/dim]")
 
 
 @cli.command()

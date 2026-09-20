@@ -14,11 +14,11 @@ Common issues and solutions for video generation.
 
 **Solutions:**
 ```bash
-# Default model is agnes-video-2.5-flash — poll with --wait
-brandly video <id> --wait
+# Default model is agnes-video-2.5-flash — it waits + downloads by default
+brandly video <id>
 
-# Or pin the legacy v2.0 model explicitly
-brandly video <id> --model agnes-video-v2.0 --wait
+# If the run timed out, poll + download later:
+brandly job-resume <video_id> --project-id <id>
 
 # Check API status
 brandly status

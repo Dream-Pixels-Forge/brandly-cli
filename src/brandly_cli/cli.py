@@ -3648,6 +3648,12 @@ def probe(input: str, output: str) -> None:
     help="Model to use (2.5-flash is the current default)",
 )
 @click.option("-n", "--count", default=3, help="Number of variants to generate")
+@click.option(
+    "--interval",
+    default=60.0,
+    show_default=True,
+    help="Seconds to wait between variant submissions (Agnes: 1 request/min).",
+)
 @click.option("--wait", is_flag=True, help="Wait for each generation to complete")
 @click.option("--character", default=None, help="Character description for consistency")
 @click.option("--reference-images", default=None, help="Comma-separated reference image URLs or local file paths")
@@ -3659,12 +3665,19 @@ def batch(
     style: str,
     model: str,
     count: int,
+    interval: float,
     wait: bool,
     character: str | None,
     reference_images: str | None,
 ) -> None:
-    """Generate multiple video variants from a base prompt."""
-    async def _batch(ctx, project_id, base_prompt, style, model, count, wait, character, reference_images):
+    """Generate multiple video variants from a base prompt.
+
+    Variants are submitted one at a time with a 60 s wait between requests
+    (Agnes 1 request/minute rate limit). For multi-shot films use
+    ``brandly produce`` instead — the production-plan-driven, shot-by-shot
+    workflow.
+    """
+    async def _batch(ctx, project_id, base_prompt, style, model, count, interval, wait, character, reference_images):
         root = _get_root(ctx)
         if not is_valid_project_id(project_id):
             console.print("[red]Invalid project ID.[/red]")
@@ -3687,6 +3700,13 @@ def batch(
 
         results = []
         for i in range(count):
+            # 1 request/minute: wait between consecutive submissions.
+            if i > 0:
+                console.print(
+                    f"[dim]Rate limit (Agnes 1 request/min): waiting {interval:.0f}s "
+                    f"before variant {i + 1}...[/dim]"
+                )
+                time.sleep(interval)
             variant_prompt = f"{base_prompt}"
             if count > 1:
                 variant_prompt += f"\n\nVariation {i + 1}: Unique camera angle and composition."
@@ -3698,6 +3718,9 @@ def batch(
                     duration=5,
                     aspect_ratio="16:9",
                     reference_images=imgs,
+                    # Parity with `brandly video` (issue #21 fix): cinematic
+                    # style keeps the cinematic preset, others get none.
+                    style_preset="cinematic" if style == "cinematic" else None,
                 )
             except Exception as e:
                 console.print(
@@ -3735,7 +3758,7 @@ def batch(
             f"\n[green]✓ Batch complete: "
             f"{sum(1 for r in results if r.get('url'))}/{count} generated[/green]"
         )
-    asyncio.run(_batch(ctx, project_id, base_prompt, style, model, count, wait, character, reference_images))
+    asyncio.run(_batch(ctx, project_id, base_prompt, style, model, count, interval, wait, character, reference_images))
 
 
 # ---------------------------------------------------------------------------

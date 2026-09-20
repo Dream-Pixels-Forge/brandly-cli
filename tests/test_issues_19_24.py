@@ -394,6 +394,95 @@ class TestReferenceImport:
 
 # ---------------------------------------------------------------------------
 # brandly produce - shot-by-shot generation pulled from the production plan
+# ---------------------------------------------------------------------------
+# brandly batch — rate-limit compliance (1 request/min) + style preset parity
+# ---------------------------------------------------------------------------
+
+
+class TestBatchRateLimit:
+    def test_batch_waits_one_minute_between_variants(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+
+        calls: list[str] = []
+        sleeps: list[float] = []
+
+        async def fake_create(prompt: str, **kwargs: Any) -> dict[str, Any]:
+            calls.append(prompt)
+            return dict(FAKE_TASK)
+
+        with (
+            patch("brandly_cli.cli.create_video_task", side_effect=fake_create),
+            patch("brandly_cli.cli.time.sleep", side_effect=sleeps.append),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "batch",
+                    pid,
+                    "a product on a table",
+                    "-n",
+                    "3",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert len(calls) == 3
+        # 1 request/min: exactly one 60s wait between consecutive variants.
+        assert sleeps == [60.0, 60.0]
+
+    def test_batch_passes_cinematic_preset_for_cinematic_style(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+
+        captured: dict[str, Any] = {}
+
+        async def fake_create(prompt: str, **kwargs: Any) -> dict[str, Any]:
+            captured.update(kwargs)
+            return dict(FAKE_TASK)
+
+        with (
+            patch("brandly_cli.cli.create_video_task", side_effect=fake_create),
+            patch("brandly_cli.cli.time.sleep"),
+        ):
+            result = runner.invoke(
+                cli,
+                ["batch", pid, "a cat", "-n", "1"],
+            )
+
+        assert result.exit_code == 0, result.output
+        # Parity with the old hardcoded behaviour: cinematic style keeps the
+        # cinematic preset; other styles must not receive it.
+        assert captured.get("style_preset") == "cinematic"
+
+    def test_batch_no_preset_for_non_photographic_style(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+
+        captured: dict[str, Any] = {}
+
+        async def fake_create(prompt: str, **kwargs: Any) -> dict[str, Any]:
+            captured.update(kwargs)
+            return dict(FAKE_TASK)
+
+        with (
+            patch("brandly_cli.cli.create_video_task", side_effect=fake_create),
+            patch("brandly_cli.cli.time.sleep"),
+        ):
+            result = runner.invoke(
+                cli,
+                ["batch", pid, "ink wash", "-n", "1", "--style", "explainer_video"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert captured.get("style_preset") is None
+
 # (no batch; 1 request per minute Agnes rate limit)
 # ---------------------------------------------------------------------------
 

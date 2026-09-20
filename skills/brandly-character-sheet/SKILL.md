@@ -171,7 +171,7 @@ brandly reference <project_id> \
   --ratio 16:9
 ```
 
-The generated reference is saved to `.brandly/<project_id>/refs/`
+The generated reference is saved to `.brandly/<project_id>/images/<category>/`
 with the `char_*` prefix and is auto-injected as the first
 reference image (strongest influence) in every `brandly video` call.
 Pass `--require-reference` to `brandly video` to fail-fast when the

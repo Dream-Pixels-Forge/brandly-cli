@@ -41,8 +41,19 @@ Key rules:
   `images/keyframe/` as `start_frame_<name>.png` / `end_frame_<name>.png`.
 - **`docs/plan/production_plan.md` is the single source of truth** for where each
   generation plan came from: every plan registers with its source command
-  (`brandly reference` / `brandly image` / `brandly video` / `brandly job-resume`)
-  and its status (PENDING → COMPLETED / FAILED).
+  (`brandly reference` / `brandly image` / `brandly video` / `brandly produce` /
+  `brandly job-resume`) and its status (PENDING → COMPLETED / FAILED).
+- **Shot-by-shot production**: for multi-shot films, write a shot-list JSON
+  (`[{name, prompt, duration, style, references}, …]`) and run
+  `brandly produce <project_id> --shots shots.json` — it registers ALL shots
+  on the production plan first, then generates **one shot at a time** with a
+  60s wait between requests (Agnes: 1 request/minute). Never batch or loop
+  `brandly video` calls — that bypasses the plan and violates the rate limit.
+- **Smaller reference payloads**: large local images (PNG plates, multi-MB
+  files) are auto-converted to webp/jpeg before upload (JPEG for opaque,
+  WebP for alpha) to keep requests under the create timeout. Disable with
+  `BRANDLY_IMAGE_CONVERT=off`. Scope what gets injected with
+  `brandly video --no-auto-refs` or `--auto-ref-category <name>`.
 - **Plan reuse**: re-running with an unchanged config REUSES the existing plan
   (e.g. retry after a failure). A new plan file is created only when something
   in the config (prompt, model, style, mode, …) changes.
@@ -439,7 +450,11 @@ brandly export <project_id>
 - **Image generation** → `brandly image` for speed, `brandly minimax-image` for subject reference
 - **Reference video + audio** → `brandly minimax-video` (MiniMax H3 supports ref video input)
 - **Prototyping** → `brandly video` default (`agnes-video-2.5-flash` — currently free; 720P, 4-12s)
-- **Rate limits** → `brandly rate-limits` (Agnes RPM by tier; MiniMax H3 concurrent tasks)
+- **Rate limits** → `brandly rate-limits` (Agnes RPM by tier; MiniMax H3 concurrent tasks).
+  Agnes video is 1 request/minute — multi-shot films MUST go through
+  `brandly produce` (shot-by-shot from the production plan), never parallel calls.
+  `brandly batch` (multiple variants of ONE prompt) is also rate-limited: variants
+  are submitted one at a time with a 60s wait between requests.
 
 ## API Notes
 

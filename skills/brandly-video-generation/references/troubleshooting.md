@@ -49,7 +49,7 @@ brandly status
 **Solutions:**
 ```bash
 # Default is agnes-video-2.5-flash (720P, 4-12s); pin legacy v2.0 for 1080p
-brandly video <id> --style cinematic --model agnes-video-v2.0 --duration 5
+brandly video <id> --style cinematic --model agnes-video-2.5-flash --duration 5
 
 # Add quality keywords to prompt
 # "8K, ultra detailed, professional cinematography"

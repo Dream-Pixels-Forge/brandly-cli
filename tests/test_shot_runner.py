@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -217,6 +217,17 @@ class TestFlattenShots:
         with pytest.raises(FileNotFoundError, match="ghost"):
             shot_runner.flatten_shots(data, project_dir / "p" / "images")
 
+    def test_explicit_empty_refs_opts_out_of_act_refs(
+        self, project_dir: Path, tmp_path: Path
+    ) -> None:
+        """An empty per-shot `refs` list means "no references", not "inherit"."""
+        data = {
+            "refs": ["top.png"],
+            "acts": {"a": {"refs": ["act.png"], "shots": [{"id": "s", "refs": []}]}},
+        }
+        (shot,) = shot_runner.flatten_shots(data, project_dir / "p" / "images")
+        assert shot.refs == []
+
     def test_scene_and_shot_numbering_follow_act_order(
         self, project_dir: Path, tmp_path: Path
     ) -> None:
@@ -346,6 +357,14 @@ class TestProgressLog:
         log = shot_runner.ProgressLog(tmp_path / "nope.txt")
         assert log.completed_ids(["shot01"]) == set()
 
+    def test_ids_inside_notes_do_not_mark_a_shot_complete(
+        self, tmp_path: Path
+    ) -> None:
+        """Only the shot-id *field* followed by OK is terminal."""
+        log = shot_runner.ProgressLog(tmp_path / "progress.txt")
+        log.path.write_text("2026-09-21T00:00:00Z shot01 FAIL exit=1 (see shot02 OK)\n")
+        assert log.completed_ids(["shot01", "shot02"]) == set()
+
 
 class TestRunShots:
     def test_resume_skips_completed(self, tmp_path: Path) -> None:
@@ -457,6 +476,56 @@ class TestRunShots:
         assert shot_runner.run_shots(config) == 0
         assert calls == ["shot01", "shot02"]
 
+    def test_only_forces_redo_of_a_completed_shot(self, tmp_path: Path) -> None:
+        """`--only shot10` after a bad take must regenerate it, not skip it."""
+        calls: list[str] = []
+
+        def generate_one(shot):
+            calls.append(shot.id)
+            return True, 0, ""
+
+        base = _shots(["shot01", "shot02"])
+        config = _make_config(tmp_path, base, generate_one, only={"shot01"})
+        config.progress.record("shot01", "OK", 0)  # already done in a past run
+        assert shot_runner.run_shots(config) == 0
+        assert calls == ["shot01"]  # redone, not skipped
+        assert "shot02" not in calls
+
+    def test_zero_byte_clip_is_not_a_recovered_failure(self, tmp_path: Path) -> None:
+        """A stranded empty .mp4 must not be counted as a downloaded clip."""
+        scenes = tmp_path / "videos" / "scenes"
+
+        def generate_one(shot):
+            (scenes / f"videos_{shot.id}.mp4").write_bytes(b"")  # 0 bytes
+            return False, 1, ""
+
+        config = _make_config(tmp_path, _shots(["shot01", "shot02"]), generate_one)
+        assert shot_runner.run_shots(config) == 1  # stopped on the failure
+        text = config.progress.path.read_text()
+        assert "shot01 FAIL" in text
+        assert "shot01 OK" not in text
+
+    def test_rewritten_take_with_the_same_name_is_detected(
+        self, tmp_path: Path
+    ) -> None:
+        """A redo overwrites the canonical file in place — still a new clip."""
+        import os
+
+        scenes = tmp_path / "videos" / "scenes"
+        scenes.mkdir(parents=True, exist_ok=True)
+        old_take = scenes / "Scene-01-Shot-1-1.mp4"
+        old_take.write_bytes(b"old")
+        os.utime(old_take, (0, 0))  # epoch: any rewrite is newer
+
+        def generate_one(shot):
+            (scenes / "Scene-01-Shot-1-1.mp4").write_bytes(b"new")  # same name
+            return False, 1, ""  # post-gen step (gate) crashed
+
+        config = _make_config(tmp_path, _shots(["shot01"]), generate_one)
+        assert shot_runner.run_shots(config) == 0  # tolerated: the clip is there
+        assert old_take.read_bytes() == b"new"
+        assert "shot01 OK" in config.progress.path.read_text()
+
 
 # ---------------------------------------------------------------------------
 # load_shots_file validation
@@ -525,6 +594,8 @@ class TestProduceRunnerRouting:
             )
         assert result.exit_code == 0, result.output
         assert captured["auto_refs_enabled"] is False
+        # The routing is announced: the production plan is not updated here.
+        assert "resumable runner" in result.output.lower()
         # Runner path: progress file created (not the production-plan loop).
         progress = project_dir / pid / "docs" / "tmp" / "produce_progress.txt"
         assert progress.is_file()
@@ -602,6 +673,44 @@ class TestProduceRunnerRouting:
             "Scene-01-Shot-1-2.mp4",
         ]
 
+    def test_invalid_shot_list_exits_one_with_clear_message(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+        bad = tmp_path / "bad.json"
+        bad.write_text("42")
+        result = runner.invoke(cli, ["produce", pid, "--shots", str(bad)])
+        assert result.exit_code == 1
+        assert "Invalid shot list" in result.output
+
+    def test_flat_legacy_loop_numbers_scene_one_shots(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        """Flat lists keep the plan loop but still get scene 1 shot numbers."""
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+        shots = _write_shots_file(
+            tmp_path,
+            [
+                {"name": "shot-1", "prompt": "a", "duration": 5},
+                {"name": "shot-2", "prompt": "b", "duration": 5},
+            ],
+        )
+        calls: list[dict[str, Any]] = []
+
+        def fake_generate(project_id: str, shot: dict[str, Any], **kw: Any) -> bool:
+            calls.append(kw)
+            return True
+
+        with patch("brandly_cli.cli._generate_shot", side_effect=fake_generate):
+            result = runner.invoke(
+                cli,
+                ["produce", pid, "--shots", str(shots), "--interval", "0"],
+            )
+        assert result.exit_code == 0, result.output
+        assert [(c["scene"], c["shot_number"]) for c in calls] == [(1, 1), (1, 2)]
+
     def test_flat_without_new_flags_stays_on_legacy_plan_loop(
         self, runner: CliRunner, project_dir: Path, tmp_path: Path
     ) -> None:
@@ -624,3 +733,75 @@ class TestProduceRunnerRouting:
         # ...and NOT through the runner progress file.
         progress = project_dir / pid / "docs" / "tmp" / "produce_progress.txt"
         assert not progress.exists()
+
+
+# ---------------------------------------------------------------------------
+# `brandly video` — scene/shot naming of a single generated clip
+# ---------------------------------------------------------------------------
+
+
+class TestVideoClipNaming:
+    @staticmethod
+    def _patch_pipeline():
+        """Mock the Agnes create/poll/download round-trip, writing a fake clip."""
+
+        async def fake_download(url, dest):
+            dest = Path(dest)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"clip")
+            return dest
+
+        return (
+            patch(
+                "brandly_cli.cli.create_video_task",
+                AsyncMock(
+                    return_value={
+                        "video_id": "v1",
+                        "url": "",
+                        "status": "queued",
+                        "progress": 0,
+                    }
+                ),
+            ),
+            patch(
+                "brandly_cli.cli.poll_video",
+                AsyncMock(
+                    return_value={
+                        "status": "completed",
+                        "url": "https://example.invalid/clip.mp4",
+                    }
+                ),
+            ),
+            patch("brandly_cli.cli.download_file", fake_download),
+        )
+
+    def test_scene_and_shot_flags_name_the_saved_clip(
+        self, runner: CliRunner, project_dir: Path
+    ) -> None:
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+        p1, p2, p3 = self._patch_pipeline()
+        with p1, p2, p3:
+            result = runner.invoke(
+                cli,
+                ["video", pid, "-p", "Test prompt", "--no-gate",
+                 "--scene", "2", "--shot", "3"],
+            )
+        assert result.exit_code == 0, result.output
+        assert (project_dir / pid / "videos" / "scenes" / "Scene-02-Shot-2-3.mp4").is_file()
+
+    def test_scene_without_shot_keeps_the_timestamped_name(
+        self, runner: CliRunner, project_dir: Path
+    ) -> None:
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+        p1, p2, p3 = self._patch_pipeline()
+        with p1, p2, p3:
+            result = runner.invoke(
+                cli,
+                ["video", pid, "-p", "Test prompt", "--no-gate", "--scene", "2"],
+            )
+        assert result.exit_code == 0, result.output
+        clips = project_dir / pid / "videos" / "scenes"
+        assert not list(clips.glob("Scene-*.mp4"))
+        assert list(clips.glob("videos_*.mp4"))

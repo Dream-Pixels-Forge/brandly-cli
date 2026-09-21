@@ -166,6 +166,7 @@ def _save_artifact(
     root: Path,
     prompt_hint: str = "",
     category: str | None = None,
+    filename: str | None = None,
 ) -> Path | None:
     """Download a generated asset and save it under
     .brandly/{project_id}/{images|videos|audio}/{category}/.
@@ -173,6 +174,9 @@ def _save_artifact(
     ``category`` routes the file into a sub-folder (e.g. 'scenes' for video,
     'prop' for object references, 'soundtrack' for music). Omit it to use
     the 'general' default.
+
+    ``filename`` overrides the default ``<type>_<timestamp>_<hint>`` name (used
+    for the deterministic ``Scene-XX-Shot-X-Y.mp4`` clip convention).
     """
     if not url:
         return None
@@ -184,7 +188,7 @@ def _save_artifact(
         ext = ".bin"
     ts = now_iso().replace(":", "-").replace(".", "_")
     hint = sanitize_filename(prompt_hint)[:20] if prompt_hint else ""
-    fname = f"{type_label}_{ts}_{hint}{ext}"
+    fname = filename or f"{type_label}_{ts}_{hint}{ext}"
     dest = artifacts_dir / fname
     try:
         asyncio.run(download_file(url, dest))
@@ -1430,6 +1434,20 @@ def image(
     "prevents payload bloat and style bleed between visual worlds).",
 )
 @click.option(
+    "--scene",
+    type=int,
+    default=None,
+    help="Scene number for the deterministic clip name "
+    "(Scene-<scene:02d>-Shot-<scene>-<shot>.mp4). Needs --shot.",
+)
+@click.option(
+    "--shot",
+    "shot_number",
+    type=int,
+    default=None,
+    help="Shot number inside --scene (the trailing number of the clip name).",
+)
+@click.option(
     "--auto-ref-category",
     default=None,
     help="Scope auto-injected references to one image category "
@@ -1457,6 +1475,8 @@ def video(
     reference_audios: str | None,
     auto_refs_enabled: bool,
     auto_ref_category: str | None,
+    scene: int | None,
+    shot_number: int | None,
 ) -> None:
     """Generate an AI video via Agnes AI.
 
@@ -1475,6 +1495,12 @@ def video(
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
         sys.exit(1)
+
+    if (scene is None) != (shot_number is None):
+        console.print(
+            "[yellow]⚠ --scene and --shot must be used together — using the "
+            "default (timestamped) clip name.[/yellow]"
+        )
 
     # Auto-detect project artifacts as additional reference images
     root = _get_root(ctx)
@@ -1737,6 +1763,11 @@ def video(
         task["final_status"] = result.get("status")
         # Always save video to disk if URL exists
         if url:
+            clip_name = (
+                shot_runner.clip_filename(scene, shot_number)
+                if scene is not None and shot_number is not None
+                else None
+            )
             saved = _save_artifact(
                 url,
                 project_id,
@@ -1744,6 +1775,7 @@ def video(
                 root=root,
                 prompt_hint=prompt,
                 category="scenes",
+                filename=clip_name,
             )
             if saved:
                 console.print(f"  Saved → {saved}")
@@ -1872,6 +1904,8 @@ def _generate_shot(
     auto_refs_enabled: bool = True,
     allow_referenceless: bool = False,
     max_wait: int = 600,
+    scene: int | None = None,
+    shot_number: int | None = None,
 ) -> bool:
     """Generate ONE shot through the standard ``brandly video`` pipeline.
 
@@ -1897,6 +1931,8 @@ def _generate_shot(
             require_reference=False,
             auto_refs_enabled=auto_refs_enabled,
             allow_referenceless=allow_referenceless,
+            scene=scene,
+            shot_number=shot_number,
         )
     except SystemExit as exc:
         return exc.code in (0, None)
@@ -2010,7 +2046,7 @@ def produce(
     try:
         shots = shot_runner.load_shots_file(path)
     except ValueError as e:
-        console.print(f"[red]Invalid shot list JSON: {e}[/red]")
+        console.print(f"[red]Invalid shot list: {e}[/red]")
         sys.exit(1)
 
     use_runner = (
@@ -2022,6 +2058,11 @@ def produce(
         or max_shots
     )
     if use_runner:
+        console.print(
+            "[dim]Resumable runner → "
+            f".brandly/{project_id}/docs/tmp/{shot_runner.PROGRESS_FILENAME} "
+            "(shots are not registered on the production plan on this path).[/dim]"
+        )
         _run_produce_runner(
             ctx,
             project_id,
@@ -2098,7 +2139,15 @@ def produce(
             )
             time.sleep(interval)
         console.print(f"[bold]▶ Shot {name}[/bold]")
-        ok = _generate_shot(project_id, shot, ctx=ctx, root=root)
+        ok = _generate_shot(
+            project_id,
+            shot,
+            ctx=ctx,
+            root=root,
+            # Flat lists carry no act grouping: scene 1, shot order = list order.
+            scene=shot_runner.as_int(shot.get("scene"), 1),
+            shot_number=shot_runner.as_int(shot.get("shot"), idx + 1),
+        )
         slug = sanitize_filename(name.lower()) or f"shot-{idx + 1}"
         if ok:
             upsert_production_plan(
@@ -2145,11 +2194,11 @@ def _run_produce_runner(
     max_shots: int,
 ) -> None:
     """Progress-file runner path for ``brandly produce`` (see produce())."""
-    project_dir = root / ".brandly" / project_id
-    images_dir = project_dir / "images"
-    scenes_dir = project_dir / "videos" / "scenes"
+    project_dir = layout.resolve_project_dir(root, project_id)
+    images_dir = layout.media_root(project_dir, "images")
+    scenes_dir = layout.media_dir(project_dir, "videos", "scenes")
     progress = shot_runner.ProgressLog(
-        project_dir / "docs" / "tmp" / "produce_progress.txt"
+        layout.docs_dir(project_dir, "tmp") / shot_runner.PROGRESS_FILENAME
     )
     shots = shot_runner.flatten_shots(data, images_dir, character=character)
 
@@ -2162,6 +2211,9 @@ def _run_produce_runner(
             auto_refs_enabled=not no_auto_refs,
             allow_referenceless=allow_referenceless,
             max_wait=max_wait,
+            # Names the download Scene-XX-Shot-X-Y.mp4 at save time.
+            scene=shot.scene,
+            shot_number=shot.index_in_scene,
         )
         return ok, 0 if ok else 1, ""
 

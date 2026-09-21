@@ -50,6 +50,22 @@ class TestLayoutStructure:
         # default category is general
         assert layout.media_dir(proj, "videos") == proj / "videos" / "general"
 
+    def test_media_root_returns_the_top_folder(self, tmp_path: Path) -> None:
+        """`media_root` is the un-categorised images/videos/audio folder."""
+        proj = layout.project_dir(tmp_path, "p1")
+        assert layout.media_root(proj, "images") == proj / "images"
+        assert layout.media_root(proj, "videos") == proj / "videos"
+        assert layout.media_root(proj, "audio") == proj / "audio"
+
+    def test_media_root_rejects_unknown_top(self, tmp_path: Path) -> None:
+        proj = layout.project_dir(tmp_path, "p1")
+        try:
+            layout.media_root(proj, "documents")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("expected ValueError for unknown top folder")
+
     def test_media_dir_rejects_unknown_top(self, tmp_path: Path) -> None:
         proj = layout.project_dir(tmp_path, "p1")
         try:

@@ -28,10 +28,19 @@ All notable changes to this project are documented here.
   - transition shots (`"folder": "transition"`) have their clips moved
     to `videos/transition/`;
   - a post-generation step failure (e.g. quality-gate crash) still counts
-    as OK when the clip was downloaded, and the run stops on the first
-    unrecovered failure (re-run the same command to resume).
+    as OK when a non-empty clip was downloaded (zero-byte / stranded files
+    do not count), and the run stops on the first unrecovered failure
+    (re-run the same command to resume). `--only` redoes the named shots
+    even if a previous run already recorded them as OK;
   Flat shot lists without the new flags keep the existing production-plan
-  behaviour.
+  behaviour. The routing to the resumable runner is announced on stderr,
+  and both produce paths now pass scene/shot numbers through to the
+  download (flat lists: scene 1, shot order = list order).
+- `brandly video --scene <n> --shot <n>`: name the downloaded clip with the
+  deterministic `Scene-<scene:02d>-Shot-<scene>-<shot>.mp4` convention
+  (both flags required together; without them the timestamped name stays).
+- `layout.media_root(proj_dir, "images"|"videos"|"audio")`: the
+  un-categorised media top folder (used by the produce runner).
 
 ## [0.3.15] — 2026-09-20
 

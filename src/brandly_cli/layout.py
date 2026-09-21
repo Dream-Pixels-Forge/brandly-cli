@@ -148,6 +148,18 @@ def media_dir(proj_dir: Path, top: str, category: str = "general") -> Path:
     return proj_dir / top / _check(category, allowed, default)
 
 
+def media_root(proj_dir: str | Path, top: str) -> Path:
+    """Return ``<proj>/{images|videos|audio}`` — the un-categorised top folder.
+
+    Use this when a caller scans every category at once (e.g. resolving bare
+    reference plate stems across ``images/<category>/``); ``media_dir`` is for
+    a single known category.
+    """
+    if top not in ("images", "videos", "audio"):
+        raise ValueError(f"Unknown media top folder: {top!r}")
+    return Path(proj_dir) / top
+
+
 def image_category_for_subject(subject_type: str) -> str:
     """Map a reference subject type to an ``images/`` category."""
     return SUBJECT_TO_IMAGE_CATEGORY.get(subject_type, "general")

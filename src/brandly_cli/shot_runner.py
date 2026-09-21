@@ -49,7 +49,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,6 +59,7 @@ REF_CATEGORIES = ("character", "location", "prop")
 _PLATE_SUFFIXES = (".opt.jpg", ".opt.png", ".jpg", ".jpeg", ".png")
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp")
 DEFAULT_INTERVAL = 60.0  # Agnes: 1 request per minute
+PROGRESS_FILENAME = "produce_progress.txt"  # under <project>/docs/tmp/
 
 
 def utcnow() -> str:
@@ -75,8 +76,13 @@ def clip_filename(scene: int, index_in_scene: int, ext: str = ".mp4") -> str:
     return f"Scene-{scene:02d}-Shot-{scene}-{index_in_scene}{ext}"
 
 
-def _as_int(value: Any, default: int) -> int:
-    """Best-effort int for optional ``scene`` overrides in a shot list."""
+def as_int(value: Any, default: int) -> int:
+    """Best-effort int for optional ``scene``/``shot`` overrides in a shot list.
+
+    Returns ``default`` when the value is missing or not numeric, so a typo in
+    a hand-written shot list degrades to automatic numbering instead of
+    aborting a long production run.
+    """
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -120,6 +126,10 @@ def resolve_plate(stem: str, images_dir: Path) -> Path:
     Searches each known category folder, preferring the optimized
     ``.opt.jpg`` twin (keeps reference payloads small on the free tier).
     Falls back to the unqualified stem at the ``images_dir`` root.
+
+    Categories are searched in ``REF_CATEGORIES`` order, so when a stem exists
+    in several categories (or as both an optimized twin and the original), the
+    first match wins: ``character`` > ``location`` > ``prop``.
     """
     for category in REF_CATEGORIES:
         folder = images_dir / category
@@ -140,7 +150,12 @@ def resolve_plate(stem: str, images_dir: Path) -> Path:
 
 
 def _ref_entries(shot: dict[str, Any], act: dict[str, Any], data: dict[str, Any]) -> list[str]:
-    """Reference entries: per-shot > per-act > top-level, paths or stems."""
+    """Reference entries: per-shot > per-act > top-level, paths or stems.
+
+    An explicit empty ``refs``/``references`` list on a shot means "no
+    references" and opts that shot out of the act/top-level lists (the
+    fallback only applies when the key is absent).
+    """
     raw = shot.get("refs", shot.get("references"))
     if raw is None:
         raw = act.get("refs", act.get("ref"))
@@ -183,7 +198,7 @@ def flatten_shots(
     for act_position, act in enumerate(acts, start=1):
         act_name = str(act.get("name", act.get("act", "")))
         # Scene number: explicit act key, else the act's position in the list.
-        act_scene = _as_int(act.get("scene"), act_position)
+        act_scene = as_int(act.get("scene"), act_position)
         prefix = str(act.get("prefix", ""))
         default_style = str(act.get("style", "cinematic"))
         default_folder = str(act.get("folder", "scenes"))
@@ -221,7 +236,7 @@ def flatten_shots(
                     duration=int(shot.get("duration", 5)),
                     refs=refs,
                     character=character_anchor,
-                    scene=_as_int(shot.get("scene"), act_scene),
+                    scene=as_int(shot.get("scene"), act_scene),
                     index_in_scene=shot_position,
                 )
             )
@@ -244,15 +259,20 @@ class ProgressLog:
     path: Path
 
     def completed_ids(self, known: Iterable[str]) -> set[str]:
+        """Shot ids already recorded as terminal (``OK``) in the progress file.
+
+        Lines are ``<ts> <shot-id> <OK|FAIL> exit=<n> [note]``; only the
+        shot-id field followed by the status field is trusted, so free-text
+        notes can never accidentally mark a shot complete.
+        """
         if not self.path.is_file():
             return set()
         known_set = set(known)
         done: set[str] = set()
         for line in self.path.read_text(encoding="utf-8", errors="replace").splitlines():
             parts = line.split()
-            for i, tok in enumerate(parts):
-                if tok in known_set and i + 1 < len(parts) and parts[i + 1] == "OK":
-                    done.add(tok)
+            if len(parts) >= 3 and parts[1] in known_set and parts[2] == "OK":
+                done.add(parts[1])
         return done
 
     def record(self, shot_id: str, status: str, exit_code: int | None, note: str = "") -> None:
@@ -284,10 +304,15 @@ class RunnerConfig:
             return []
         target_dir = self.scenes_dir.parent / "transition"
         target_dir.mkdir(parents=True, exist_ok=True)
+        moved: list[Path] = []
         for clip in new_clips:
-            clip.replace(target_dir / clip.name)
-            self.say(f"moved transition clip -> {target_dir / clip.name}")
-        return list(new_clips)
+            target = target_dir / clip.name
+            if target.exists():
+                self.say(f"replacing previous transition take -> {target.name}")
+            clip.replace(target)
+            self.say(f"moved transition clip -> {target}")
+            moved.append(target)
+        return moved
 
 
 def name_clips(
@@ -318,6 +343,33 @@ def name_clips(
     return renamed
 
 
+def _clip_snapshot(scenes: Path) -> dict[str, int]:
+    """Map clip file name -> modification time (ns) in ``scenes``.
+
+    Comparing snapshots detects both a newly downloaded clip and a redo that
+    overwrote the same canonical name in place.
+    """
+    if not scenes.is_dir():
+        return {}
+    return {
+        p.name: p.stat().st_mtime_ns for p in scenes.glob("*.mp4") if p.is_file()
+    }
+
+
+def _new_clips(scenes: Path, before: Mapping[str, int]) -> list[Path]:
+    """Clips that appeared or were rewritten since ``before``.
+
+    Zero-byte files are ignored: a stranded/truncated download is not proof
+    that a shot produced an artifact.
+    """
+    fresh = sorted(
+        scenes / name
+        for name, mtime in _clip_snapshot(scenes).items()
+        if before.get(name) != mtime
+    )
+    return [p for p in fresh if p.stat().st_size > 0]
+
+
 def run_shots(config: RunnerConfig) -> int:
     """Run every pending shot, stop on first unrecovered failure.
 
@@ -327,6 +379,10 @@ def run_shots(config: RunnerConfig) -> int:
     """
     shots = config.shots
     done = config.progress.completed_ids(s.id for s in shots)
+    if config.only:
+        # `--only` means "redo exactly these takes": drop them from the
+        # progress-file skip list so a bad take can be regenerated.
+        done -= config.only
     pending = [s for s in shots if s.id not in done]
     if config.only:
         pending = [s for s in pending if s.id in config.only]
@@ -341,11 +397,10 @@ def run_shots(config: RunnerConfig) -> int:
                 f"rate limit: waiting {config.interval:.0f}s before {shot.id}..."
             )
             time.sleep(config.interval)
-        before = set(scenes.glob("*.mp4")) if scenes.is_dir() else set()
+        before = _clip_snapshot(scenes)
         succeeded, exit_code, note = config.generate_one(shot)
-        after = set(scenes.glob("*.mp4")) if scenes.is_dir() else set()
-        new_clips = sorted(after - before)
-        ok = succeeded or (not succeeded and bool(new_clips))
+        new_clips = _new_clips(scenes, before)
+        ok = succeeded or bool(new_clips)
         if ok and not succeeded:
             note = (note + " " if note else "") + "(clip downloaded; post-gen step failed)"
         config.progress.record(

@@ -1992,8 +1992,11 @@ def produce(
     .brandly/<project>/docs/tmp/produce_progress.txt, per-act prompt prefix
     and style, plate-stem reference resolution (optimized .opt.jpg twins
     preferred), character anchoring, transition clips moved to
-    videos/transition/, and a post-generation-step failure (quality gate
-    crash) tolerates a downloaded clip.
+    videos/transition/, clips renamed to the deterministic
+    Scene-<scene:02d>-Shot-<scene>-<shot-in-scene>.mp4 convention (scene =
+    act-level/shot-level "scene" key, else the act's position in the shot
+    list), and a post-generation-step failure (quality gate crash)
+    tolerates a downloaded clip.
     """
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
@@ -2033,6 +2036,14 @@ def produce(
             max_shots,
         )
         return
+
+    # The production-plan loop is flat-schema only: a structured shot list
+    # always takes the runner above. Re-asserting the shape narrows the
+    # load_shots_file() union for the type checker and fails loudly if a
+    # future schema ever reaches this branch.
+    if not isinstance(shots, list):
+        console.print("[red]Shot list must be a JSON array of shot objects.[/red]")
+        sys.exit(1)
 
     # ---- Phase 1: prepare ALL shots on the production plan (source of truth)
     from brandly_cli.utils import (

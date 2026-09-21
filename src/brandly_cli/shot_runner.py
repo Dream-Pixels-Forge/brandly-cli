@@ -30,6 +30,19 @@ resolved under ``.brandly/<project>/images/<category>/<stem>`` (categories:
 Transition shots (``folder: "transition"``) have their generated clips
 moved from ``videos/scenes/`` to ``videos/transition/`` so assembly
 tooling can address them separately.
+
+Clip naming
+-----------
+Every generated clip is renamed to a deterministic, assembly-friendly name::
+
+    Scene-{scene:02d}-Shot-{scene}-{shot-in-scene}.mp4
+
+e.g. the third shot of scene 1 becomes ``Scene-01-Shot-1-3.mp4`` and the
+first shot of scene 2 becomes ``Scene-02-Shot-2-1.mp4``. The scene number
+comes from an explicit ``"scene"`` key on the act (or on a single shot),
+else the act's position in the shot list; the trailing number is the shot's
+position inside its scene. A redo replaces the previous take of the same
+scene/shot.
 """
 
 from __future__ import annotations
@@ -53,6 +66,23 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def clip_filename(scene: int, index_in_scene: int, ext: str = ".mp4") -> str:
+    """Canonical generated-clip name for a scene/shot pair.
+
+    ``Scene-{scene:02d}-Shot-{scene}-{index_in_scene}{ext}`` — the first
+    shot of scene 1 is ``Scene-01-Shot-1-1.mp4``.
+    """
+    return f"Scene-{scene:02d}-Shot-{scene}-{index_in_scene}{ext}"
+
+
+def _as_int(value: Any, default: int) -> int:
+    """Best-effort int for optional ``scene`` overrides in a shot list."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass
 class Shot:
     """One flattened, reference-resolved shot ready for generation."""
@@ -65,6 +95,13 @@ class Shot:
     duration: int
     refs: list[str] = field(default_factory=list)
     character: str | None = None
+    scene: int = 1
+    index_in_scene: int = 1
+
+    @property
+    def clip_name(self) -> str:
+        """Canonical file name for this shot's generated clip."""
+        return clip_filename(self.scene, self.index_in_scene)
 
     def to_video_kwargs(self) -> dict[str, Any]:
         """Fields understood by the standard ``video`` pipeline."""
@@ -143,12 +180,14 @@ def flatten_shots(
 
     global_character = character or top_level.get("character")
     shots: list[Shot] = []
-    for act in acts:
+    for act_position, act in enumerate(acts, start=1):
         act_name = str(act.get("name", act.get("act", "")))
+        # Scene number: explicit act key, else the act's position in the list.
+        act_scene = _as_int(act.get("scene"), act_position)
         prefix = str(act.get("prefix", ""))
         default_style = str(act.get("style", "cinematic"))
         default_folder = str(act.get("folder", "scenes"))
-        for shot in act.get("shots", []):
+        for shot_position, shot in enumerate(act.get("shots", []), start=1):
             shot_id = str(shot.get("id") or shot.get("name") or f"shot-{len(shots) + 1}")
             entries = _ref_entries(shot, act, top_level)
             refs: list[str] = []
@@ -182,6 +221,8 @@ def flatten_shots(
                     duration=int(shot.get("duration", 5)),
                     refs=refs,
                     character=character_anchor,
+                    scene=_as_int(shot.get("scene"), act_scene),
+                    index_in_scene=shot_position,
                 )
             )
     return shots
@@ -249,6 +290,34 @@ class RunnerConfig:
         return list(new_clips)
 
 
+def name_clips(
+    shot: Shot,
+    clips: Sequence[Path],
+    say: Callable[[str], None] | None = None,
+) -> list[Path]:
+    """Rename freshly downloaded clips to the canonical Scene-XX-Shot-X-Y name.
+
+    The first clip (sorted) takes the canonical name; extra clips from the
+    same shot get a ``-2``/``-3``… suffix so nothing is silently dropped. An
+    existing file under the canonical name is replaced — a redo is meant to
+    supersede the previous take of that scene/shot.
+    """
+    renamed: list[Path] = []
+    for position, clip in enumerate(sorted(clips), start=1):
+        if position == 1:
+            target = clip.with_name(shot.clip_name)
+        else:
+            stem = Path(shot.clip_name).stem
+            target = clip.with_name(f"{stem}-{position}{clip.suffix}")
+        if clip != target:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            clip.replace(target)
+            if say is not None:
+                say(f"{clip.name} -> {target.name}")
+        renamed.append(target)
+    return renamed
+
+
 def run_shots(config: RunnerConfig) -> int:
     """Run every pending shot, stop on first unrecovered failure.
 
@@ -287,7 +356,8 @@ def run_shots(config: RunnerConfig) -> int:
         )
         config.say(f"{shot.id} {'OK' if ok else 'FAIL'} exit={exit_code}" + (f" {note}" if note and ok else ""))
         if ok:
-            config.move_shot_clips(shot, new_clips)
+            # Deterministic Scene-XX-Shot-X-Y name, then any transition move.
+            config.move_shot_clips(shot, name_clips(shot, new_clips, config.say))
         else:
             config.say(
                 f"STOP: {shot.id} failed. Fix and re-run to resume "

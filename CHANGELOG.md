@@ -14,6 +14,12 @@ All notable changes to this project are documented here.
   (`.brandly/<project>/docs/tmp/produce_progress.txt`) instead of the
   production-plan loop, so film production no longer needs an external
   runner script:
+  - generated clips are renamed to a deterministic, assembly-friendly
+    convention — `Scene-<scene:02d>-Shot-<scene>-<shot-in-scene>.mp4`
+    (e.g. `Scene-01-Shot-1-2.mp4` for the second shot of scene 1). The
+    scene number comes from an act-level or shot-level `"scene"` key, else
+    the act's position in the shot list; the trailing number is the shot's
+    position inside that scene. A redo replaces the previous take;
   - plate-stem references resolve under `images/<category>/`, preferring
     the optimized `<stem>.opt.jpg` twins (small reference payloads —
     issue #20 free-tier timeouts);

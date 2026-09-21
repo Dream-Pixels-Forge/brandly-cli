@@ -217,6 +217,78 @@ class TestFlattenShots:
         with pytest.raises(FileNotFoundError, match="ghost"):
             shot_runner.flatten_shots(data, project_dir / "p" / "images")
 
+    def test_scene_and_shot_numbering_follow_act_order(
+        self, project_dir: Path, tmp_path: Path
+    ) -> None:
+        data = {
+            "acts": {
+                "act1": {
+                    "shots": [
+                        {"id": "shot01", "prompt": "a"},
+                        {"id": "shot02", "prompt": "b"},
+                        {"id": "shot03", "prompt": "c"},
+                        {"id": "shot04", "prompt": "d"},
+                    ],
+                },
+                "act2": {"shots": [{"id": "shot05", "prompt": "e"}]},
+            },
+        }
+        shots = shot_runner.flatten_shots(data, project_dir / "p" / "images")
+        assert [(s.scene, s.index_in_scene) for s in shots] == [
+            (1, 1),
+            (1, 2),
+            (1, 3),
+            (1, 4),
+            (2, 1),
+        ]
+        assert [s.clip_name for s in shots] == [
+            "Scene-01-Shot-1-1.mp4",
+            "Scene-01-Shot-1-2.mp4",
+            "Scene-01-Shot-1-3.mp4",
+            "Scene-01-Shot-1-4.mp4",
+            "Scene-02-Shot-2-1.mp4",
+        ]
+
+    def test_flat_list_defaults_to_scene_one(
+        self, project_dir: Path, tmp_path: Path
+    ) -> None:
+        data = [
+            {"name": "shot-1", "prompt": "a"},
+            {"name": "shot-2", "prompt": "b"},
+            {"name": "shot-3", "prompt": "c"},
+        ]
+        shots = shot_runner.flatten_shots(data, project_dir / "p" / "images")
+        assert [(s.scene, s.index_in_scene) for s in shots] == [(1, 1), (1, 2), (1, 3)]
+
+    def test_explicit_scene_overrides_act_order(
+        self, project_dir: Path, tmp_path: Path
+    ) -> None:
+        data = {
+            "acts": {
+                "a": {"scene": 7, "shots": [{"id": "s1", "prompt": "x"}]},
+                "b": {
+                    "shots": [
+                        {"id": "s2", "prompt": "y"},
+                        {"id": "s3", "prompt": "z", "scene": 9},
+                    ],
+                },
+            },
+        }
+        shots = shot_runner.flatten_shots(data, project_dir / "p" / "images")
+        assert [(s.scene, s.index_in_scene) for s in shots] == [(7, 1), (2, 1), (9, 2)]
+
+
+# ---------------------------------------------------------------------------
+# Generated-clip naming convention
+# ---------------------------------------------------------------------------
+
+
+class TestClipNaming:
+    def test_clip_filename_convention(self) -> None:
+        assert shot_runner.clip_filename(1, 1) == "Scene-01-Shot-1-1.mp4"
+        assert shot_runner.clip_filename(2, 3) == "Scene-02-Shot-2-3.mp4"
+        assert shot_runner.clip_filename(12, 4) == "Scene-12-Shot-12-4.mp4"
+
 
 # ---------------------------------------------------------------------------
 # ProgressLog + run_shots
@@ -328,7 +400,45 @@ class TestRunShots:
         )
         assert shot_runner.run_shots(config) == 0
         assert not (scenes / "clip_trans.mp4").exists()
-        assert (tmp_path / "videos" / "transition" / "clip_trans.mp4").is_file()
+        # Renamed to the Scene-XX-Shot-X-Y convention, then moved.
+        assert (tmp_path / "videos" / "transition" / "Scene-01-Shot-1-1.mp4").is_file()
+
+    def test_generated_clip_is_renamed_to_canonical_name(self, tmp_path: Path) -> None:
+        scenes = tmp_path / "videos" / "scenes"
+        scenes.mkdir(parents=True, exist_ok=True)
+        existing_take = scenes / "Scene-01-Shot-1-2.mp4"
+        existing_take.write_bytes(b"old")  # a previous take
+
+        def generate_one(shot):
+            (scenes / "videos_2026-09-21T00-00-00_establishing.mp4").write_bytes(b"new")
+            return True, 0, ""
+
+        shots = [
+            shot_runner.Shot(
+                id="shot02", act="ACT I", style="cinematic", folder="scenes",
+                prompt="p", duration=5, scene=1, index_in_scene=2,
+            ),
+        ]
+        config = _make_config(tmp_path, shots, generate_one)
+        assert shot_runner.run_shots(config) == 0
+        canonical = scenes / "Scene-01-Shot-1-2.mp4"
+        assert canonical.read_bytes() == b"new"  # the redo replaces the old take
+        assert not (scenes / "videos_2026-09-21T00-00-00_establishing.mp4").exists()
+
+    def test_extra_clips_from_one_shot_get_a_numeric_suffix(
+        self, tmp_path: Path
+    ) -> None:
+        scenes = tmp_path / "videos" / "scenes"
+
+        def generate_one(shot):
+            (scenes / "videos_a.mp4").write_bytes(b"a")
+            (scenes / "videos_b.mp4").write_bytes(b"b")
+            return True, 0, ""
+
+        config = _make_config(tmp_path, _shots(["shot01"]), generate_one)
+        assert shot_runner.run_shots(config) == 0
+        assert (scenes / "Scene-01-Shot-1-1.mp4").is_file()
+        assert (scenes / "Scene-01-Shot-1-1-2.mp4").is_file()
 
     def test_only_and_max_filters(self, tmp_path: Path) -> None:
         calls: list[str] = []
@@ -456,6 +566,41 @@ class TestProduceRunnerRouting:
         assert captured["shot"]["prompt"] == "P x"
         assert captured["shot"]["style"] == "documentary"
         assert captured["shot"]["character"] == "anchor"
+
+    def test_structured_run_names_clips_scene_shot(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+        shots = _write_shots_file(
+            tmp_path,
+            {
+                "acts": {
+                    "act1": {
+                        "shots": [
+                            {"id": "shot01", "prompt": "a", "duration": 5},
+                            {"id": "shot02", "prompt": "b", "duration": 5},
+                        ],
+                    },
+                },
+            },
+        )
+        clips = project_dir / pid / "videos" / "scenes"
+
+        def fake_generate(project_id: str, shot: dict[str, Any], **kw: Any) -> bool:
+            clips.mkdir(parents=True, exist_ok=True)
+            (clips / f"videos_{shot['name']}.mp4").write_bytes(b"x")
+            return True
+
+        with patch("brandly_cli.cli._generate_shot", side_effect=fake_generate):
+            result = runner.invoke(
+                cli, ["produce", pid, "--shots", str(shots), "--interval", "0"]
+            )
+        assert result.exit_code == 0, result.output
+        assert sorted(p.name for p in clips.glob("*.mp4")) == [
+            "Scene-01-Shot-1-1.mp4",
+            "Scene-01-Shot-1-2.mp4",
+        ]
 
     def test_flat_without_new_flags_stays_on_legacy_plan_loop(
         self, runner: CliRunner, project_dir: Path, tmp_path: Path

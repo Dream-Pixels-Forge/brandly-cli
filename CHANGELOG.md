@@ -2,6 +2,46 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+- `brandly produce` progress-file runner (`src/brandly_cli/shot_runner.py`):
+  a structured shot-list schema (`{"character": ..., "acts": {...}}` with
+  per-act prompt `prefix`, `style`, `folder` and plate-stem `refs`/`ref`s),
+  plus new flags `--no-auto-refs`, `--character`, `--allow-referenceless`,
+  `--max-wait`, `--only` and `--max`. Any of these (or the structured
+  schema) routes the run through a resumable progress file
+  (`.brandly/<project>/docs/tmp/produce_progress.txt`) instead of the
+  production-plan loop, so film production no longer needs an external
+  runner script:
+  - generated clips are renamed to a deterministic, assembly-friendly
+    convention — `Scene-<scene:02d>-Shot-<scene>-<shot-in-scene>.mp4`
+    (e.g. `Scene-01-Shot-1-2.mp4` for the second shot of scene 1). The
+    scene number comes from an act-level or shot-level `"scene"` key, else
+    the act's position in the shot list; the trailing number is the shot's
+    position inside that scene. A redo replaces the previous take;
+  - plate-stem references resolve under `images/<category>/`, preferring
+    the optimized `<stem>.opt.jpg` twins (small reference payloads —
+    issue #20 free-tier timeouts);
+  - a top-level / `--character` identity anchor attaches only to shots
+    whose references include a character plate;
+  - transition shots (`"folder": "transition"`) have their clips moved
+    to `videos/transition/`;
+  - a post-generation step failure (e.g. quality-gate crash) still counts
+    as OK when a non-empty clip was downloaded (zero-byte / stranded files
+    do not count), and the run stops on the first unrecovered failure
+    (re-run the same command to resume). `--only` redoes the named shots
+    even if a previous run already recorded them as OK;
+  Flat shot lists without the new flags keep the existing production-plan
+  behaviour. The routing to the resumable runner is announced on stderr,
+  and both produce paths now pass scene/shot numbers through to the
+  download (flat lists: scene 1, shot order = list order).
+- `brandly video --scene <n> --shot <n>`: name the downloaded clip with the
+  deterministic `Scene-<scene:02d>-Shot-<scene>-<shot>.mp4` convention
+  (both flags required together; without them the timestamped name stays).
+- `layout.media_root(proj_dir, "images"|"videos"|"audio")`: the
+  un-categorised media top folder (used by the produce runner).
+
 ## [0.3.15] — 2026-09-20
 
 ### Added

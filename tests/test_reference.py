@@ -447,18 +447,30 @@ def test_video_stale_reference_metadata_falls_back_to_warning(
         },
     )
 
-    result = runner.invoke(
-        cli,
-        [
-            "video",
-            pid,
-            "-p",
-            "Test prompt",
-            "--style",
-            "cinematic",
-            "--no-wait",
-        ],
-    )
+    # Mock the API so the test never touches the network (or spends credits).
+    with patch(
+        "brandly_cli.cli.create_video_task",
+        AsyncMock(
+            return_value={
+                "video_id": "video-task-stale",
+                "url": "",
+                "status": "queued",
+                "progress": 0,
+            }
+        ),
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "video",
+                pid,
+                "-p",
+                "Test prompt",
+                "--style",
+                "cinematic",
+                "--no-wait",
+            ],
+        )
 
     # The warn-but-proceed path should kick in (no --require-reference)
     assert "No primary reference" in result.output

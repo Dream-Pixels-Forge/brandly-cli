@@ -18,7 +18,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from brandly_cli import __version__, layout
+from brandly_cli import __version__, layout, shot_runner
 from brandly_cli.agent_tools import get_builtin_tools
 from brandly_cli.agnes_client import (
     agent_tool_loop,
@@ -166,6 +166,7 @@ def _save_artifact(
     root: Path,
     prompt_hint: str = "",
     category: str | None = None,
+    filename: str | None = None,
 ) -> Path | None:
     """Download a generated asset and save it under
     .brandly/{project_id}/{images|videos|audio}/{category}/.
@@ -173,6 +174,9 @@ def _save_artifact(
     ``category`` routes the file into a sub-folder (e.g. 'scenes' for video,
     'prop' for object references, 'soundtrack' for music). Omit it to use
     the 'general' default.
+
+    ``filename`` overrides the default ``<type>_<timestamp>_<hint>`` name (used
+    for the deterministic ``Scene-XX-Shot-X-Y.mp4`` clip convention).
     """
     if not url:
         return None
@@ -184,7 +188,7 @@ def _save_artifact(
         ext = ".bin"
     ts = now_iso().replace(":", "-").replace(".", "_")
     hint = sanitize_filename(prompt_hint)[:20] if prompt_hint else ""
-    fname = f"{type_label}_{ts}_{hint}{ext}"
+    fname = filename or f"{type_label}_{ts}_{hint}{ext}"
     dest = artifacts_dir / fname
     try:
         asyncio.run(download_file(url, dest))
@@ -1430,6 +1434,20 @@ def image(
     "prevents payload bloat and style bleed between visual worlds).",
 )
 @click.option(
+    "--scene",
+    type=int,
+    default=None,
+    help="Scene number for the deterministic clip name "
+    "(Scene-<scene:02d>-Shot-<scene>-<shot>.mp4). Needs --shot.",
+)
+@click.option(
+    "--shot",
+    "shot_number",
+    type=int,
+    default=None,
+    help="Shot number inside --scene (the trailing number of the clip name).",
+)
+@click.option(
     "--auto-ref-category",
     default=None,
     help="Scope auto-injected references to one image category "
@@ -1457,6 +1475,8 @@ def video(
     reference_audios: str | None,
     auto_refs_enabled: bool,
     auto_ref_category: str | None,
+    scene: int | None,
+    shot_number: int | None,
 ) -> None:
     """Generate an AI video via Agnes AI.
 
@@ -1475,6 +1495,12 @@ def video(
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
         sys.exit(1)
+
+    if (scene is None) != (shot_number is None):
+        console.print(
+            "[yellow]⚠ --scene and --shot must be used together — using the "
+            "default (timestamped) clip name.[/yellow]"
+        )
 
     # Auto-detect project artifacts as additional reference images
     root = _get_root(ctx)
@@ -1737,6 +1763,11 @@ def video(
         task["final_status"] = result.get("status")
         # Always save video to disk if URL exists
         if url:
+            clip_name = (
+                shot_runner.clip_filename(scene, shot_number)
+                if scene is not None and shot_number is not None
+                else None
+            )
             saved = _save_artifact(
                 url,
                 project_id,
@@ -1744,6 +1775,7 @@ def video(
                 root=root,
                 prompt_hint=prompt,
                 category="scenes",
+                filename=clip_name,
             )
             if saved:
                 console.print(f"  Saved → {saved}")
@@ -1869,6 +1901,11 @@ def _generate_shot(
     *,
     ctx: click.Context,
     root: Path,
+    auto_refs_enabled: bool = True,
+    allow_referenceless: bool = False,
+    max_wait: int = 600,
+    scene: int | None = None,
+    shot_number: int | None = None,
 ) -> bool:
     """Generate ONE shot through the standard ``brandly video`` pipeline.
 
@@ -1888,8 +1925,14 @@ def _generate_shot(
             duration=int(shot.get("duration", 5)),
             style=str(shot.get("style", "cinematic")),
             reference_images=references or None,
+            character=shot.get("character") or None,
             wait=True,
+            max_wait=max_wait,
             require_reference=False,
+            auto_refs_enabled=auto_refs_enabled,
+            allow_referenceless=allow_referenceless,
+            scene=scene,
+            shot_number=shot_number,
         )
     except SystemExit as exc:
         return exc.code in (0, None)
@@ -1902,9 +1945,13 @@ def _generate_shot(
     "--shots",
     "shots_file",
     required=True,
-    help="Path to a shot list JSON file: "
+    help="Path to a shot list JSON file. Flat schema: "
     '[{"name": "shot-1", "prompt": "...", "duration": 5, "style": "cinematic", '
-    '"references": "a.png,b.png"}, ...]',
+    '"references": "a.png,b.png"}, ...]. Structured schema (acts with per-act '
+    'prefix/style/folder and plate-stem references): {"character": "...", '
+    '"acts": {"act1": {"prefix": "...", "style": "cinematic", "folder": '
+    '"scenes", "shots": [{"id": "shot01", "prompt": "...", "duration": 6, '
+    '"refs": ["char_rebel", "loc_ink"]}]}}}',
 )
 @click.option(
     "--interval",
@@ -1912,12 +1959,58 @@ def _generate_shot(
     show_default=True,
     help="Seconds to wait BETWEEN shot generations (Agnes: 1 request per minute).",
 )
+@click.option(
+    "--no-auto-refs",
+    "no_auto_refs",
+    is_flag=True,
+    default=False,
+    help="Do NOT auto-inject project images as references (issue #20). Each shot's "
+    "reference payload comes from the shot list only. Routes the run through the "
+    "progress-file runner (docs/tmp/produce_progress.txt).",
+)
+@click.option(
+    "--character",
+    default=None,
+    help="Character identity anchor passed to every shot whose references include "
+    "a character plate. Overrides the shot list's top-level 'character' string.",
+)
+@click.option(
+    "--allow-referenceless",
+    is_flag=True,
+    default=False,
+    help="Bypass the require-reference check for shots without references.",
+)
+@click.option(
+    "--max-wait",
+    "max_wait",
+    default=600,
+    show_default=True,
+    help="Max wait seconds per shot generation.",
+)
+@click.option(
+    "--only",
+    multiple=True,
+    help="Run only this shot id (repeatable). Routes through the progress-file runner.",
+)
+@click.option(
+    "--max",
+    "max_shots",
+    default=0,
+    show_default=True,
+    help="Run at most N shots, then stop. Routes through the progress-file runner.",
+)
 @click.pass_context
 def produce(
     ctx: click.Context,
     project_id: str,
     shots_file: str,
     interval: float,
+    no_auto_refs: bool,
+    character: str | None,
+    allow_referenceless: bool,
+    max_wait: int,
+    only: tuple[str, ...],
+    max_shots: int,
 ) -> None:
     """Generate a multi-shot film shot by shot from the production plan.
 
@@ -1928,6 +2021,18 @@ def produce(
 
     Shots already COMPLETED in the production plan are skipped, so the run
     is resumable: fix a failed shot and run the same command again.
+
+    A structured shot list ({"acts": ...}), or any of --no-auto-refs /
+    --character / --allow-referenceless / --only / --max, routes the run
+    through the progress-file runner instead: resumable via
+    .brandly/<project>/docs/tmp/produce_progress.txt, per-act prompt prefix
+    and style, plate-stem reference resolution (optimized .opt.jpg twins
+    preferred), character anchoring, transition clips moved to
+    videos/transition/, clips renamed to the deterministic
+    Scene-<scene:02d>-Shot-<scene>-<shot-in-scene>.mp4 convention (scene =
+    act-level/shot-level "scene" key, else the act's position in the shot
+    list), and a post-generation-step failure (quality gate crash)
+    tolerates a downloaded clip.
     """
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
@@ -1939,12 +2044,46 @@ def produce(
         console.print(f"[red]Shot list not found: {path}[/red]")
         sys.exit(1)
     try:
-        shots = json.loads(path.read_text(encoding="utf-8"))
+        shots = shot_runner.load_shots_file(path)
     except ValueError as e:
-        console.print(f"[red]Invalid shot list JSON: {e}[/red]")
+        console.print(f"[red]Invalid shot list: {e}[/red]")
         sys.exit(1)
-    if not isinstance(shots, list) or not shots:
-        console.print("[red]Shot list must be a non-empty JSON array.[/red]")
+
+    use_runner = (
+        isinstance(shots, dict)
+        or no_auto_refs
+        or character
+        or allow_referenceless
+        or only
+        or max_shots
+    )
+    if use_runner:
+        console.print(
+            "[dim]Resumable runner → "
+            f".brandly/{project_id}/docs/tmp/{shot_runner.PROGRESS_FILENAME} "
+            "(shots are not registered on the production plan on this path).[/dim]"
+        )
+        _run_produce_runner(
+            ctx,
+            project_id,
+            shots,
+            root,
+            interval,
+            no_auto_refs,
+            character,
+            allow_referenceless,
+            max_wait,
+            only,
+            max_shots,
+        )
+        return
+
+    # The production-plan loop is flat-schema only: a structured shot list
+    # always takes the runner above. Re-asserting the shape narrows the
+    # load_shots_file() union for the type checker and fails loudly if a
+    # future schema ever reaches this branch.
+    if not isinstance(shots, list):
+        console.print("[red]Shot list must be a JSON array of shot objects.[/red]")
         sys.exit(1)
 
     # ---- Phase 1: prepare ALL shots on the production plan (source of truth)
@@ -2000,7 +2139,15 @@ def produce(
             )
             time.sleep(interval)
         console.print(f"[bold]▶ Shot {name}[/bold]")
-        ok = _generate_shot(project_id, shot, ctx=ctx, root=root)
+        ok = _generate_shot(
+            project_id,
+            shot,
+            ctx=ctx,
+            root=root,
+            # Flat lists carry no act grouping: scene 1, shot order = list order.
+            scene=shot_runner.as_int(shot.get("scene"), 1),
+            shot_number=shot_runner.as_int(shot.get("shot"), idx + 1),
+        )
         slug = sanitize_filename(name.lower()) or f"shot-{idx + 1}"
         if ok:
             upsert_production_plan(
@@ -2031,6 +2178,56 @@ def produce(
             sys.exit(1)
 
     console.print(f"[green]✓ Production complete — see {plan_doc}[/green]")
+
+
+def _run_produce_runner(
+    ctx: click.Context,
+    project_id: str,
+    data: dict[str, Any] | list[dict[str, Any]],
+    root: Path,
+    interval: float,
+    no_auto_refs: bool,
+    character: str | None,
+    allow_referenceless: bool,
+    max_wait: int,
+    only: tuple[str, ...],
+    max_shots: int,
+) -> None:
+    """Progress-file runner path for ``brandly produce`` (see produce())."""
+    project_dir = layout.resolve_project_dir(root, project_id)
+    images_dir = layout.media_root(project_dir, "images")
+    scenes_dir = layout.media_dir(project_dir, "videos", "scenes")
+    progress = shot_runner.ProgressLog(
+        layout.docs_dir(project_dir, "tmp") / shot_runner.PROGRESS_FILENAME
+    )
+    shots = shot_runner.flatten_shots(data, images_dir, character=character)
+
+    def generate_one(shot: shot_runner.Shot) -> tuple[bool, int, str]:
+        ok = _generate_shot(
+            project_id,
+            {**shot.to_video_kwargs(), "character": shot.character},
+            ctx=ctx,
+            root=root,
+            auto_refs_enabled=not no_auto_refs,
+            allow_referenceless=allow_referenceless,
+            max_wait=max_wait,
+            # Names the download Scene-XX-Shot-X-Y.mp4 at save time.
+            scene=shot.scene,
+            shot_number=shot.index_in_scene,
+        )
+        return ok, 0 if ok else 1, ""
+
+    config = shot_runner.RunnerConfig(
+        shots=shots,
+        generate_one=generate_one,
+        scenes_dir=scenes_dir,
+        progress=progress,
+        interval=interval,
+        only=set(only) if only else None,
+        max_shots=max_shots,
+        say=lambda msg: console.print(f"[dim]{msg}[/dim]"),
+    )
+    sys.exit(shot_runner.run_shots(config))
 
 
 def _record_media_spend(root: Path, project_id: str, kind: str, model_id: str) -> None:

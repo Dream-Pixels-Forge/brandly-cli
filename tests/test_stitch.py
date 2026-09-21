@@ -260,6 +260,94 @@ def test_stitch_videos_root_parameter(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Three-clip xfade/acrossfade filtergraph regressions
+# ---------------------------------------------------------------------------
+
+def _capture_cmd(tmp_path: Path, has_audio: bool, color_grade: str = "none") -> list[str]:
+    """Run a 3-clip stitch with ffmpeg mocked; return the executed command."""
+    clips = [_make_test_clip(tmp_path / f"{n}.mp4", duration=1.0) for n in "abc"]
+    out = tmp_path / "out.mp4"
+    captured_cmd: list[list[str]] = []
+
+    async def fake_exec(*args, **kwargs):    # type: ignore[no-untyped-def]
+        captured_cmd.append(list(args))
+        fake_proc = MagicMock()
+        fake_proc.communicate = AsyncMock(return_value=(b"", b""))
+        fake_proc.returncode = 0
+        return fake_proc
+
+    with (
+        patch("asyncio.create_subprocess_exec", side_effect=fake_exec),
+        patch("brandly_cli.stitch._ffprobe_has_audio", return_value=has_audio),
+    ):
+        _run(
+            stitch.stitch_videos(
+                clips, out, transition="fade",
+                transition_duration=0.5, color_grade=color_grade,
+            )
+        )
+    assert len(captured_cmd) == 1
+    return captured_cmd[0]
+
+
+def test_three_clip_video_only_filtergraph_chains_labels(tmp_path: Path) -> None:
+    """Regression: each xfade must consume the previous virtual label.
+
+    The pre-fix graph emitted ``[v1];[2:v]xfade=...`` — an xfade with a
+    single input pad — and ffmpeg rejected the whole graph ("Filter not
+    found") for any clip count above 2.
+    """
+    cmd = _capture_cmd(tmp_path, has_audio=False)
+    graph = next(arg for arg in cmd if "xfade" in arg)
+    # Second xfade consumes [v1] (first xfade's output) plus clip 2
+    assert "[v1][2:v]xfade=" in graph
+    # Exactly one terminal [vout] — the pre-fix graph appended a dangling
+    # second [vout] (or [vout];[vout]) which made ffmpeg reject it
+    assert graph.count("[vout]") == 1
+    # No grade → no extra ;[vout]eq=...[final_v] segment
+    assert "[final_v]" not in graph
+
+
+def test_three_clip_audio_filtergraph_chains_labels(tmp_path: Path) -> None:
+    """Regression: acrossfade chain must also carry [a1] into filter 2."""
+    cmd = _capture_cmd(tmp_path, has_audio=True)
+    graph = next(arg for arg in cmd if "acrossfade" in arg)
+    assert "[a1][2:a]acrossfade=" in graph
+    assert graph.count("[aout]") == 1
+    # Video mapping is [vout] when no grade is applied
+    cmd_str = " ".join(cmd)
+    assert " [vout]" in cmd_str
+
+
+def test_three_clip_grade_filtergraph_segments_separated(tmp_path: Path) -> None:
+    """The grade segment is joined with ';' so it reads [vout]eq=...[final_v]."""
+    cmd = _capture_cmd(tmp_path, has_audio=False, color_grade="cinematic")
+    graph = next(arg for arg in cmd if "xfade" in arg)
+    assert ";[vout]eq=" in graph
+    assert graph.endswith("[final_v]")
+    # Output maps the graded label, not [vout]
+    cmd_str = " ".join(cmd)
+    assert " [final_v]" in cmd_str
+
+
+def test_stitch_three_clips_fade_real_run(tmp_path: Path) -> None:
+    """A real 3-clip fade stitch succeeds end-to-end (tightened from the
+    previously error-tolerant check, which masked the graph bug)."""
+    a = _make_test_clip(tmp_path / "a.mp4", duration=1.0)
+    b = _make_test_clip(tmp_path / "b.mp4", duration=1.0)
+    c = _make_test_clip(tmp_path / "c.mp4", duration=1.0)
+    out = tmp_path / "out.mp4"
+    result = _run(
+        stitch.stitch_videos([a, b, c], out, transition="fade", transition_duration=0.3)
+    )
+    assert "error" not in result, result.get("error")
+    assert out.exists()
+    assert result["clips_count"] == 3
+    # 3s of source minus 2 x 0.3s of overlap
+    assert result["duration_seconds"] < 3.0
+
+
+# ---------------------------------------------------------------------------
 # FFmpeg mock tests — verify command construction without running real FFmpeg
 # ---------------------------------------------------------------------------
 

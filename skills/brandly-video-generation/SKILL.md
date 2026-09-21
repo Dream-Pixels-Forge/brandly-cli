@@ -94,35 +94,38 @@ brandly job-resume <video_id> --project-id <project_id>
 
 ## Routing Table
 
-| Want to... | Read |
-|------------|------|
-| Look up video styles | `references/video-styles.md` |
-| See camera control syntax | `references/camera-control.md` |
-| Reference lighting presets | `references/lighting-presets.md` |
-| Learn character consistency | `references/character-consistency.md` |
-| Troubleshoot issues | `references/troubleshooting.md` |
-| **Plan shots before generating** | → `../brandly-storyboard/SKILL.md` |
-| **Build the project bible** | → `../brandly-production-bible/SKILL.md` |
-| **Lock visual consistency** | → `../brandly-consistency/SKILL.md` |
-| **Create character refs** | → `../brandly-character-sheet/SKILL.md` |
-| **Create location refs** | → `../brandly-location-sheet/SKILL.md` |
-| **Create product refs** | → `../brandly-object-sheet/SKILL.md` |
-| **Create vehicle refs** | → `../brandly-vehicle-sheet/SKILL.md` |
-| **Create mecha refs** | → `../brandly-mecha-sheet/SKILL.md` |
-| **Create animal refs** | → `../brandly-animal-sheet/SKILL.md` |
-| **Create plant refs** | → `../brandly-plant-sheet/SKILL.md` |
+| Want to...                       | Read                                     |
+| -------------------------------- | ---------------------------------------- |
+| Look up video styles             | `references/video-styles.md`             |
+| See camera control syntax        | `../brandly-camera/SKILL.md`             |
+| Reference lighting presets       | `references/lighting-presets.md`         |
+| Learn character consistency      | `references/character-consistency.md`    |
+| Troubleshoot issues              | `references/troubleshooting.md`          |
+| **Plan shots before generating** | → `../brandly-storyboard/SKILL.md`       |
+| **Build the project bible**      | → `../brandly-production-bible/SKILL.md` |
+| **Lock visual consistency**      | → `../brandly-consistency/SKILL.md`      |
+| **Create character refs**        | → `../brandly-character-sheet/SKILL.md`  |
+| **Create location refs**         | → `../brandly-location-sheet/SKILL.md`   |
+| **Create product refs**          | → `../brandly-object-sheet/SKILL.md`     |
+| **Create vehicle refs**          | → `../brandly-vehicle-sheet/SKILL.md`    |
+| **Create mecha refs**            | → `../brandly-mecha-sheet/SKILL.md`      |
+| **Create animal refs**           | → `../brandly-animal-sheet/SKILL.md`     |
+| **Create plant refs**            | → `../brandly-plant-sheet/SKILL.md`      |
 
 ---
 
 ## Core Workflow
 
 ### Step 1: Project Initialization
+
 ```bash
 brandly init --name "Product Campaign" --idea "Brief description" --style cinematic --budget 500 --shots 5
 ```
 
 ### Step 2: Generate Cinematic Prompt
+
 Use `brandly prompt` to create professional shot lists:
+
 ```bash
 brandly prompt \
   -s "A woman in a red dress holding a perfume bottle" \
@@ -134,6 +137,7 @@ brandly prompt \
 ```
 
 ### Step 3: Generate Video
+
 ```bash
 brandly video <project_id> \
   -p "generated prompt from step 2" \
@@ -152,11 +156,11 @@ marks the plan COMPLETED in the production plan).
 
 `--mode` defaults to `auto`, which resolves to the first applicable mode:
 
-| Mode | When it applies | Behavior |
-|------|----------------|----------|
-| `keyframe` | `--first-frame` and/or `--last-frame` provided | Frames the video between the given start/end frames; local frame files are archived to `images/keyframe/` (`start_frame_*` / `end_frame_*`) |
-| `reference` | Reference images provided (auto-injected primary reference or `--reference-images`) | Image-to-video generation anchored on the references |
-| `text` | Nothing else provided | Pure text-to-video generation |
+| Mode        | When it applies                                                                     | Behavior                                                                                                                                    |
+| ----------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `keyframe`  | `--first-frame` and/or `--last-frame` provided                                      | Frames the video between the given start/end frames; local frame files are archived to `images/keyframe/` (`start_frame_*` / `end_frame_*`) |
+| `reference` | Reference images provided (auto-injected primary reference or `--reference-images`) | Image-to-video generation anchored on the references                                                                                        |
+| `text`      | Nothing else provided                                                               | Pure text-to-video generation                                                                                                               |
 
 Pass `--mode text` explicitly to force text mode even when references exist.
 A chosen mode missing its required inputs degrades to text mode with a
@@ -164,6 +168,7 @@ warning (e.g. `--mode keyframe` without frames). The resolved mode is
 printed and recorded in the generation plan.
 
 ### Step 4: Generate Images
+
 ```bash
 brandly image \
   -p "product hero shot" \
@@ -174,24 +179,25 @@ brandly image \
 
 ## Video Styles
 
-| Style | Use Case | Credit Cost | Description |
-|-------|----------|-------------|-------------|
-| `cinematic` | Storytelling, narratives | 250 | Golden hour lighting, emotional |
-| `ugc` | Social media content | 150 | Natural window, authentic |
-| `montage` | Fast-paced sequences | 200 | Quick cuts, dynamic |
-| `multi_shot` | Multi-angle campaigns | 300 | Character consistency focus |
-| `continuous` | Single take | 200 | Flowing, uninterrupted |
-| `unboxing` | Product reveals | 180 | Focus on unpacking experience |
-| `lifestyle` | Aspirational content | 170 | Warm, relatable everyday |
-| `collage_motion_graphic` | Animated graphics | 350 | Motion design, text animations |
-| `brand_short_video` | Brand spots | 280 | Short-form brand content |
-| `explainer_video` | How-to, tutorials | 400 | Educational, clear messaging |
+| Style                    | Use Case                 | Credit Cost | Description                     |
+| ------------------------ | ------------------------ | ----------- | ------------------------------- |
+| `cinematic`              | Storytelling, narratives | 250         | Golden hour lighting, emotional |
+| `ugc`                    | Social media content     | 150         | Natural window, authentic       |
+| `montage`                | Fast-paced sequences     | 200         | Quick cuts, dynamic             |
+| `multi_shot`             | Multi-angle campaigns    | 300         | Character consistency focus     |
+| `continuous`             | Single take              | 200         | Flowing, uninterrupted          |
+| `unboxing`               | Product reveals          | 180         | Focus on unpacking experience   |
+| `lifestyle`              | Aspirational content     | 170         | Warm, relatable everyday        |
+| `collage_motion_graphic` | Animated graphics        | 350         | Motion design, text animations  |
+| `brand_short_video`      | Brand spots              | 280         | Short-form brand content        |
+| `explainer_video`        | How-to, tutorials        | 400         | Educational, clear messaging    |
 
 **Note:** `commercial`, `documentary`, `luxury`, and `action` are **image-only** `--style-preset` values — they are NOT valid as `--style` for `brandly video`. Use `cinematic` for premium looks, `ugc` for authentic feel.
 
 ## Camera Control
 
 ### Shot Types
+
 - `establishing` — Wide opening, sets location
 - `medium` — Standard waist-level framing
 - `close_up` — Intimate face/product detail
@@ -204,6 +210,7 @@ brandly image \
 - `pov` — Point-of-view perspective
 
 ### Camera Moves
+
 - `[Push in]` — Move toward subject
 - `[Pull out]` — Move away from subject
 - `[Pan left/right]` — Horizontal rotation
@@ -217,20 +224,21 @@ brandly image \
 
 ## Lighting Presets
 
-| Preset | Description | Tags |
-|--------|-------------|------|
-| `golden_hour` | Warm late-afternoon sun | amber light, long shadows, sun flare |
-| `blue_hour` | Cool twilight | blue ambient, street lamps, soft fill |
-| `studio` | Clean commercial | soft key, fill opposite, rim light |
-| `neon` | Urban night | cyan/magenta reflections, wet bounce |
-| `natural` | Soft daylight | window light, diffused, gentle shadows |
-| `dramatic` | High contrast | side lighting, deep shadows, chiaroscuro |
-| `product_studio` | Commercial product | clean white background, sharp focus |
-| `night` | Practical lights | moonlight blue, street lights, depth |
+| Preset           | Description             | Tags                                     |
+| ---------------- | ----------------------- | ---------------------------------------- |
+| `golden_hour`    | Warm late-afternoon sun | amber light, long shadows, sun flare     |
+| `blue_hour`      | Cool twilight           | blue ambient, street lamps, soft fill    |
+| `studio`         | Clean commercial        | soft key, fill opposite, rim light       |
+| `neon`           | Urban night             | cyan/magenta reflections, wet bounce     |
+| `natural`        | Soft daylight           | window light, diffused, gentle shadows   |
+| `dramatic`       | High contrast           | side lighting, deep shadows, chiaroscuro |
+| `product_studio` | Commercial product      | clean white background, sharp focus      |
+| `night`          | Practical lights        | moonlight blue, street lights, depth     |
 
 ## Best Practices
 
 ### For Character Consistency
+
 1. **Define character once at top** of prompt with full description
 2. **Use reference images** whenever possible
 3. **Add consistency anchors**: "Same face, hair, outfit in every shot"
@@ -238,12 +246,14 @@ brandly image \
 5. **Test with 1 shot first**, then expand to multi-shot
 
 ### For Product Videos
+
 1. Use `commercial` style with `product_studio` lighting
 2. Include `static_product` camera shots for hero moments
 3. Add close-ups for detail (texture, logo, materials)
 4. End with lifestyle shot showing product in use
 
 ### For Narrative Videos
+
 1. Start with establishing shot
 2. Use tracking shots for movement
 3. Mix close-ups for emotion
@@ -252,6 +262,7 @@ brandly image \
 ## Prompt Templates
 
 ### Single Shot (Product)
+
 ```
 A commercial scene featuring [product].
 
@@ -269,6 +280,7 @@ Duration: [N] seconds.
 ```
 
 ### Multi-Shot Sequence
+
 ```
 Master Prompt: [brief summary of entire sequence]
 
@@ -363,15 +375,15 @@ drift by 30-50% in multi-shot campaigns.
 
 For consistent generation across all projects, use the companion asset sheet skills:
 
-| Skill | Use For | Key Features |
-|-------|---------|--------------|
-| **brandly-character-sheet** | Characters, models, people | Physical traits, wardrobe, consistency rules |
-| **brandly-object-sheet** | Products, items, props | Dimensions, materials, branding |
-| **brandly-location-sheet** | Sets, environments, backgrounds | Layout, lighting, atmosphere |
-| **brandly-animal-sheet** | Wildlife, pets, creatures | Species accuracy, behavior, habitat |
-| **brandly-mecha-sheet** | Robots, machines, vehicles | Technical details, materials, lighting |
-| **brandly-plant-sheet** | Flora, gardens, nature | Species, growth, seasonal changes |
-| **brandly-vehicle-sheet** | Cars, trucks, aircraft | Dimensions, styling, wheels |
+| Skill                       | Use For                         | Key Features                                 |
+| --------------------------- | ------------------------------- | -------------------------------------------- |
+| **brandly-character-sheet** | Characters, models, people      | Physical traits, wardrobe, consistency rules |
+| **brandly-object-sheet**    | Products, items, props          | Dimensions, materials, branding              |
+| **brandly-location-sheet**  | Sets, environments, backgrounds | Layout, lighting, atmosphere                 |
+| **brandly-animal-sheet**    | Wildlife, pets, creatures       | Species accuracy, behavior, habitat          |
+| **brandly-mecha-sheet**     | Robots, machines, vehicles      | Technical details, materials, lighting       |
+| **brandly-plant-sheet**     | Flora, gardens, nature          | Species, growth, seasonal changes            |
+| **brandly-vehicle-sheet**   | Cars, trucks, aircraft          | Dimensions, styling, wheels                  |
 
 ### When to Use Asset Sheets
 
@@ -399,6 +411,7 @@ brandly image --prompt "Product reference: [object description]" \
 ## Integration with Director Agent
 
 The Director agent automatically uses these techniques when generating videos:
+
 1. Calls `brandly prompt` to generate professional prompts
 2. Uses `brandly video` with `--character` and `--reference-images`
 3. Stores results in project artifacts
@@ -438,14 +451,15 @@ brandly export <project_id>
 
 ## Provider Routing
 
-| Command | Provider | Model Default | Notes |
-|---------|----------|--------------|-------|
-| `brandly image` | Agnes AI | `agnes-image-2.5-flash` | Style presets, 1K/2K/3K/4K output |
-| `brandly video` | Agnes AI | `agnes-video-2.5-flash` | Requires project, ref-image anchoring |
-| `brandly minimax-image` | MiniMax | `image-01` | Subject reference, seed, up to 2K |
-| `brandly minimax-video` | MiniMax | `MiniMax-H3` | First/last frame, ref video/audio, native stereo audio |
+| Command                 | Provider | Model Default           | Notes                                                  |
+| ----------------------- | -------- | ----------------------- | ------------------------------------------------------ |
+| `brandly image`         | Agnes AI | `agnes-image-2.5-flash` | Style presets, 1K/2K/3K/4K output                      |
+| `brandly video`         | Agnes AI | `agnes-video-2.5-flash` | Requires project, ref-image anchoring                  |
+| `brandly minimax-image` | MiniMax  | `image-01`              | Subject reference, seed, up to 2K                      |
+| `brandly minimax-video` | MiniMax  | `MiniMax-H3`            | First/last frame, ref video/audio, native stereo audio |
 
 **Choose based on your needs:**
+
 - **Character consistency** → `brandly video` (Agnes) with reference images
 - **Image generation** → `brandly image` for speed, `brandly minimax-image` for subject reference
 - **Reference video + audio** → `brandly minimax-video` (MiniMax H3 supports ref video input)
@@ -471,13 +485,13 @@ brandly export <project_id>
 Run `brandly rate-limits` for the live table. Headlines:
 
 - **Agnes AI** (free/default key): text 20 RPM; images 1K 20 RPM, 2K 10 RPM, 3K/4K 1 RPM; video free quota ~500s/day. Enterprise keys get ~2× on 1K/2K image RPM.
-- **MiniMax**: H3 video is governed by *concurrent tasks* (2 free / 15 paid), not RPM; text tier 20 RPM free / 200 paid.
+- **MiniMax**: H3 video is governed by _concurrent tasks_ (2 free / 15 paid), not RPM; text tier 20 RPM free / 200 paid.
 - **Batch safety**: MiniMax image `n > 1` batches automatically fall back to one-at-a-time generation on 429 or partial results; the `batch` video command continues past failed variants instead of aborting the run.
-
 
 ## Troubleshooting
 
 ### Video Takes Too Long
+
 - `brandly video` waits and downloads by default; a timeout does **not**
   abort the job — run `brandly job-resume <video_id> --project-id <id>` to
   poll and download later (this also marks the plan COMPLETED)
@@ -486,12 +500,14 @@ Run `brandly rate-limits` for the live table. Headlines:
 - MiniMax H3 is concurrency-limited (2 free / 15 paid parallel tasks), not per-minute RPM
 
 ### Character Drifts Between Shots
+
 - Add more detailed character description
 - Use reference images
 - Include consistency anchors in prompt
 - Generate shots separately and composite later
 
 ### Low Quality Output
+
 - Use `cinematic` or `commercial` style
 - Add specific lighting and camera details
 - Include film stock references (Kodak Vision3, Fuji Superia)

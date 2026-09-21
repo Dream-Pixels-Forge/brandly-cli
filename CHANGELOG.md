@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.3.16] — 2026-09-21
 
 ### Added
 - `brandly produce` progress-file runner (`src/brandly_cli/shot_runner.py`):
@@ -41,6 +41,18 @@ All notable changes to this project are documented here.
   (both flags required together; without them the timestamped name stays).
 - `layout.media_root(proj_dir, "images"|"videos"|"audio")`: the
   un-categorised media top folder (used by the produce runner).
+
+### Fixed
+- `brandly produce`: the legacy production-plan loop lost its flat-schema
+  narrowing when the runner landed, failing `mypy` with 5
+  `attr-defined`/`arg-type` errors — restored.
+- `brandly stitch`: multi-clip graphs chained xfade/acrossfade through
+  dangling filter labels — virtual labels are now chained correctly.
+- Quality gate: a locked temp frame (WinError 32 from antivirus / the search
+  indexer on Windows) no longer hard-fails `brandly gate` / `brandly video`
+  after the generated artifact is already on disk.
+- `tests/test_reference.py`: the stale-reference test was an unmocked
+  network call that could spend credits with a key set — now fully mocked.
 
 ## [0.3.15] — 2026-09-20
 

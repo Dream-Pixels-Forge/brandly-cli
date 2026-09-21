@@ -1,0 +1,312 @@
+"""Resumable multi-shot film runner for ``brandly produce``.
+
+Generates a full shot list (a flat array or a structured
+``{"acts": {...}, "character": ...}`` production plan) one shot at a time,
+honouring the Agnes 1 request/minute rate limit. The run is resumable:
+every completed shot is recorded in a plain-text progress file, and a new
+invocation of the same command skips those shots.
+
+Schema
+------
+Flat (existing)::
+
+    [{"name": "shot-1", "prompt": "...", "duration": 5,
+      "style": "cinematic", "references": "a.png,b.png"}, ...]
+
+Structured (acts with per-act prefix/style/folder and stem references)::
+
+    {"character": "natural afro, ...",
+     "acts": {"act1": {"name": "ACT I", "prefix": "Ink world: ...",
+                        "style": "cinematic", "folder": "scenes",
+                        "shots": [{"id": "shot01", "prompt": "...",
+                                    "duration": 6,
+                                    "refs": ["char_rebel", "loc_ink"]}]}}}
+
+References may be explicit file paths/URLs or bare plate stems. Stems are
+resolved under ``.brandly/<project>/images/<category>/<stem>`` (categories:
+``character``, ``location``, ``prop``), preferring the optimized
+``<stem>.opt.jpg`` twin over the full-size original.
+
+Transition shots (``folder: "transition"``) have their generated clips
+moved from ``videos/scenes/`` to ``videos/transition/`` so assembly
+tooling can address them separately.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+REF_CATEGORIES = ("character", "location", "prop")
+_PLATE_SUFFIXES = (".opt.jpg", ".opt.png", ".jpg", ".jpeg", ".png")
+_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp")
+DEFAULT_INTERVAL = 60.0  # Agnes: 1 request per minute
+
+
+def utcnow() -> str:
+    """UTC timestamp for progress-file lines."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@dataclass
+class Shot:
+    """One flattened, reference-resolved shot ready for generation."""
+
+    id: str
+    act: str
+    style: str
+    folder: str
+    prompt: str
+    duration: int
+    refs: list[str] = field(default_factory=list)
+    character: str | None = None
+
+    def to_video_kwargs(self) -> dict[str, Any]:
+        """Fields understood by the standard ``video`` pipeline."""
+        return {
+            "name": self.id,
+            "prompt": self.prompt,
+            "duration": self.duration,
+            "style": self.style,
+            "references": self.refs,
+        }
+
+
+def resolve_plate(stem: str, images_dir: Path) -> Path:
+    """Resolve a bare plate stem to an on-disk image under ``images_dir``.
+
+    Searches each known category folder, preferring the optimized
+    ``.opt.jpg`` twin (keeps reference payloads small on the free tier).
+    Falls back to the unqualified stem at the ``images_dir`` root.
+    """
+    for category in REF_CATEGORIES:
+        folder = images_dir / category
+        if not folder.is_dir():
+            continue
+        for suffix in _PLATE_SUFFIXES:
+            candidate = folder / f"{stem}{suffix}"
+            if candidate.is_file():
+                return candidate
+    for suffix in _PLATE_SUFFIXES:
+        candidate = images_dir / f"{stem}{suffix}"
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"reference plate not found: {stem!r} under {images_dir} "
+        f"(categories: {', '.join(REF_CATEGORIES)})"
+    )
+
+
+def _ref_entries(shot: dict[str, Any], act: dict[str, Any], data: dict[str, Any]) -> list[str]:
+    """Reference entries: per-shot > per-act > top-level, paths or stems."""
+    raw = shot.get("refs", shot.get("references"))
+    if raw is None:
+        raw = act.get("refs", act.get("ref"))
+    if raw is None:
+        raw = data.get("refs", data.get("ref")) or []
+    if isinstance(raw, str):
+        return [r.strip() for r in raw.split(",") if r.strip()]
+    if isinstance(raw, Sequence):
+        return [str(r).strip() for r in raw if str(r).strip()]
+    return []
+
+
+def flatten_shots(
+    data: dict[str, Any] | list[dict[str, Any]],
+    images_dir: Path,
+    character: str | None = None,
+) -> list[Shot]:
+    """Flatten a flat or structured shot list into production order.
+
+    ``acts`` are iterated in their JSON key order; per-act ``prefix`` is
+    prepended to each shot prompt, per-act ``style``/``folder`` default the
+    shot, and a character identity string is attached as the anchor
+    whenever the shot's resolved references include a character plate
+    (shots with no character plate are left anchor-free). The anchor comes
+    from the explicit ``character`` argument, else the shot list's
+    top-level ``"character"``, else a per-shot ``"character"`` key.
+    """
+    if isinstance(data, list):
+        acts: list[dict[str, Any]] = [{"name": "shots", "shots": data}]
+        top_level: dict[str, Any] = {}
+    else:
+        acts = [
+            {"name": act_key, **act}
+            for act_key, act in (data.get("acts") or {}).items()
+        ]
+        top_level = data
+
+    global_character = character or top_level.get("character")
+    shots: list[Shot] = []
+    for act in acts:
+        act_name = str(act.get("name", act.get("act", "")))
+        prefix = str(act.get("prefix", ""))
+        default_style = str(act.get("style", "cinematic"))
+        default_folder = str(act.get("folder", "scenes"))
+        for shot in act.get("shots", []):
+            shot_id = str(shot.get("id") or shot.get("name") or f"shot-{len(shots) + 1}")
+            entries = _ref_entries(shot, act, top_level)
+            refs: list[str] = []
+            has_character_plate = False
+            for entry in entries:
+                basename = entry.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+                if (
+                    "/" in entry
+                    or "\\" in entry
+                    or "://" in entry
+                    or basename.lower().endswith(_IMAGE_EXTS)
+                ):
+                    refs.append(entry)  # explicit path or URL, use as-is
+                else:
+                    path = resolve_plate(entry, images_dir)
+                    refs.append(str(path))
+                    if path.parent.name == "character":
+                        has_character_plate = True
+            character_anchor: str | None = None
+            if shot.get("character"):
+                character_anchor = str(shot["character"])
+            elif has_character_plate and global_character:
+                character_anchor = str(global_character)
+            shots.append(
+                Shot(
+                    id=shot_id,
+                    act=act_name,
+                    style=str(shot.get("style", default_style)),
+                    folder=str(shot.get("folder", default_folder)),
+                    prompt=prefix + str(shot.get("prompt", "")),
+                    duration=int(shot.get("duration", 5)),
+                    refs=refs,
+                    character=character_anchor,
+                )
+            )
+    return shots
+
+
+@dataclass
+class ProgressLog:
+    """Plain-text resumable progress file.
+
+    One line per finished shot::
+
+        2026-09-21T00:22:44Z shot16 OK exit=0
+        2026-09-21T00:28:41Z shot17 OK exit=1 (clip downloaded; post-gen gate step failed)
+
+    A shot id followed by ``OK`` is terminal (skipped on resume); ``FAIL``
+    lines are history only.
+    """
+
+    path: Path
+
+    def completed_ids(self, known: Iterable[str]) -> set[str]:
+        if not self.path.is_file():
+            return set()
+        known_set = set(known)
+        done: set[str] = set()
+        for line in self.path.read_text(encoding="utf-8", errors="replace").splitlines():
+            parts = line.split()
+            for i, tok in enumerate(parts):
+                if tok in known_set and i + 1 < len(parts) and parts[i + 1] == "OK":
+                    done.add(tok)
+        return done
+
+    def record(self, shot_id: str, status: str, exit_code: int | None, note: str = "") -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{utcnow()} {shot_id} {status} exit={exit_code}{note}\n")
+
+
+@dataclass
+class RunnerConfig:
+    """Everything ``run_shots`` needs — assembled by the CLI layer."""
+
+    shots: list[Shot]
+    generate_one: Callable[[Shot], tuple[bool, int, str]]
+    """Returns ``(succeeded, exit_code, note)`` for a single shot. A
+    ``False`` with a non-empty note counts as recovered (the artifact
+    exists even though a post-generation step failed)."""
+    scenes_dir: Path
+    progress: ProgressLog
+    interval: float = DEFAULT_INTERVAL
+    only: set[str] | None = None
+    max_shots: int = 0
+    say: Callable[[str], None] = lambda _msg: None
+
+    def move_shot_clips(self, shot: Shot, new_clips: Sequence[Path]) -> list[Path]:
+        """After generating ``shot``, relocate its clips when the shot is a
+        transition (``folder: "transition"``)."""
+        if shot.folder != "transition" or not new_clips:
+            return []
+        target_dir = self.scenes_dir.parent / "transition"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for clip in new_clips:
+            clip.replace(target_dir / clip.name)
+            self.say(f"moved transition clip -> {target_dir / clip.name}")
+        return list(new_clips)
+
+
+def run_shots(config: RunnerConfig) -> int:
+    """Run every pending shot, stop on first unrecovered failure.
+
+    Returns 0 when all pending shots finished, 1 when a shot failed and the
+    run stopped (re-run the same command to resume — completed shots are
+    recorded in the progress file).
+    """
+    shots = config.shots
+    done = config.progress.completed_ids(s.id for s in shots)
+    pending = [s for s in shots if s.id not in done]
+    if config.only:
+        pending = [s for s in pending if s.id in config.only]
+    if config.max_shots:
+        pending = pending[: config.max_shots]
+
+    config.say(f"pending: {len(pending)} of {len(shots)} shots (done: {len(done)})")
+    scenes = config.scenes_dir
+    for i, shot in enumerate(pending):
+        if i > 0:
+            config.say(
+                f"rate limit: waiting {config.interval:.0f}s before {shot.id}..."
+            )
+            time.sleep(config.interval)
+        before = set(scenes.glob("*.mp4")) if scenes.is_dir() else set()
+        succeeded, exit_code, note = config.generate_one(shot)
+        after = set(scenes.glob("*.mp4")) if scenes.is_dir() else set()
+        new_clips = sorted(after - before)
+        ok = succeeded or (not succeeded and bool(new_clips))
+        if ok and not succeeded:
+            note = (note + " " if note else "") + "(clip downloaded; post-gen step failed)"
+        config.progress.record(
+            shot.id,
+            "OK" if ok else "FAIL",
+            exit_code,
+            f" {note}" if note and ok else "",
+        )
+        config.say(f"{shot.id} {'OK' if ok else 'FAIL'} exit={exit_code}" + (f" {note}" if note and ok else ""))
+        if ok:
+            config.move_shot_clips(shot, new_clips)
+        else:
+            config.say(
+                f"STOP: {shot.id} failed. Fix and re-run to resume "
+                f"(remaining shots stay pending)."
+            )
+            return 1
+    config.say("all pending shots complete")
+    return 0
+
+
+def load_shots_file(path: Path) -> dict[str, Any] | list[dict[str, Any]]:
+    """Load and minimally validate a shot list JSON file."""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(raw, list):
+        if not raw or not all(isinstance(s, dict) for s in raw):
+            raise ValueError("flat shot list must be a non-empty array of objects")
+        return raw
+    if isinstance(raw, dict):
+        if not raw.get("acts"):
+            raise ValueError("structured shot list must define a non-empty 'acts' mapping")
+        return raw
+    raise ValueError("shot list must be a JSON array or an object with 'acts'")

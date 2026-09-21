@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+- `brandly produce` progress-file runner (`src/brandly_cli/shot_runner.py`):
+  a structured shot-list schema (`{"character": ..., "acts": {...}}` with
+  per-act prompt `prefix`, `style`, `folder` and plate-stem `refs`/`ref`s),
+  plus new flags `--no-auto-refs`, `--character`, `--allow-referenceless`,
+  `--max-wait`, `--only` and `--max`. Any of these (or the structured
+  schema) routes the run through a resumable progress file
+  (`.brandly/<project>/docs/tmp/produce_progress.txt`) instead of the
+  production-plan loop, so film production no longer needs an external
+  runner script:
+  - plate-stem references resolve under `images/<category>/`, preferring
+    the optimized `<stem>.opt.jpg` twins (small reference payloads —
+    issue #20 free-tier timeouts);
+  - a top-level / `--character` identity anchor attaches only to shots
+    whose references include a character plate;
+  - transition shots (`"folder": "transition"`) have their clips moved
+    to `videos/transition/`;
+  - a post-generation step failure (e.g. quality-gate crash) still counts
+    as OK when the clip was downloaded, and the run stops on the first
+    unrecovered failure (re-run the same command to resume).
+  Flat shot lists without the new flags keep the existing production-plan
+  behaviour.
+
 ## [0.3.15] — 2026-09-20
 
 ### Added

@@ -18,7 +18,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from brandly_cli import __version__, layout
+from brandly_cli import __version__, layout, shot_runner
 from brandly_cli.agent_tools import get_builtin_tools
 from brandly_cli.agnes_client import (
     agent_tool_loop,
@@ -1869,6 +1869,9 @@ def _generate_shot(
     *,
     ctx: click.Context,
     root: Path,
+    auto_refs_enabled: bool = True,
+    allow_referenceless: bool = False,
+    max_wait: int = 600,
 ) -> bool:
     """Generate ONE shot through the standard ``brandly video`` pipeline.
 
@@ -1888,8 +1891,12 @@ def _generate_shot(
             duration=int(shot.get("duration", 5)),
             style=str(shot.get("style", "cinematic")),
             reference_images=references or None,
+            character=shot.get("character") or None,
             wait=True,
+            max_wait=max_wait,
             require_reference=False,
+            auto_refs_enabled=auto_refs_enabled,
+            allow_referenceless=allow_referenceless,
         )
     except SystemExit as exc:
         return exc.code in (0, None)
@@ -1902,9 +1909,13 @@ def _generate_shot(
     "--shots",
     "shots_file",
     required=True,
-    help="Path to a shot list JSON file: "
+    help="Path to a shot list JSON file. Flat schema: "
     '[{"name": "shot-1", "prompt": "...", "duration": 5, "style": "cinematic", '
-    '"references": "a.png,b.png"}, ...]',
+    '"references": "a.png,b.png"}, ...]. Structured schema (acts with per-act '
+    'prefix/style/folder and plate-stem references): {"character": "...", '
+    '"acts": {"act1": {"prefix": "...", "style": "cinematic", "folder": '
+    '"scenes", "shots": [{"id": "shot01", "prompt": "...", "duration": 6, '
+    '"refs": ["char_rebel", "loc_ink"]}]}}}',
 )
 @click.option(
     "--interval",
@@ -1912,12 +1923,58 @@ def _generate_shot(
     show_default=True,
     help="Seconds to wait BETWEEN shot generations (Agnes: 1 request per minute).",
 )
+@click.option(
+    "--no-auto-refs",
+    "no_auto_refs",
+    is_flag=True,
+    default=False,
+    help="Do NOT auto-inject project images as references (issue #20). Each shot's "
+    "reference payload comes from the shot list only. Routes the run through the "
+    "progress-file runner (docs/tmp/produce_progress.txt).",
+)
+@click.option(
+    "--character",
+    default=None,
+    help="Character identity anchor passed to every shot whose references include "
+    "a character plate. Overrides the shot list's top-level 'character' string.",
+)
+@click.option(
+    "--allow-referenceless",
+    is_flag=True,
+    default=False,
+    help="Bypass the require-reference check for shots without references.",
+)
+@click.option(
+    "--max-wait",
+    "max_wait",
+    default=600,
+    show_default=True,
+    help="Max wait seconds per shot generation.",
+)
+@click.option(
+    "--only",
+    multiple=True,
+    help="Run only this shot id (repeatable). Routes through the progress-file runner.",
+)
+@click.option(
+    "--max",
+    "max_shots",
+    default=0,
+    show_default=True,
+    help="Run at most N shots, then stop. Routes through the progress-file runner.",
+)
 @click.pass_context
 def produce(
     ctx: click.Context,
     project_id: str,
     shots_file: str,
     interval: float,
+    no_auto_refs: bool,
+    character: str | None,
+    allow_referenceless: bool,
+    max_wait: int,
+    only: tuple[str, ...],
+    max_shots: int,
 ) -> None:
     """Generate a multi-shot film shot by shot from the production plan.
 
@@ -1928,6 +1985,15 @@ def produce(
 
     Shots already COMPLETED in the production plan are skipped, so the run
     is resumable: fix a failed shot and run the same command again.
+
+    A structured shot list ({"acts": ...}), or any of --no-auto-refs /
+    --character / --allow-referenceless / --only / --max, routes the run
+    through the progress-file runner instead: resumable via
+    .brandly/<project>/docs/tmp/produce_progress.txt, per-act prompt prefix
+    and style, plate-stem reference resolution (optimized .opt.jpg twins
+    preferred), character anchoring, transition clips moved to
+    videos/transition/, and a post-generation-step failure (quality gate
+    crash) tolerates a downloaded clip.
     """
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
@@ -1939,13 +2005,34 @@ def produce(
         console.print(f"[red]Shot list not found: {path}[/red]")
         sys.exit(1)
     try:
-        shots = json.loads(path.read_text(encoding="utf-8"))
+        shots = shot_runner.load_shots_file(path)
     except ValueError as e:
         console.print(f"[red]Invalid shot list JSON: {e}[/red]")
         sys.exit(1)
-    if not isinstance(shots, list) or not shots:
-        console.print("[red]Shot list must be a non-empty JSON array.[/red]")
-        sys.exit(1)
+
+    use_runner = (
+        isinstance(shots, dict)
+        or no_auto_refs
+        or character
+        or allow_referenceless
+        or only
+        or max_shots
+    )
+    if use_runner:
+        _run_produce_runner(
+            ctx,
+            project_id,
+            shots,
+            root,
+            interval,
+            no_auto_refs,
+            character,
+            allow_referenceless,
+            max_wait,
+            only,
+            max_shots,
+        )
+        return
 
     # ---- Phase 1: prepare ALL shots on the production plan (source of truth)
     from brandly_cli.utils import (
@@ -2031,6 +2118,53 @@ def produce(
             sys.exit(1)
 
     console.print(f"[green]✓ Production complete — see {plan_doc}[/green]")
+
+
+def _run_produce_runner(
+    ctx: click.Context,
+    project_id: str,
+    data: dict[str, Any] | list[dict[str, Any]],
+    root: Path,
+    interval: float,
+    no_auto_refs: bool,
+    character: str | None,
+    allow_referenceless: bool,
+    max_wait: int,
+    only: tuple[str, ...],
+    max_shots: int,
+) -> None:
+    """Progress-file runner path for ``brandly produce`` (see produce())."""
+    project_dir = root / ".brandly" / project_id
+    images_dir = project_dir / "images"
+    scenes_dir = project_dir / "videos" / "scenes"
+    progress = shot_runner.ProgressLog(
+        project_dir / "docs" / "tmp" / "produce_progress.txt"
+    )
+    shots = shot_runner.flatten_shots(data, images_dir, character=character)
+
+    def generate_one(shot: shot_runner.Shot) -> tuple[bool, int, str]:
+        ok = _generate_shot(
+            project_id,
+            {**shot.to_video_kwargs(), "character": shot.character},
+            ctx=ctx,
+            root=root,
+            auto_refs_enabled=not no_auto_refs,
+            allow_referenceless=allow_referenceless,
+            max_wait=max_wait,
+        )
+        return ok, 0 if ok else 1, ""
+
+    config = shot_runner.RunnerConfig(
+        shots=shots,
+        generate_one=generate_one,
+        scenes_dir=scenes_dir,
+        progress=progress,
+        interval=interval,
+        only=set(only) if only else None,
+        max_shots=max_shots,
+        say=lambda msg: console.print(f"[dim]{msg}[/dim]"),
+    )
+    sys.exit(shot_runner.run_shots(config))
 
 
 def _record_media_spend(root: Path, project_id: str, kind: str, model_id: str) -> None:

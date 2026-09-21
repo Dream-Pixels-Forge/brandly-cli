@@ -159,3 +159,32 @@ class TestGateCommand:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+# ---------------------------------------------------------------------------
+# _unlink_quietly — temp-frame cleanup must never hard-fail the command
+# ---------------------------------------------------------------------------
+
+
+def test_unlink_quietly_swallows_oserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A locked temp frame (WinError 32) must not fail the command."""
+    p = tmp_path / "frame.png"
+    p.write_bytes(b"x")
+
+    def raise_locked(self: Path, *args: object, **kwargs: object) -> None:
+        raise OSError(32, "being used by another process")
+
+    monkeypatch.setattr(Path, "unlink", raise_locked)
+    quality_gate._unlink_quietly(p)  # must not raise
+    assert p.exists()  # ...but nothing was deleted
+
+
+def test_unlink_quietly_deletes_and_ignores_missing(tmp_path: Path) -> None:
+    p = tmp_path / "frame.png"
+    p.write_bytes(b"x")
+    quality_gate._unlink_quietly(p)
+    assert not p.exists()
+    quality_gate._unlink_quietly(p)  # already gone: no error
+

@@ -502,6 +502,19 @@ async def _run_vision_check(
 # ---------------------------------------------------------------------------
 
 
+def _unlink_quietly(path: Path) -> None:
+    """Best-effort delete of a temp frame.
+
+    On Windows a freshly written file can still be locked by antivirus or
+    the search indexer (WinError 32); cleanup must never hard-fail the
+    command after the generated artifact is already on disk.
+    """
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 async def verify_element(
     element: str | Path,
     *,
@@ -567,9 +580,9 @@ async def verify_element(
         finally:
             # Clean up a temp extracted frame (only ours).
             if frame != element and frame.exists() and str(frame).startswith(tempfile.gettempdir()):
-                frame.unlink(missing_ok=True)
+                _unlink_quietly(frame)
     elif frame != element and frame.exists():
-        frame.unlink(missing_ok=True)
+        _unlink_quietly(frame)
 
     result.finalize(strict=strict)
     if write_report and root is not None and project_id:

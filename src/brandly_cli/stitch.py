@@ -161,38 +161,45 @@ async def stitch_videos(
         offsets.append(offset_val)
         offset += durations[i + 1] - transition_duration
 
-    # Build video filter chain
-    vf_chain = "[0:v]"
+    # Build video filter chain: each xfade consumes the running merged
+    # stream plus the next clip, chaining virtual labels [v1], [v2], ...
+    # Without the previous virtual label, xfade sees one input pad and
+    # ffmpeg rejects the graph ("Filter not found") for any n > 2.
+    vf_chain = ""
+    prev_v = "[0:v]"
     for i in range(1, n):
         offset_val = offsets[i - 1]
+        tail = f"[v{i}]" if i < n - 1 else "[vout]"
         vf_chain += (
-            f"[{i}:v]xfade=transition={transition}"
+            f"{prev_v}[{i}:v]xfade=transition={transition}"
             f":duration={transition_duration}"
             f":offset={offset_val}"
+            f"{tail}"
         )
+        prev_v = tail
         if i < n - 1:
-            vf_chain += f"[v{i}];"
-        else:
-            vf_chain += "[vout];"
+            vf_chain += ";"
 
     if grade_filter:
-        vf_chain += f"[vout]{grade_filter}[final_v]"
-    else:
-        vf_chain += "[vout]"
+        vf_chain += f";[vout]{grade_filter}[final_v]"
 
     # Detect whether ALL clips have audio. If any are audio-less, drop the
     # acrossfade chain and output video-only (no silent-audio injection needed).
     has_audio = all(_ffprobe_has_audio(c) for c in clips)
 
     if has_audio:
-        # Build audio filter chain with acrossfade
-        af_chain = "[0:a]"
+        # Build audio filter chain with acrossfade (same chaining rule as xfade)
+        af_chain = ""
+        prev_a = "[0:a]"
         for i in range(1, n):
-            af_chain += f"[{i}:a]acrossfade=d={transition_duration}:c1=tri:c2=tri"
+            tail = f"[a{i}]" if i < n - 1 else "[aout]"
+            af_chain += (
+                f"{prev_a}[{i}:a]acrossfade=d={transition_duration}:c1=tri:c2=tri"
+                f"{tail}"
+            )
+            prev_a = tail
             if i < n - 1:
-                af_chain += f"[a{i}];"
-            else:
-                af_chain += "[aout]"
+                af_chain += ";"
         filter_complex = f"{vf_chain};{af_chain}"
 
         cmd = [

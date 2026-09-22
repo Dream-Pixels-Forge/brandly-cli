@@ -15,11 +15,6 @@ from brandly_cli import layout
 __package_dir__ = Path(__file__).resolve().parent
 
 
-#: Directory of the installed brandly_cli package — pip installs carry the
-#: bundled skills here even without a repo-level ``skills/`` folder.
-__package_dir__ = Path(__file__).resolve().parent
-
-
 def generate_project_id() -> str:
     """Generate a human-readable project ID from slug + timestamp.
 

@@ -54,6 +54,7 @@ IMAGE_CATEGORIES: tuple[str, ...] = (
     "animal",
     "plant",
     "keyframe",
+    "storyboard",
     "general",
 )
 
@@ -158,6 +159,59 @@ def media_root(proj_dir: str | Path, top: str) -> Path:
     if top not in ("images", "videos", "audio"):
         raise ValueError(f"Unknown media top folder: {top!r}")
     return Path(proj_dir) / top
+
+
+# ---------------------------------------------------------------------------
+# v2 layout (issue #43 — .brandly docs | pre-production assets | production
+# outputs), enabled by ``brandly migrate`` (or ``brandly init --layout v2``)
+# ---------------------------------------------------------------------------
+
+def v2_media_root(root: str | Path, project_id: str, top: str) -> Path:
+    """v2 media root: assets live NEXT TO ``.brandly/<project>`` in the
+    project workspace, separated by pipeline stage:
+
+    * ``images``  → ``pre-production/<project>/`` (character/, location/,
+      prop/, …/storyboard/)
+    * ``videos``  → ``production/<project>/videos/``
+    * ``audio``   → ``production/<project>/audio/``
+
+    Documents and project state (``project.json``, plans, bibles) stay in
+    ``.brandly/<project>/`` — that folder is config, the others are assets.
+    """
+    base = Path(root)
+    if top == "images":
+        return base / "pre-production" / project_id
+    if top == "videos":
+        return base / "production" / project_id / "videos"
+    if top == "audio":
+        return base / "production" / project_id / "audio"
+    raise ValueError(f"Unknown media top folder: {top!r}")
+
+
+def is_v2_layout(root: str | Path, project_id: str) -> bool:
+    """True when the project uses the v2 layout (migrated or init --layout v2).
+
+    Detection: ``project.json`` carries ``layout_version: 2`` (authoritative),
+    else the v2 media root already exists on disk.
+    """
+    proj = Path(root) / ".brandly" / project_id / "project.json"
+    if proj.is_file():
+        try:
+            import json as _json
+
+            data = _json.loads(proj.read_text(encoding="utf-8"))
+            if data.get("layout_version") == 2:
+                return True
+        except Exception:
+            pass
+    return (Path(root) / "pre-production" / project_id).is_dir()
+
+
+def resolve_media_root(root: str | Path, project_id: str, top: str) -> Path:
+    """Layout-aware media root: v2 for migrated/v2 projects, legacy otherwise."""
+    if is_v2_layout(root, project_id):
+        return v2_media_root(root, project_id, top)
+    return media_root(project_dir(root, project_id), top)
 
 
 def image_category_for_subject(subject_type: str) -> str:

@@ -3,9 +3,40 @@
 Provides shot-by-shot prompt templates with explicit sectioning:
 Scene Context, Camera, Motion, Lighting, Grade, Style, and Constraints.
 Each section uses precise, model-parseable language for best generation results.
+
+Prompt section model (single source of truth, issue #42)
+---------------------------------------------------------
+Canonical shot order, one concern per section:
+
+    [SUBJECT]      who/what is in the shot
+    [LOCATION]     where it takes place
+    [ACTION]       what happens (timecoded shots)
+    [CAMERA]       framing, angle, movement, lens
+    [STYLE]        visual style (60:30:10 rule)
+    [CONSTRAINTS]  TECHNICAL limits only: model caps, duration, aspect ratio
+    [NEGATIVE]     VISUAL exclusions only: what the frame must not look like
+    [AUDIO]        dialogue, SFX, ambient
+    [CONTINUITY]   links to previous/next shots
+
+``[CONSTRAINTS]`` and ``[NEGATIVE]`` never overlap: constraints describe
+hard technical ceilings (model max duration/aspect), negatives list unique
+visual artifacts to avoid (deformed faces, artifacts, plastic skin). Entries
+shared between the two are emitted once, under ``[NEGATIVE]``.
+
+Scene-aware boilerplate (issue #32): when a shot specifies its own lighting,
+color grade, or visual style, the generic style-preset lines must not be
+appended — they actively contradict the shot's direction. Pass
+``shot_lighting`` / ``shot_grade`` / ``shot_style`` (or ``no_boilerplate``)
+to the builders to opt out of the preset boilerplate.
+
+Structured prompts (issue #31): a shot's ``prompt`` may be a dict using the
+8-layer film direction framework — see :func:`expand_structured_prompt`.
 """
 
 from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Section builders — each returns a single-line, model-optimized tag string
@@ -68,11 +99,50 @@ def _style(style: str) -> str:
 
 
 def _constraints(style: str) -> str:
-    """Build the negative-constraint line."""
+    """Build the negative-constraint line (legacy single-line form)."""
     config = VIDEO_STYLE_MODELS.get(style)
     if config and config.get("negatives"):
         return f"Avoid: {config['negatives']}"
     return "Avoid: AI artifacts, plastic skin, oversaturation, digital smear, waxy texture"
+
+
+def technical_constraints(
+    style: str = "cinematic",
+    *,
+    model: str = "",
+    duration: int | None = None,
+    aspect: str | None = None,
+) -> str:
+    """Build a ``[CONSTRAINTS]`` block with TECHNICAL limits only (issue #42).
+
+    Distinct from ``[NEGATIVE]`` (visual exclusions): this section states
+    what the model is allowed to produce — duration ceiling, output aspect
+    ratio, and the generating model — so the model cannot silently clamp or
+    drift outside the plan.
+    """
+    lines = []
+    if model:
+        lines.append(f"Generating model: {model}.")
+    if duration:
+        lines.append(f"Shot duration: exactly {duration}s. Do not exceed it.")
+    if aspect:
+        lines.append(f"Frame aspect ratio: {aspect}.")
+    if not lines:
+        lines.append("Respect the planned duration and framing; no silent clamping.")
+    return "[CONSTRAINTS]\n" + "\n".join(lines)
+
+
+def negative_block(style: str = "cinematic") -> str:
+    """Build a ``[NEGATIVE]`` block with visual exclusions only (issue #42).
+
+    Contains ONLY the style's visual exclusions — technical limits belong in
+    :func:`technical_constraints`, so the two sections never duplicate.
+    """
+    config = VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS["cinematic"])
+    negatives = config.get("negatives", "") or (
+        "AI artifacts, plastic skin, oversaturation, digital smear, waxy texture"
+    )
+    return f"[NEGATIVE] Avoid: {negatives}"
 
 
 def _material(subject: str) -> str:
@@ -502,7 +572,6 @@ def build_video_prompt(
       Color grade: ...
       Duration: Ns.
     """
-    style_config = VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS["cinematic"])
     shot_keys = list(SHOT_SPECS.keys())
     move_keys = list(CAMERA_MOVES.keys())
     camera_moves = camera_sequence or move_keys[:shots]
@@ -557,12 +626,8 @@ def build_video_prompt(
 
     master += "\n\n".join(shot_lines)
 
-    # Add constraints block at the end
-    master += (
-        f"\n\n[CONSTRAINTS]\n"
-        f"Avoid: {style_config['negatives']}\n"
-        f"Negative prompt: {style_config['negatives']}"
-    )
+    # Issue #42: technical constraints and visual negatives never overlap.
+    master += "\n\n" + technical_constraints(style) + "\n\n" + negative_block(style)
 
     return master
 
@@ -606,8 +671,8 @@ def build_single_shot_prompt(
     if reference_image:
         lines.insert(1, "[REFERENCE ANCHOR] Use provided image as exact visual target.")
 
-    lines.append(f"[CONSTRAINTS] Avoid: {style_config['negatives']}")
-    lines.append(f"Negative prompt: {style_config['negatives']}")
+    lines.extend(technical_constraints(style, model="", duration=duration).split("\n"))
+    lines.append(negative_block(style))
 
     return "\n".join(lines)
 
@@ -636,9 +701,8 @@ def build_keyframe_prompt(
         f"Color grade: {GRADE_PRESETS.get(style, GRADE_PRESETS['cinematic'])}.\n"
         f"Visual style: {style_config['model_tags']}\n"
         f"Duration: {duration}s.\n\n"
-        f"[CONSTRAINTS]\n"
-        f"Avoid: {style_config['negatives']}\n"
-        f"Negative prompt: {style_config['negatives']}"
+        f"{technical_constraints(style, duration=duration)}\n"
+        f"{negative_block(style)}"
     )
 
 
@@ -667,20 +731,46 @@ def build_enhanced_video_prompt(
     *,
     character: str | None = None,
     reference_images: list[str] | None = None,
+    shot_lighting: str | None = None,
+    shot_grade: str | None = None,
+    shot_style: str | None = None,
+    no_boilerplate: bool = False,
+    model: str = "",
+    duration: int | None = None,
+    aspect: str | None = None,
 ) -> str:
-    """Enhance a raw prompt with style-specific sections and constraints."""
+    """Enhance a raw prompt with style-specific sections and constraints.
+
+    Scene-aware boilerplate (issue #32): the generic ``[LIGHTING]`` /
+    ``[COLOR GRADE]`` / ``[VISUAL STYLE]`` preset lines are replaced by the
+    shot's own direction when ``shot_lighting`` / ``shot_grade`` /
+    ``shot_style`` are given, and skipped entirely when ``no_boilerplate``
+    is set (a shot that already carries full film direction must not be
+    overwritten with generic "make it look cinematic" text).
+    """
     style_config = VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS["cinematic"])
     lighting_key = style_config.get("lighting", "studio")
 
-    sections = [
-        f"[SCENE CONTEXT] {prompt}",
-        f"[LIGHTING] {LIGHTING_PRESETS.get(lighting_key, LIGHTING_PRESETS['studio'])['model_tags']}.",
-        f"[COLOR GRADE] {GRADE_PRESETS.get(style, GRADE_PRESETS['cinematic'])}.",
-        f"[VISUAL STYLE] {style_config['model_tags']}",
-    ]
+    sections = [f"[SCENE CONTEXT] {prompt}"]
+
+    if not no_boilerplate:
+        lighting = shot_lighting or LIGHTING_PRESETS.get(
+            lighting_key, LIGHTING_PRESETS["studio"]
+        )["model_tags"]
+        grade = shot_grade or GRADE_PRESETS.get(style, GRADE_PRESETS["cinematic"])
+        visual_style = shot_style or style_config["model_tags"]
+        sections.append(f"[LIGHTING] {lighting}.")
+        sections.append(f"[COLOR GRADE] {grade}.")
+        sections.append(f"[VISUAL STYLE] {visual_style}")
 
     if character:
-        sections.append(f"[IDENTITY LOCK] Character: {character}. Maintain identical appearance across all frames. No drift.")
+        # Issue #38: only characters PRESENT in the shot are locked. Callers
+        # pass the presence-filtered list; an empty/None character adds no
+        # identity block at all.
+        sections.append(
+            f"[IDENTITY LOCK] Character: {character}. "
+            "Maintain identical appearance across all frames. No drift."
+        )
 
     if reference_images:
         sections.append(
@@ -688,10 +778,118 @@ def build_enhanced_video_prompt(
             "Preserve exact appearance, lighting, and composition from references."
         )
 
-    sections.append(f"[CONSTRAINTS] Avoid: {style_config['negatives']}")
-    sections.append(f"Negative prompt: {style_config['negatives']}")
+    # Even fully-directed shots carry the technical ceiling: the model must
+    # still respect duration/aspect/model limits (issue #42: technical
+    # constraints are always emitted, independent of the boilerplate flag).
+    sections.append(technical_constraints(style, model=model, duration=duration, aspect=aspect))
+    sections.append(negative_block(style))
 
     return "\n".join(sections)
+
+
+#: The 8-layer film direction framework (issue #31).
+STRUCTURED_PROMPT_KEYS: tuple[str, ...] = (
+    "subject",
+    "emotion",
+    "optics",
+    "motion",
+    "lighting",
+    "style",
+    "audio",
+    "continuity",
+)
+
+#: Human-readable labels for each structured layer (block order preserved).
+STRUCTURED_PROMPT_LABELS: dict[str, str] = {
+    "subject": "[SUBJECT]",
+    "emotion": "[EMOTION]",
+    "optics": "[OPTICS]",
+    "motion": "[MOTION]",
+    "lighting": "[LIGHTING]",
+    "style": "[STYLE]",
+    "audio": "[AUDIO]",
+    "continuity": "[CONTINUITY]",
+}
+
+
+def detect_scene_direction(prompt: str) -> dict[str, Any]:
+    """Scene-aware boilerplate detection (issue #32).
+
+    A prompt that already carries explicit ``[LIGHTING]`` / ``[COLOR
+    GRADE]`` / ``[VISUAL STYLE]`` blocks (structured 8-layer prompts, or
+    hand-directed shot text) must NOT have generic style-preset lines
+    appended — that used to overwrite correct film direction with "golden
+    hour sunlight" on a monitor-lit night scene. Returns keyword overrides
+    for :func:`build_enhanced_video_prompt`; ``no_boilerplate: true``
+    anywhere in the prompt opts the shot out of ALL preset boilerplate.
+    """
+    import re
+
+    out: dict[str, Any] = {}
+    p = prompt or ""
+    m = re.search(r"\[LIGHTING\]\s*(.+)", p)
+    if m:
+        out["shot_lighting"] = m.group(1).strip()
+    m = re.search(r"\[COLOR GRADE\]\s*(.+)", p)
+    if m:
+        out["shot_grade"] = m.group(1).strip()
+    m = re.search(r"\[VISUAL STYLE\]\s*(.+)", p)
+    if m:
+        out["shot_style"] = m.group(1).strip()
+    if re.search(r"no_boilerplate\s*[:=]\s*true", p, re.IGNORECASE):
+        out["no_boilerplate"] = True
+    return out
+
+
+def expand_structured_prompt(
+    prompt: Mapping[str, Any] | str,
+    *,
+    character: str | None = None,
+    key_traits: str | None = None,
+    model: str = "",
+    duration: int | None = None,
+    aspect: str | None = None,
+) -> str:
+    """Expand a structured 8-layer prompt dict into a directed prompt (issue #31).
+
+    Accepts either a plain string (returned untouched) or a mapping whose
+    keys are a subset of :data:`STRUCTURED_PROMPT_KEYS`. Unknown keys raise
+    :class:`ValueError` naming the valid keys — keyword soup must fail
+    loudly, not silently.
+
+    Emits the layers in canonical order, skips empty layers, then appends
+    the identity lock (only when a character is present), the technical
+    ``[CONSTRAINTS]`` block and the ``[NEGATIVE]`` block (issue #42).
+    """
+    if isinstance(prompt, str):
+        return prompt
+    if not isinstance(prompt, Mapping):
+        raise TypeError(
+            f"prompt must be a string or a structured dict, got {type(prompt).__name__}"
+        )
+    unknown = [k for k in prompt if k not in STRUCTURED_PROMPT_KEYS]
+    if unknown:
+        raise ValueError(
+            f"unknown structured-prompt key(s) {', '.join(sorted(unknown))} — "
+            f"valid keys: {', '.join(STRUCTURED_PROMPT_KEYS)}"
+        )
+
+    lines = [
+        f"{STRUCTURED_PROMPT_LABELS[layer]} {str(prompt[layer]).strip()}"
+        for layer in STRUCTURED_PROMPT_KEYS
+        if str(prompt.get(layer, "")).strip()
+    ]
+
+    if character:
+        anchor = CHARACTER_ANCHOR_TEMPLATE.format(
+            description=character,
+            key_traits=key_traits or "distinctive features, clothing, proportions",
+        )
+        lines.append(anchor.rstrip())
+
+    lines.extend(technical_constraints(model=model, duration=duration, aspect=aspect).split("\n"))
+    lines.append(negative_block())
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -915,8 +1113,8 @@ class ShotChain:
             lines.append(self.character_anchor.consistency_block())
 
         lines.append("")
-        lines.append(f"[CONSTRAINTS] Avoid: {style_config['negatives']}")
-        lines.append(f"Negative prompt: {style_config['negatives']}")
+        lines.extend(technical_constraints(self.style).split("\n"))
+        lines.append(negative_block(self.style))
 
         return "\n".join(lines)
 

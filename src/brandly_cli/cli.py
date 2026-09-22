@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -198,6 +199,67 @@ def _save_artifact(
         return None
 
 
+def _standardize_reference_format(saved: Path, target: str) -> Path:
+    """Standardize a reference plate's format + dedupe + resolution sanity (issue #41).
+
+    * Converts the plate to ``target`` (``jpg``/``png``) when it differs —
+      dropping the now-duplicate original so a plate never exists as both
+      .png and .jpg twins.
+    * Removes pre-existing duplicate twins (same stem, other extension).
+    * Warns when the plate is under 512px on the short side (reference
+      quality check — small plates confuse Agnes keyframe mode).
+
+    Never raises: a conversion failure keeps the original file.
+    """
+    from PIL import Image
+
+    target_ext = ".jpg" if target.lower().startswith("j") else ".png"
+
+    def _remove_twins(p: Path) -> None:
+        for twin in p.parent.glob(f"{p.stem}.*"):
+            if twin.suffix.lower() in (".png", ".jpg", ".jpeg") and twin != p:
+                twin.unlink(missing_ok=True)
+                console.print(f"[dim]Removed duplicate-format twin: {twin.name}[/dim]")
+
+    # Normalize .jpeg to the .jpg standard (the on-disk file, not just the path).
+    if saved.suffix.lower() == ".jpeg":
+        moved = saved.with_suffix(".jpg")
+        if moved.exists():
+            moved.unlink()
+        if saved.exists():
+            saved.rename(moved)
+        saved = moved
+
+    if saved.suffix.lower() != target_ext:
+        try:
+            with Image.open(saved) as im:
+                mode = "RGBA" if (target_ext == ".png" and "A" in im.getbands()) else "RGB"
+                out = saved.with_suffix(target_ext)
+                if target_ext == ".jpg":
+                    im.convert(mode).save(out, "JPEG", quality=92)
+                else:
+                    im.convert(mode).save(out, "PNG")
+            saved.unlink()
+            saved = out
+            console.print(f"[dim]Standardized format → {saved.name}[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]⚠ Could not convert to {target}: {e} — keeping original[/yellow]")
+    _remove_twins(saved)
+
+    # Resolution sanity: reference plates too small degrade Agnes keyframes.
+    try:
+        with Image.open(saved) as im:
+            w, h = im.size
+            if min(w, h) < 512:
+                console.print(
+                    f"[yellow]⚠ Reference plate is small ({w}x{h}) — consider a "
+                    "higher-resolution source for reliable identity locking.[/yellow]"
+                )
+    except Exception:
+        pass
+    return saved
+
+
 def _print_project_summary(proj: dict[str, Any]) -> None:
     from rich.table import Table
 
@@ -264,6 +326,18 @@ def cli(ctx: click.Context, root: str | None) -> None:
     "--platforms", "-p", multiple=True, help="Target platforms (tiktok, instagram, youtube, all)"
 )
 @click.option("--image", "-img", default=None, help="Optional product image path")
+@click.option(
+    "--layout",
+    "layout_mode",
+    type=click.Choice(["v1", "v2"]),
+    default="v1",
+    show_default=True,
+    help=(
+        "On-disk layout (issue #43): v1 = everything under .brandly/<project>/; "
+        "v2 = .brandly docs/config + pre-production/ assets + production/ outputs "
+        "in the project workspace. New projects default to v1 for compatibility."
+    ),
+)
 @click.pass_context
 def init(
     ctx: click.Context,
@@ -274,6 +348,7 @@ def init(
     shots: int,
     platforms: tuple[str, ...],
     image: str | None,
+    layout_mode: str,
 ) -> None:
     """Start a new Brandly video project."""
     if style not in VIDEO_STYLES:
@@ -304,14 +379,20 @@ def init(
         shot_count=shots,
         budget=budget,
         target_platforms=list(platforms) if platforms else ["tiktok", "instagram"],
+        **({"layout_version": 2} if layout_mode == "v2" else {}),
     )
     asyncio.run(pm.create(proj))
+    if layout_mode == "v2":
+        from brandly_cli import migrate as migrate_mod
+
+        migrate_mod.ensure_v2_skeleton(root, pid)
     console.print(Panel(f"Project created! [green]{pid}[/green]", title="Brandly"))
     console.print(f"  Slug:      {slug}")
     console.print(f"  Name:      {name}")
     console.print(f"  Style:     {style}")
     console.print(f"  Shots:     {shots}")
     console.print(f"  Budget:    {budget} credits")
+    console.print(f"  Layout:    {layout_mode}")
     console.print(f"  Platforms: {proj.target_platforms}")
     console.print(f"\nNext: [bold]brandly run {pid}[/bold] to start the pipeline.")
 
@@ -829,6 +910,19 @@ def build_reference_prompt(subject_type: str, subject: str) -> str:
     default=False,
     help="With --image: skip generation entirely and just register the file.",
 )
+@click.option(
+    "--format",
+    "ref_format",
+    type=click.Choice(["jpg", "png"]),
+    default="jpg",
+    show_default=True,
+    help=(
+        "Standardized reference format (issue #41): the plate is converted to "
+        "this format and duplicate twins (same stem, other extension) in the "
+        "category folder are removed. A resolution sanity warning is printed "
+        "for plates smaller than 512px on the short side."
+    ),
+)
 @click.pass_context
 def reference(
     ctx: click.Context,
@@ -842,6 +936,7 @@ def reference(
     run_gate: bool,
     import_image: str | None,
     no_generate: bool,
+    ref_format: str,
 ) -> None:
     """Generate the primary reference image for a project.
 
@@ -888,6 +983,7 @@ def reference(
         stem = sanitize_filename(src.stem) or "plate"
         dest = target_dir / f"reference_{subject_type}_{stem}{src.suffix or '.png'}"
         shutil.copyfile(src, dest)
+        dest = _standardize_reference_format(dest, ref_format)
         console.print(f"[green]✓ Imported reference plate:[/green] {dest}")
 
         from brandly_cli.utils import write_generation_plan
@@ -1074,6 +1170,7 @@ def reference(
         except OSError:
             new_path = saved  # fall back to the original name if rename fails
         saved = new_path
+        saved = _standardize_reference_format(saved, ref_format)
         console.print(f"[green]✓ Reference image saved:[/green] {saved}")
 
         # Persist the primary reference metadata on the project so downstream
@@ -1588,8 +1685,13 @@ def video(
     )
 
     # Enhance prompt with style and character consistency
+    # Scene-aware boilerplate (issue #32): if the prompt already specifies
+    # its own lighting/grade/style, the generic preset lines are not
+    # appended — they would overwrite the shot's correct film direction.
+    from brandly_cli.video_prompts import detect_scene_direction
+
     enhanced = build_enhanced_video_prompt(
-        prompt, style, character=character, reference_images=imgs
+        prompt, style, character=character, reference_images=imgs, **detect_scene_direction(prompt)
     )
 
     # Try to load sheet reference for better prompting
@@ -1895,6 +1997,20 @@ def video(
 # ---------------------------------------------------------------------------
 
 
+def _presence_character(shot: dict[str, Any]) -> str | None:
+    """Character anchor from a flat shot dict (issue #38): explicit
+    ``character`` wins; else the shot's ``characters`` presence declaration
+    (list or comma-separated string)."""
+    if shot.get("character"):
+        return str(shot["character"])
+    chars = shot.get("characters")
+    if isinstance(chars, str):
+        chars = [c.strip() for c in chars.split(",") if c.strip()]
+    if isinstance(chars, (list, tuple)) and chars:
+        return ", ".join(str(c) for c in chars)
+    return None
+
+
 def _generate_shot(
     project_id: str,
     shot: dict[str, Any],
@@ -1925,7 +2041,9 @@ def _generate_shot(
             duration=int(shot.get("duration", 5)),
             style=str(shot.get("style", "cinematic")),
             reference_images=references or None,
-            character=shot.get("character") or None,
+            # Issue #38: presence-declared characters only — either a single
+            # string anchor or the shot's comma-separated/listed roster.
+            character=_presence_character(shot),
             wait=True,
             max_wait=max_wait,
             require_reference=False,
@@ -1999,6 +2117,48 @@ def _generate_shot(
     show_default=True,
     help="Run at most N shots, then stop. Routes through the progress-file runner.",
 )
+@click.option(
+    "--retries",
+    type=int,
+    default=0,
+    show_default=True,
+    help=(
+        "On-the-spot retries per failed shot (issue #39). Each retry waits the "
+        "retry backoff (default: --interval) and is logged to the progress file "
+        "as RETRY retry=N backoff=Xs <reason>; terminal failures log FAIL with "
+        "the attempt count. 0 = fail fast (legacy)."
+    ),
+)
+@click.option(
+    "--split-long-shots",
+    is_flag=True,
+    default=False,
+    help=(
+        "Split shots whose duration exceeds the Agnes model max (12s) into 6s "
+        "parts with continuity notes, so takes are no longer silently clamped "
+        "(issue #35)."
+    ),
+)
+@click.option(
+    "--aspect-ratio",
+    "aspect_ratio",
+    default=None,
+    help=(
+        "Crop every generated clip to this aspect ratio (e.g. 2.39:1) as a "
+        "post-processing step when the model cannot output it natively "
+        "(issue #40). Requires ffmpeg."
+    ),
+)
+@click.option(
+    "--no-plan",
+    is_flag=True,
+    default=False,
+    help=(
+        "Do not register runner-path shots on the production plan (legacy "
+        "behavior). By default each shot gets a plan file named with its shot "
+        "ID (issue #37)."
+    ),
+)
 @click.pass_context
 def produce(
     ctx: click.Context,
@@ -2011,6 +2171,10 @@ def produce(
     max_wait: int,
     only: tuple[str, ...],
     max_shots: int,
+    retries: int,
+    split_long_shots: bool,
+    aspect_ratio: str | None,
+    no_plan: bool,
 ) -> None:
     """Generate a multi-shot film shot by shot from the production plan.
 
@@ -2060,8 +2224,7 @@ def produce(
     if use_runner:
         console.print(
             "[dim]Resumable runner → "
-            f".brandly/{project_id}/docs/tmp/{shot_runner.PROGRESS_FILENAME} "
-            "(shots are not registered on the production plan on this path).[/dim]"
+            f".brandly/{project_id}/docs/tmp/{shot_runner.PROGRESS_FILENAME}"
         )
         _run_produce_runner(
             ctx,
@@ -2075,6 +2238,10 @@ def produce(
             max_wait,
             only,
             max_shots,
+            retries=retries,
+            split_long_shots=split_long_shots,
+            aspect_ratio=aspect_ratio,
+            no_plan=no_plan,
         )
         return
 
@@ -2096,14 +2263,25 @@ def produce(
     model = "agnes-video-2.5-flash"
     prepared: list[tuple[dict[str, Any], str, Path]] = []
     for idx, shot in enumerate(shots, start=1):
-        name = str(shot.get("name") or f"shot-{idx}")
+        # Issue #37: prefer an explicit shot id in the plan file name.
+        name = str(shot.get("id") or shot.get("name") or f"shot-{idx}")
         slug = sanitize_filename(name.lower()) or f"shot-{idx}"
         asset_type = f"video-shot-{slug}"
+        # Issue #31: flat lists may also carry structured prompt dicts.
+        raw_prompt = shot.get("prompt", "")
+        if isinstance(raw_prompt, Mapping):
+            from brandly_cli.video_prompts import expand_structured_prompt
+
+            raw_prompt = expand_structured_prompt(
+                raw_prompt,
+                character=str(shot.get("character", "")) or None,
+                duration=int(shot.get("duration", 5)),
+            )
         plan, plan_reused = write_generation_plan(
             project_id,
             asset_type,
             root=root,
-            prompt=str(shot.get("prompt", "")),
+            prompt=str(raw_prompt),
             model=model,
             style=str(shot.get("style", "cinematic")),
             extra_config={
@@ -2112,8 +2290,10 @@ def produce(
                 "role": "shot",
             },
             source="brandly produce",
+            shot_id=name,
+            scene=shot_runner.as_int(shot.get("scene"), 1),
         )
-        prepared.append((shot, name, plan))
+        prepared.append(({**shot, "prompt": str(raw_prompt)}, name, plan))
         console.print(
             f"[dim]Shot {name}: plan {'reused' if plan_reused else 'written'}: "
             f"{plan.name}[/dim]"
@@ -2192,15 +2372,114 @@ def _run_produce_runner(
     max_wait: int,
     only: tuple[str, ...],
     max_shots: int,
+    *,
+    retries: int = 0,
+    split_long_shots: bool = False,
+    aspect_ratio: str | None = None,
+    no_plan: bool = False,
 ) -> None:
     """Progress-file runner path for ``brandly produce`` (see produce())."""
     project_dir = layout.resolve_project_dir(root, project_id)
-    images_dir = layout.media_root(project_dir, "images")
-    scenes_dir = layout.media_dir(project_dir, "videos", "scenes")
+    # v2-aware roots (issue #43): migrated projects keep media next to
+    # .brandly/ — pre-production/<p>/ for plates, production/<p>/videos/ for clips.
+    images_dir = layout.resolve_media_root(root, project_id, "images")
+    videos_root = layout.resolve_media_root(root, project_id, "videos")
+    scenes_dir = videos_root / "scenes"
     progress = shot_runner.ProgressLog(
         layout.docs_dir(project_dir, "tmp") / shot_runner.PROGRESS_FILENAME
     )
     shots = shot_runner.flatten_shots(data, images_dir, character=character)
+
+    # Issue #35: duration validation at plan time. Agnes clamps every take
+    # to ~5-6s regardless of the requested duration, so shots longer than
+    # one segment burn full credits for a clamped result. --split-long-shots
+    # slices them instead of letting the model silently clamp them.
+    over = [
+        s for s in shots if s.duration > shot_runner.SPLIT_SEGMENT_DURATION
+    ]
+    if over:
+        console.print(
+            f"[yellow]⚠ {len(over)} shot(s) exceed {shot_runner.SPLIT_SEGMENT_DURATION}s and "
+            f"will be silently clamped to ~5-6s by the Agnes model: "
+            f"{', '.join(s.id for s in over[:8])}" + ("…" if len(over) > 8 else "")
+        )
+        if not split_long_shots:
+            console.print(
+                "[dim]  Re-run with --split-long-shots to slice them into "
+                f"≤{shot_runner.SPLIT_SEGMENT_DURATION}s parts instead of burning full "
+                "credits on clamped takes.[/dim]"
+            )
+    if split_long_shots:
+        shots = shot_runner.split_long_shots(shots)
+        if over:
+            console.print(
+                f"[green]✓ Split over-long shots → {len(shots)} total shots.[/green]"
+            )
+
+    # Issue #36: keep project.json live as production progresses.
+    def _sync_project(status: str) -> None:
+        from brandly_cli.project_manager import sync_production_state
+
+        result = sync_production_state(
+            root,
+            project_id,
+            status=status,
+            current_phase="video",
+            shot_count=len(shots),
+        )
+        if result is not None:
+            console.print(
+                f"[dim]project.json synced: status={status} "
+                f"shot_count={len(shots)}[/dim]"
+            )
+
+    _sync_project("in_progress")
+
+    # Issue #37: register every shot on the production plan with its shot ID
+    # so a reviewer can match plan files to shots without opening them.
+    plan_files: dict[str, Path] = {}
+    if not no_plan:
+        from brandly_cli.utils import write_generation_plan
+
+        model = "agnes-video-2.5-flash"
+        for shot in shots:
+            plan, _ = write_generation_plan(
+                project_id,
+                "video",
+                root=root,
+                prompt=shot.prompt,
+                model=model,
+                style=shot.style,
+                extra_config={
+                    "Shot": shot.id,
+                    "Duration": f"{shot.duration}s",
+                    "Act": shot.act or "—",
+                    "Role": "shot",
+                },
+                source="brandly produce",
+                shot_id=shot.id,
+                scene=shot.scene,
+                act=shot.act or None,
+            )
+            plan_files[shot.id] = plan
+
+    def _on_shot_done(shot: shot_runner.Shot, ok: bool) -> None:
+        # Issue #37: update the plan row; Issue #36: sync project.json.
+        plan = plan_files.get(shot.id)
+        if plan is not None:
+            from brandly_cli.utils import upsert_production_plan
+
+            upsert_production_plan(
+                project_id,
+                root=root,
+                plan_file=str(plan),
+                asset_type="video",
+                model="agnes-video-2.5-flash",
+                status="COMPLETED" if ok else "FAILED",
+                source="brandly produce",
+                shot_id=shot.id,
+            )
+        _sync_project("in_progress")
 
     def generate_one(shot: shot_runner.Shot) -> tuple[bool, int, str]:
         ok = _generate_shot(
@@ -2226,8 +2505,235 @@ def _run_produce_runner(
         only=set(only) if only else None,
         max_shots=max_shots,
         say=lambda msg: console.print(f"[dim]{msg}[/dim]"),
+        retries=retries,
+        on_shot_done=_on_shot_done,
+        aspect_ratio=aspect_ratio,
     )
-    sys.exit(shot_runner.run_shots(config))
+    rc = shot_runner.run_shots(config)
+    _sync_project("complete" if rc == 0 else "failed")
+    sys.exit(rc)
+
+
+# ---------------------------------------------------------------------------
+# storyboard (issue #33 — cheap keyframe gate before video credits)
+# ---------------------------------------------------------------------------
+
+STORYBOARD_INSTRUCTION = (
+    "[KEYFRAME] Render a single still frame capturing this exact moment — "
+    "composition, lighting, and character placement exactly as directed. "
+    "This frame is a storyboard keyframe for pre-visualizing the shot."
+)
+
+
+@cli.command(name="storyboard")
+@click.argument("project_id")
+@click.option(
+    "--shots",
+    "shots_file",
+    required=True,
+    help="Path to the shot list JSON used for the production run.",
+)
+@click.option(
+    "--only",
+    "only",
+    multiple=True,
+    help="Generate keyframes for only this shot id (repeatable).",
+)
+@click.option(
+    "--model",
+    default="agnes-image-2.5-flash",
+    show_default=True,
+    help="Agnes image model for keyframe generation (1-2 credits each).",
+)
+@click.option(
+    "--interval",
+    default=60.0,
+    show_default=True,
+    help="Seconds between image generations (Agnes 1 request/min).",
+)
+@click.option(
+    "--no-gate",
+    is_flag=True,
+    default=False,
+    help="Skip the offline composition pre-check (blank/undecodable frames).",
+)
+@click.option(
+    "--character",
+    default=None,
+    help="Character identity anchor (same semantics as brandly produce).",
+)
+@click.pass_context
+def storyboard(
+    ctx: click.Context,
+    project_id: str,
+    shots_file: str,
+    only: tuple[str, ...],
+    model: str,
+    interval: float,
+    no_gate: bool,
+    character: str | None,
+) -> None:
+    """Generate storyboard keyframes for each shot before spending video credits.
+
+    Pipeline (issue #33): Reference Import → Storyboard (1-2 credits) →
+    Gate → Video Generation (20 credits) → Gate. A keyframe that fails the
+    offline composition check is flagged so composition/character errors are
+    caught at image cost, not video cost. Approved keyframes are stored
+    under .brandly/<project>/images/storyboard/ with the canonical
+    Scene-XX-Shot-X-Y name and can be re-used as references for the video
+    pass. The run is resumable: an approved keyframe skips regeneration
+    (.brandly/<project>/docs/tmp/storyboard_progress.txt).
+    """
+    if not is_valid_project_id(project_id):
+        console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(1)
+
+    root = _get_root(ctx)
+    path = Path(shots_file)
+    if not path.is_file():
+        console.print(f"[red]Shot list not found: {path}[/red]")
+        sys.exit(1)
+    try:
+        data = shot_runner.load_shots_file(path)
+    except ValueError as e:
+        console.print(f"[red]Invalid shot list: {e}[/red]")
+        sys.exit(1)
+
+    # v2-aware roots (issue #43).
+    images_dir = layout.resolve_media_root(root, project_id, "images")
+    storyboard_dir = images_dir / "storyboard"
+    project_dir = layout.resolve_project_dir(root, project_id)
+    shots = shot_runner.flatten_shots(data, images_dir, character=character)
+    if only:
+        shots = [s for s in shots if s.id in set(only)]
+        console.print(f"[dim]--only: {len(shots)} of the shot list match(es) given ids[/dim]")
+
+    progress_path = layout.docs_dir(project_dir, "tmp") / "storyboard_progress.txt"
+    progress = shot_runner.ProgressLog(progress_path)
+    done = progress.completed_ids(s.id for s in shots)
+    pending = [s for s in shots if s.id not in done]
+
+    from brandly_cli import quality_gate
+    from brandly_cli.agnes_client import generate_image
+
+    approved = 0
+    for i, shot in enumerate(pending):
+        if i > 0:
+            console.print(f"[dim]rate limit: waiting {interval:.0f}s before {shot.id}...[/dim]")
+            time.sleep(interval)
+        keyframe_prompt = f"{shot.prompt}\n\n{STORYBOARD_INSTRUCTION}"
+        console.print(f"[bold]▶ Keyframe for {shot.id} ({shot.clip_name})[/bold]")
+        try:
+            result = asyncio.run(generate_image(keyframe_prompt, model=model))
+        except Exception as e:
+            console.print(f"[red]✗ {shot.id}: generation failed: {e}[/red]")
+            progress.record(shot.id, "FAIL", 1, f" generation error: {e}")
+            continue
+        url = result.get("url") or ""
+        storyboard_dir.mkdir(parents=True, exist_ok=True)
+        dest = storyboard_dir / shot.clip_name.replace(".mp4", ".jpg")
+        try:
+            asyncio.run(download_file(url, dest))
+            saved = dest
+        except Exception as e:
+            console.print(f"[yellow]⚠ Could not save keyframe: {e}[/yellow]")
+            saved = None
+        if saved is None:
+            progress.record(shot.id, "FAIL", 1, " no image returned (base64-only result)")
+            continue
+        if not no_gate:
+            gate_result = asyncio.run(
+                quality_gate.verify_element(
+                    saved,
+                    use_ai=False,
+                    root=root,
+                    project_id=project_id,
+                    write_report=True,
+                )
+            )
+            if gate_result.status == quality_gate.FAIL:
+                console.print(
+                    f"[red]✗ {shot.id}: composition gate FAIL — "
+                    f"{gate_result.issues[0] if gate_result.issues else 'check report'} "
+                    f"Fix references/prompt and re-run (keyframe not approved).[/red]"
+                )
+                progress.record(shot.id, "FAIL", 2, " composition gate failed")
+                continue
+            if gate_result.status == quality_gate.WARN:
+                console.print(f"[yellow]⚠ {shot.id}: gate WARN — {gate_result.warnings[:1]}[/yellow]")
+        progress.record(shot.id, "OK", 0)
+        approved += 1
+        console.print(f"[green]✓ {shot.id}: keyframe approved -> {saved.name}[/green]")
+
+    if pending:
+        console.print(
+            f"[bold]Storyboard: {approved}/{len(pending)} keyframes approved "
+            f"({len(done)} already done, {len(shots)} total)."
+            f"Re-run to resume or regenerate.[/bold]"
+        )
+    else:
+        console.print(
+            f"[green]✓ All {len(shots)} shots have approved keyframes — "
+            "proceed to video generation.[/green]"
+        )
+
+
+# ---------------------------------------------------------------------------
+# migrate (issue #43 — .brandly docs | pre-production | production)
+# ---------------------------------------------------------------------------
+
+@cli.command(name="migrate")
+@click.argument("project_id")
+@click.option(
+    "--apply",
+    is_flag=True,
+    default=False,
+    help="Actually move the folders (default: dry-run preview).",
+)
+@click.pass_context
+def migrate(ctx: click.Context, project_id: str, apply: bool) -> None:
+    """Restructure a project's folders into the v2 layout (issue #43).
+
+    Documents/config stay in .brandly/<project>/; reference plates and
+    storyboards move to pre-production/<project>/; generated clips and
+    audio move to production/<project>/. Move-only: nothing is copied or
+    deleted. Dry-run previews every move; --apply executes and stamps
+    layout_version=2 so all layout-aware commands resolve the new roots.
+    """
+    if not is_valid_project_id(project_id):
+        console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(1)
+
+    from brandly_cli import migrate as migrate_mod
+
+    root = _get_root(ctx)
+    result = migrate_mod.apply_migration(root, project_id, apply=apply)
+    if not result.moves and not result.skipped:
+        console.print(
+            "[dim]No media folders to migrate — project already looks v2-clean "
+            "(or has no generated assets yet).[/dim]"
+        )
+        if apply:
+            migrate_mod._stamp_v2(root, project_id)
+            console.print("[green]✓ layout_version=2 stamped on project.json.[/green]")
+        return
+    for plan in result.moves:
+        marker = "✓" if apply else "→"
+        console.print(f"[cyan]{marker}[/cyan] {plan.source.relative_to(root)}  →  {plan.dest.relative_to(root)}")
+    for plan in result.skipped:
+        console.print(f"[yellow]✗ skipped (destination exists): {plan.source.relative_to(root)}[/yellow]")
+    if not apply:
+        console.print(
+            f"[bold]Dry run — {len(result.moves)} move(s) planned. "
+            "Re-run with --apply to execute.[/bold]"
+        )
+    else:
+        console.print(f"[green]✓ Migrated {len(result.moves)} folder(s) to the v2 layout.[/green]")
+        if result.skipped:
+            console.print(
+                f"[yellow]⚠ {len(result.skipped)} move(s) skipped (destination "
+                "exists) — resolve those manually.[/yellow]"
+            )
 
 
 def _record_media_spend(root: Path, project_id: str, kind: str, model_id: str) -> None:
@@ -2546,6 +3052,26 @@ def validate(ctx: click.Context, project_id: str, video_path: str | None) -> Non
 )
 @click.option("--strict", is_flag=True, help="Promote warnings to failures")
 @click.option(
+    "--threshold",
+    type=int,
+    default=None,
+    help=(
+        "Quality-score floor (0-100). The gate FAILs when the AI quality_score is "
+        "below this value, even if the model's own verdict is pass. Default: no "
+        "floor — the gate enforces only deterministic pre-checks plus artifact "
+        "cutoffs (distortion>=6/10, slop>=7/10, drift>=6/10)."
+    ),
+)
+@click.option(
+    "--lenient",
+    is_flag=True,
+    help=(
+        "Lenient mode: raise artifact fail cutoffs by +2 and demote the model's "
+        "own 'fail' verdict to a warning. Deterministic pre-checks still fail the "
+        "gate. Use to approve borderline takes."
+    ),
+)
+@click.option(
     "-o",
     "--output",
     type=click.Choice(["text", "json"]),
@@ -2562,6 +3088,8 @@ def gate(
     expect_matt_background: bool | None,
     use_ai: bool,
     strict: bool,
+    threshold: int | None,
+    lenient: bool,
     output: str,
 ) -> None:
     """Verify a generated element before proceeding (anti-slop/drift gate).
@@ -2569,6 +3097,13 @@ def gate(
     Runs cheap offline pre-checks and a multimodal model analysis of the
     candidate (and optional reference). Exits 0 for pass, 1 for warn,
     2 for fail.
+
+    POLICY (issue #34): the gate fails on (1) any deterministic pre-check
+    failure, (2) artifact cutoffs distortion>=6/10, slop>=7/10, drift>=6/10,
+    or (3) a configured --threshold score floor. --strict promotes warnings
+    to failures; --lenient raises the artifact cutoffs and demotes the
+    model's 'fail' verdict to a warning. The active policy + score comparison
+    are written into the gate report (docs/tmp/gate_*.md).
     """
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
@@ -2604,6 +3139,10 @@ def gate(
     if expect_matt_background is None:
         expect_matt_background = not inferred_video
 
+    if threshold is not None and not (0 <= threshold <= 100):
+        console.print("[red]--threshold must be between 0 and 100.[/red]")
+        sys.exit(1)
+
     result = asyncio.run(
         quality_gate.verify_element(
             element_path,
@@ -2614,6 +3153,8 @@ def gate(
             root=root,
             project_id=project_id,
             strict=strict,
+            threshold=threshold,
+            lenient=lenient,
         )
     )
 

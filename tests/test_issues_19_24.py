@@ -363,8 +363,13 @@ class TestReferenceImport:
         data = json.loads((project_dir / pid / "project.json").read_text())
         ref = data["primary_reference"]
         assert ref["image_path"]
-        assert Path(ref["image_path"]).exists()
-        assert Path(ref["image_path"]).name.endswith("client_plate.png")
+        plateref = Path(ref["image_path"])
+        assert plateref.exists()
+        # Issue #41: --format defaults to jpg — the plate is standardized to
+        # .jpg and the duplicate .png twin is removed.
+        assert plateref.name.endswith("client_plate.jpg"), plateref.name
+        png_twin = plateref.with_suffix(".png")
+        assert not png_twin.exists()
 
     def test_import_registers_plan_row(
         self, runner: CliRunner, project_dir: Path, tmp_path: Path

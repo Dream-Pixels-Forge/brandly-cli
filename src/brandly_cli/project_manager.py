@@ -153,3 +153,89 @@ def _now_iso() -> str:
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).isoformat()
+
+
+def sync_production_state(
+    root: str | Path,
+    project_id: str,
+    *,
+    status: str,
+    current_phase: str,
+    shot_count: int | None = None,
+    reconcile_budget: bool = True,
+) -> Any:
+    """Keep ``project.json`` live while production progresses (issue #36).
+
+    The historical bug: after 61 completed shots ``project.json`` still said
+    ``status: pending``, ``shot_count: 10``, empty ``phases`` and a budget
+    that contradicted ``cost.json``. This helper is the single writer used
+    by ``brandly produce`` (and other pipeline commands) to:
+
+    * set ``status`` (``in_progress`` / ``complete`` / ``failed``) and
+      ``current_phase`` as the pipeline progresses;
+    * sync ``shot_count`` with the actual shot list when ``shot_count`` is
+      supplied;
+    * reconcile ``budget`` with ``cost.json``'s ``budget_credits`` when the
+      two disagree (``reconcile_budget``);
+    * append phase-transition timestamps to ``phases`` — the first time a
+      phase is entered its ``started_at`` is recorded, and when a phase
+      completes its ``completed_at`` is stamped, so a reader of
+      ``project.json`` can reconstruct when every phase ran.
+
+    Never raises: a state-sync failure must not abort a long production
+    run. Returns the updated :class:`ProjectData` (or None when the update
+    could not be applied).
+    """
+    import asyncio
+
+    try:
+        pm = ProjectManager(root)
+        proj = asyncio.run(pm.read(project_id))
+        updates: dict[str, Any] = {
+            "status": status,
+            "current_phase": current_phase,
+        }
+
+        # Sync the shot count with the actual shot list (issue #36.2).
+        if shot_count is not None:
+            updates["shot_count"] = shot_count
+
+        # Reconcile budget with cost.json (issue #36.4): cost.json's
+        # budget_credits is what record-cost actually enforces, so
+        # project.json should not contradict it.
+        if reconcile_budget:
+            from brandly_cli.utils import read_json
+
+            proj_dir = layout.resolve_project_dir(Path(root), project_id)
+            cost = read_json(proj_dir / "cost.json")
+            if isinstance(cost, dict):
+                cost_budget = cost.get("budget_credits")
+                known_budget = proj.budget if proj else None
+                if (
+                    isinstance(cost_budget, int)
+                    and known_budget is not None
+                    and cost_budget != known_budget
+                ):
+                    updates["budget"] = cost_budget
+
+        # Phase-transition timestamps (issue #36.5).
+        now = _now_iso()
+        prev_phases = dict(proj.phases) if proj else {}
+        if current_phase in prev_phases:
+            phase = prev_phases[current_phase]
+            if status in ("complete", "failed") and not phase.completed_at:
+                phase.completed_at = now
+                prev_phases[current_phase] = phase
+        else:
+            from brandly_cli.types import PhaseResult
+
+            prev_phases[current_phase] = PhaseResult(
+                status=status,
+                started_at=now,
+                completed_at=now if status in ("complete", "failed") else None,
+            )
+        updates["phases"] = prev_phases
+
+        return asyncio.run(pm.update(project_id, updates))
+    except Exception:
+        return None

@@ -34,6 +34,30 @@ PASS = "pass"
 WARN = "warn"
 FAIL = "fail"
 
+# ---------------------------------------------------------------------------
+# Gate policy (issue #34 — documented threshold + override logic)
+# ---------------------------------------------------------------------------
+#
+# The gate fails an element when ANY of the following holds:
+#
+#   1. A deterministic pre-check fails (missing/empty element, undecodable
+#      media, blank-frame guard).
+#   2. An AI artifact cutoff is crossed (``GATE_ARTIFACT_CUTOFFS``):
+#      distortion ≥ 6/10, slop ≥ 7/10, drift ≥ 6/10.
+#   3. A configured score floor is crossed: when ``threshold`` is set and the
+#      AI ``quality_score`` < ``threshold`` the gate FAILs, regardless of the
+#      model's own verdict (``--threshold`` on ``brandly gate``; the default
+#      is None = no score floor, pre-checks + artifact cutoffs only).
+#
+# ``strict`` mode promotes warnings to failures (already available).
+# ``lenient`` mode raises every artifact fail cutoff by +2 (max 10) and
+# demotes the model's own "fail" verdict to a warning — use it to approve
+# borderline takes without overriding the deterministic pre-checks.
+
+GATE_ARTIFACT_CUTOFFS: dict[str, int] = {"distortion": 6, "slop": 7, "drift": 6}
+GATE_WARN_CUTOFFS: dict[str, int] = {"distortion": 4, "slop": 4, "drift": 4}
+LENIENT_CUTOFF_BUMP = 2
+
 _VIDEO_EXTS = {".mp4", ".webm", ".mov", ".mkv"}
 
 _VISION_SYSTEM = (
@@ -104,6 +128,10 @@ class GateResult:
     warnings: list[str] = field(default_factory=list)
     checks: dict[str, Any] = field(default_factory=dict)
     ai: dict[str, Any] = field(default_factory=dict)
+    threshold: int | None = None
+    """Score floor used for this run (issue #34). None = no floor."""
+    lenient: bool = False
+    """Whether this run used lenient artifact cutoffs."""
 
     def add_issue(self, msg: str, *, check: str | None = None, detail: Any = None) -> None:
         self.status = FAIL
@@ -140,7 +168,27 @@ class GateResult:
             "warnings": list(self.warnings),
             "checks": self.checks,
             "ai": self.ai,
+            "threshold": self.threshold,
+            "lenient": self.lenient,
         }
+
+    def policy_line(self) -> str:
+        """One-line gate-policy summary for reports (issue #34)."""
+        parts = []
+        if self.threshold is not None:
+            verdict = "below" if self.score < self.threshold else "at/above"
+            parts.append(f"score floor {self.threshold} ({self.score} {verdict})")
+        else:
+            parts.append("no score floor")
+        cutoffs = GATE_ARTIFACT_CUTOFFS if not self.lenient else {
+            k: min(v + LENIENT_CUTOFF_BUMP, 10) for k, v in GATE_ARTIFACT_CUTOFFS.items()
+        }
+        parts.append(
+            "artifact fail cutoffs "
+            + ", ".join(f"{k}≥{v}" for k, v in cutoffs.items())
+            + (" (lenient)" if self.lenient else "")
+        )
+        return "Gate policy: " + "; ".join(parts)
 
     def markdown(self) -> str:
         lines = [
@@ -150,6 +198,8 @@ class GateResult:
             f"({self.score}/100)",
             "",
         ]
+        lines.append(self.policy_line())
+        lines.append("")
         if self.issues:
             lines.append("## Failures")
             lines += [f"- {i}" for i in self.issues]
@@ -356,8 +406,16 @@ def _apply_ai_verdict(
     *,
     expect_matt_background: bool,
     has_reference: bool,
+    threshold: int | None = None,
+    lenient: bool = False,
 ) -> None:
-    """Map the model's JSON verdict onto issues/warnings/score."""
+    """Map the model's JSON verdict onto issues/warnings/score.
+
+    Policy (issue #34): ``threshold`` floors the quality score; ``lenient``
+    raises artifact fail cutoffs and demotes the model's "fail" verdict to a
+    warning. Both are recorded on the result so the report can show exactly
+    which policy produced the outcome.
+    """
     if not verdict:
         result.add_warning(
             "AI analysis returned an unparseable response — treat as inconclusive",
@@ -366,6 +424,13 @@ def _apply_ai_verdict(
         return
 
     result.ai = verdict
+    fail_cutoffs = GATE_ARTIFACT_CUTOFFS
+    if lenient:
+        fail_cutoffs = {
+            k: min(v + LENIENT_CUTOFF_BUMP, 10) for k, v in GATE_ARTIFACT_CUTOFFS.items()
+        }
+    result.threshold = threshold
+    result.lenient = lenient
     quality = int(verdict.get("quality_score", 100) or 100)
     slop = int(verdict.get("slop", 0) or 0)
     distortion = int(verdict.get("distortion", 0) or 0)
@@ -378,13 +443,13 @@ def _apply_ai_verdict(
             result.issues.append(str(issue).strip())
 
     # Hard distortion
-    if distortion >= 6:
+    if distortion >= fail_cutoffs["distortion"]:
         result.add_issue(
             f"Severe distortion detected by AI review (score {distortion}/10)",
             check="distortion",
             detail=distortion,
         )
-    elif distortion >= 4:
+    elif distortion >= GATE_WARN_CUTOFFS["distortion"]:
         result.add_warning(
             f"Distortion artifacts detected by AI review (score {distortion}/10)",
             check="distortion",
@@ -392,13 +457,13 @@ def _apply_ai_verdict(
         )
 
     # Slop
-    if slop >= 7:
+    if slop >= fail_cutoffs["slop"]:
         result.add_issue(
             f"Output looks like generic AI slop (slop {slop}/10)",
             check="slop",
             detail=slop,
         )
-    elif slop >= 4:
+    elif slop >= GATE_WARN_CUTOFFS["slop"]:
         result.add_warning(
             f"Output shows signs of AI slop (slop {slop}/10)",
             check="slop",
@@ -408,13 +473,13 @@ def _apply_ai_verdict(
     # Drift (only when a reference was supplied)
     if has_reference and drift is not None:
         drift = int(drift)
-        if drift >= 6:
+        if drift >= fail_cutoffs["drift"]:
             result.add_issue(
                 f"High identity drift from the reference (drift {drift}/10)",
                 check="drift",
                 detail=drift,
             )
-        elif drift >= 4:
+        elif drift >= GATE_WARN_CUTOFFS["drift"]:
             result.add_warning(
                 f"Possible drift from the reference (drift {drift}/10)",
                 check="drift",
@@ -432,12 +497,27 @@ def _apply_ai_verdict(
 
     # The model's own verdict floors/caps the status.
     model_verdict = str(verdict.get("verdict", "")).lower()
-    if model_verdict == "fail" and result.status == PASS:
-        result.status = WARN
-        result.add_warning("AI reviewer verdict: fail")
+    if model_verdict == "fail":
+        if result.status == PASS:
+            result.status = WARN
+            result.add_warning(
+                "AI reviewer verdict: fail"
+                + (" (kept at warn by lenient mode)" if lenient else "")
+            )
+        elif lenient:
+            result.add_warning("AI reviewer verdict: fail (kept at warn by lenient mode)")
     elif model_verdict == "warn" and result.status == PASS:
         result.status = WARN
         result.add_warning("AI reviewer verdict: warn")
+
+    # Configured score floor (issue #34).
+    if threshold is not None and result.score < threshold:
+        result.add_issue(
+            f"Quality score {result.score} is below the required threshold "
+            f"{threshold} (AI verdict: {model_verdict or 'n/a'})",
+            check="threshold",
+            detail={"score": result.score, "threshold": threshold},
+        )
 
 
 async def _run_vision_check(
@@ -526,6 +606,8 @@ async def verify_element(
     root: Path | None = None,
     project_id: str | None = None,
     strict: bool = False,
+    threshold: int | None = None,
+    lenient: bool = False,
     write_report: bool = True,
 ) -> GateResult:
     """Run the quality gate on one element (image or video).
@@ -534,10 +616,18 @@ async def verify_element(
     distortion, drift, matte backdrop, description match) is made by the
     Agnes multimodal model. When ``use_ai`` is off or no key is available,
     the AI verdict is skipped and the gate reports the pre-checks only.
+
+    Gate policy (issue #34): ``threshold`` sets a quality-score floor
+    (None = no floor — default; pre-checks + artifact cutoffs only) and
+    ``lenient`` raises the artifact fail cutoffs by +2 and demotes the
+    model's own "fail" verdict to a warning. ``strict`` (existing) promotes
+    warnings to failures. The active policy is recorded in the gate report.
     """
     element = Path(element)
     kind = "video" if is_video(element) else "image"
     result = GateResult(element=str(element), kind=kind)
+    result.threshold = threshold
+    result.lenient = lenient
 
     frame = _precheck(result, element)
     if frame is None:
@@ -564,6 +654,8 @@ async def verify_element(
                     verdict,
                     expect_matt_background=expect_matt_background,
                     has_reference=bool(reference and Path(reference).exists()),
+                    threshold=threshold,
+                    lenient=lenient,
                 )
             else:
                 result.add_warning(
@@ -609,6 +701,8 @@ __all__ = [
     "PASS",
     "WARN",
     "FAIL",
+    "GATE_ARTIFACT_CUTOFFS",
+    "GATE_WARN_CUTOFFS",
     "drift_prevention",
     "PromptConsistencyChecker",
 ]

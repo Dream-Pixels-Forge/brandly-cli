@@ -379,8 +379,9 @@ def init(
         shot_count=shots,
         budget=budget,
         target_platforms=list(platforms) if platforms else ["tiktok", "instagram"],
-        **({"layout_version": 2} if layout_mode == "v2" else {}),
     )
+    if layout_mode == "v2":
+        proj = proj.model_copy(update={"layout_version": 2})
     asyncio.run(pm.create(proj))
     if layout_mode == "v2":
         from brandly_cli import migrate as migrate_mod

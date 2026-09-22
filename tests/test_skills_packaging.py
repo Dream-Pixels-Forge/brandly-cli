@@ -10,7 +10,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import tomllib
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:  # Python 3.10
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ModuleNotFoundError:
+        tomllib = None
 
 from brandly_cli import utils
 
@@ -20,6 +26,8 @@ PYPROJECT = REPO_ROOT / "pyproject.toml"
 
 def test_wheel_force_includes_skills(tmp_path: Path) -> None:
     """`skills/` must be force-included into the wheel under brandly_cli/."""
+    if tomllib is None:
+        pytest.skip("tomllib/tomli unavailable on this interpreter")
     config = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
     force_include = (
         config.get("tool", {})

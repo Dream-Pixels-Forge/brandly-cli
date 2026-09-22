@@ -2,6 +2,59 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.17] — 2026-09-22
+
+### Added — production-pipeline issues #31–#43 (PR #44)
+- **Structured prompts (#31):** shot `prompt` may be an 8-layer dict
+  (`subject/emotion/optics/motion/lighting/style/audio/continuity`),
+  expanded by `video_prompts.expand_structured_prompt`; unknown keys fail
+  loudly at flatten time.
+- **Scene-aware boilerplate (#32/#38):** `build_enhanced_video_prompt`
+  honours shot-specified `[LIGHTING]/[COLOR GRADE]/[VISUAL STYLE]` over
+  generic presets; `no_boilerplate: true` opts out; IDENTITY LOCK now only
+  for characters present in the shot (`characters`/`character` keys).
+- **Storyboard keyframes (#33):** new `brandly storyboard <project>
+  --shots …` — cheap keyframe generation + offline composition gate before
+  video credits; resumable via `storyboard_progress.txt`.
+- **Gate policy documented/configurable (#34):** `brandly gate
+  --threshold N` score floor and `--lenient` mode; active policy + score
+  comparison written into gate reports.
+- **Duration validation (#35):** plan-time warnings for shots over the
+  Agnes effective clamp; `brandly produce --split-long-shots` slices them
+  into uniform parts.
+- **Live project.json (#36):** `sync_production_state()` keeps status,
+  current_phase, shot_count and budget (reconciled with cost.json) fresh
+  during produce runs, with phase-transition timestamps.
+- **Shot-ID plans (#37):** plan files named `plan_video_<shot_id>_<ts>.md`,
+  production-plan table gains a Shot ID column (legacy 7-column tables
+  still parse); runner-path shots registered on the plan by default
+  (`--no-plan` for legacy behavior).
+- **Retry/backoff logging (#39):** `brandly produce --retries N`; progress
+  lines now carry `RETRY retry=N backoff=Xs <reason>` and terminal
+  `FAIL retry=N` entries.
+- **Aspect-ratio post-processing (#40):** `brandly produce
+  --aspect-ratio 2.39:1` center-crops generated clips to the target ratio
+  via ffmpeg.
+- **Reference format standardization (#41):** `brandly reference
+  --format jpg|png` (default jpg) converts plates, removes duplicate-format
+  twins, warns on sub-512px sources.
+- **Prompt section model (#42):** `[CONSTRAINTS]` = technical limits only;
+  `[NEGATIVE]` = visual exclusions only — no overlapping entries.
+- **v2 project layout (#43):** `brandly migrate <project> [--apply]`
+  restructures into `.brandly/` (docs/config) + `pre-production/` (assets)
+  + `production/` (outputs); `brandly init --layout v2`; media roots
+  resolve v2-aware via `layout.resolve_media_root`.
+
+### Added — bundled skills wheel packaging (PR #45)
+- `skills/` force-included into the wheel under `brandly_cli/skills/` so
+  pip installs discover bundled skills via
+  `utils.find_skills_directory` (new `__package_dir__` discovery step).
+- `brandly-screenplay-architect` skill bundled.
+- `tests/test_skills_packaging.py` packaging + discovery regression tests.
+
+### Fixed
+- `init` `layout_version` stamp made mypy-clean (`model_copy(update=…)`).
+
 ## [0.3.16] — 2026-09-21
 
 ### Added

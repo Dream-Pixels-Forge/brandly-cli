@@ -292,7 +292,7 @@ class TestKeyframeArchiving:
             "progress": 0,
         }
         with patch(
-            "brandly_cli.cli.create_video_task", AsyncMock(return_value=fake_result)
+            "brandly_cli.cmd.generation.create_video_task", AsyncMock(return_value=fake_result)
         ):
             result = runner.invoke(
                 cli,
@@ -334,7 +334,7 @@ class TestKeyframeArchiving:
             "progress": 0,
         }
         with patch(
-            "brandly_cli.cli.create_video_task", AsyncMock(return_value=fake_result)
+            "brandly_cli.cmd.generation.create_video_task", AsyncMock(return_value=fake_result)
         ):
             result = runner.invoke(
                 cli,
@@ -375,8 +375,8 @@ class TestHitlGate:
             return target
 
         with (
-            patch("brandly_cli.cli.generate_image", AsyncMock(return_value=fake_result)),
-            patch("brandly_cli.cli._save_artifact", side_effect=fake_save),
+            patch("brandly_cli.cmd.generation.generate_image", AsyncMock(return_value=fake_result)),
+            patch("brandly_cli.cmd.generation._save_artifact", side_effect=fake_save),
         ):
             result = runner.invoke(
                 cli,
@@ -420,8 +420,8 @@ class TestHitlGate:
             return target
 
         with (
-            patch("brandly_cli.cli.generate_image", AsyncMock(return_value=fake_result)),
-            patch("brandly_cli.cli._save_artifact", side_effect=fake_save),
+            patch("brandly_cli.cmd.generation.generate_image", AsyncMock(return_value=fake_result)),
+            patch("brandly_cli.cmd.generation._save_artifact", side_effect=fake_save),
         ):
             result = runner.invoke(
                 cli,

@@ -1,0 +1,1026 @@
+Usage: cli [OPTIONS] COMMAND [ARGS]...
+
+  Brandly CLI — AI product video orchestrator.
+
+  Add image, video, and sound generation to any AI tool.
+
+Options:
+  --root TEXT  Working directory (default: cwd)
+  --version    Show the version and exit.
+  --help       Show this message and exit.
+
+Commands:
+  agnes-chat        Chat with an Agnes AI text model, optionally as a...
+  analyze           Analyze video performance prediction.
+  approve           Approve a phase and advance the pipeline.
+  ark-cancel        Cancel an in-progress BytePlus Ark video generation job.
+  ark-image         Generate image via BytePlus Ark (Seedream).
+  ark-jobs          List recent BytePlus Ark (Seedance) video jobs.
+  ark-video         Generate video via BytePlus Ark (Seedance).
+  audio             Extract audio track from a video file.
+  batch             Generate multiple video variants from a base prompt.
+  beat-sync         Cut video to match beat positions in audio.
+  cancel            Cancel a project.
+  captions          Add burned-in subtitles to a video.
+  compare           Compare all generated assets in a project side by side.
+  concat            Concatenate multiple videos into one.
+  config            Show current configuration (API keys status, root dir).
+  cost              Show cost summary for a project.
+  director          Show the Director prompt for AI tools.
+  edit              Trim a video to a segment.
+  estimate          Estimate credit cost before starting.
+  export            Export a completed project's artifacts.
+  export-platforms  Export project to platform-optimized formats.
+  gate              Verify a generated element before proceeding...
+  image             Generate an image via Agnes AI.
+  init              Start a new Brandly video project.
+  job-cancel        Cancel a pending video generation job.
+  job-resume        Poll a video job to completion and download the video...
+  jobs              List recent video generation jobs from the API.
+  list              List all projects.
+  memory            View or update user preferences.
+  migrate           Restructure a project's folders into the v2 layout...
+  minimax-image     Generate images using MiniMax API.
+  minimax-jobs      List recent MiniMax video generation jobs.
+  minimax-video     Generate videos using MiniMax API.
+  model             Show detailed info about a specific AI model.
+  models            List all available AI generation models.
+  music             Generate background music via MiniMax Audio.
+  pause             Pause a project.
+  probe             Analyze a video file's metadata and properties.
+  produce           Generate a multi-shot film shot by shot from the...
+  progress          Show detailed progress of a project.
+  prompt            Generate a cinematic video prompt for Agnes AI.
+  rate-limits       Show provider rate limits for Agnes AI and MiniMax.
+  record-cost       Record actual credit spend for a phase operation.
+  reference         Generate the primary reference image for a project.
+  report            Report a bug or feature request to the GitHub issues...
+  resize            Resize a video to given dimensions or aspect ratio.
+  resume            Resume a paused project.
+  run               Run the next phase of the pipeline.
+  share             Upload file to cloud for sharing.
+  speed             Change video playback speed.
+  status            Show project status and phase progress.
+  stitch            Stitch multiple video clips with transitions and color...
+  storyboard        Generate storyboard keyframes for each shot before...
+  sync              Auto-detect AI-tool configs and write Brandly API keys...
+  template          Create or manage project templates.
+  template-list     List available templates.
+  thumbnail         Generate thumbnails from project video.
+  trend             Research trending video formats.
+  tts               Generate voiceover via MiniMax TTS.
+  validate          Run virality validation on a finished video.
+  version           Show version information.
+  video             Generate an AI video via Agnes AI.
+  voice-match       Dub a video to a target language.
+  voices            List available TTS voices.
+  webhook           Start webhook server for CI/CD integration.
+
+===== brandly agnes-chat --help (exit 0) =====
+Usage: cli agnes-chat [OPTIONS] PROMPT
+
+  Chat with an Agnes AI text model, optionally as a tool-calling agent.
+
+  With --tools the model can call built-in tools (list_projects, get_project,
+  list_jobs, generate_image, list_models) and reason over their results in a
+  multi-turn agent loop. Requires AGNES_API_KEY.
+
+Options:
+  --model TEXT              Agnes text model (2.5-flash, 2.0-flash, 1.5-flash)
+  --tools                   Enable built-in tools (projects, jobs, models, image
+                            gen)
+  --list-models             List available Agnes text models and exit
+  --list-tools              List built-in agent tools and exit
+  -o, --output [text|json]
+  --help                    Show this message and exit.
+
+===== brandly analyze --help (exit 0) =====
+Usage: cli analyze [OPTIONS] VIDEO_PATH
+
+  Analyze video performance prediction.
+
+Options:
+  --script TEXT  Script text for hook analysis
+  --style TEXT   Visual style
+  --root TEXT    Working directory
+  --help         Show this message and exit.
+
+===== brandly approve --help (exit 0) =====
+Usage: cli approve [OPTIONS] PROJECT_ID PHASE
+
+  Approve a phase and advance the pipeline.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly ark-cancel --help (exit 0) =====
+Usage: cli ark-cancel [OPTIONS] TASK_ID
+
+  Cancel an in-progress BytePlus Ark video generation job.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly ark-image --help (exit 0) =====
+Usage: cli ark-image [OPTIONS]
+
+  Generate image via BytePlus Ark (Seedream).
+
+Options:
+  -p, --prompt TEXT               Image generation prompt  [required]
+  --model [seedream-4.0|seedream-3.5]
+                                  Seedream model (default: seedream-4.0)
+  --size TEXT                     Aspect ratio (1:1, 16:9, 9:16, 4:3, 3:4)
+  --n INTEGER                     Number of images to generate (1-4)
+  --style-preset [photorealistic|editorial|cinematic|commercial|documentary]
+                                  Style preset to enhance prompt
+  --help                          Show this message and exit.
+
+===== brandly ark-jobs --help (exit 0) =====
+Usage: cli ark-jobs [OPTIONS]
+
+  List recent BytePlus Ark (Seedance) video jobs.
+
+Options:
+  --status TEXT              Filter by status
+  -n, --limit INTEGER        Max number of jobs to show
+  -o, --output [table|json]
+  --help                     Show this message and exit.
+
+===== brandly ark-video --help (exit 0) =====
+Usage: cli ark-video [OPTIONS] PROJECT_ID
+
+  Generate video via BytePlus Ark (Seedance).
+
+Options:
+  -p, --prompt TEXT               Video generation prompt  [required]
+  --model [seedance-1.0-t2v|seedance-1.0-i2v]
+                                  Seedance model (default: seedance-1.0-t2v)
+  -d, --duration INTEGER          Duration in seconds (default: 5)
+  --aspect-ratio TEXT             Aspect ratio
+  -r, --reference-images TEXT     Comma-separated image URLs or local file paths
+                                  for i2v mode
+  --wait                          Poll until generation completes
+  --max-wait INTEGER              Max wait seconds (default: 300)
+  --help                          Show this message and exit.
+
+===== brandly audio --help (exit 0) =====
+Usage: cli audio [OPTIONS] INPUT OUTPUT
+
+  Extract audio track from a video file.
+
+Options:
+  --format TEXT   Audio format (mp3, wav, m4a)
+  --bitrate TEXT  Audio bitrate
+  --help          Show this message and exit.
+
+===== brandly batch --help (exit 0) =====
+Usage: cli batch [OPTIONS] PROJECT_ID BASE_PROMPT
+
+  Generate multiple video variants from a base prompt.
+
+  Variants are submitted one at a time with a 60 s wait between requests (Agnes
+  1 request/minute rate limit). For multi-shot films use ``brandly produce``
+  instead — the production-plan-driven, shot-by-shot workflow.
+
+Options:
+  --style TEXT             Video style
+  --model TEXT             Model to use (2.5-flash is the current default)
+  -n, --count INTEGER      Number of variants to generate
+  --interval FLOAT         Seconds to wait between variant submissions (Agnes: 1
+                           request/min).  [default: 60.0]
+  --wait                   Wait for each generation to complete
+  --character TEXT         Character description for consistency
+  --reference-images TEXT  Comma-separated reference image URLs or local file
+                           paths
+  --help                   Show this message and exit.
+
+===== brandly beat-sync --help (exit 0) =====
+Usage: cli beat-sync [OPTIONS] VIDEO_PATH AUDIO_PATH
+
+  Cut video to match beat positions in audio.
+
+Options:
+  --output TEXT         Output video path  [required]
+  --threshold FLOAT     Beat detection threshold
+  --min-duration FLOAT  Minimum clip duration
+  --root TEXT           Working directory
+  --help                Show this message and exit.
+
+===== brandly cancel --help (exit 0) =====
+Usage: cli cancel [OPTIONS] PROJECT_ID
+
+  Cancel a project.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly captions --help (exit 0) =====
+Usage: cli captions [OPTIONS] INPUT OUTPUT TEXT
+
+  Add burned-in subtitles to a video.
+
+Options:
+  --font-size INTEGER
+  --position [top|middle|bottom]
+  --codec TEXT
+  --help                          Show this message and exit.
+
+===== brandly compare --help (exit 0) =====
+Usage: cli compare [OPTIONS] PROJECT_ID
+
+  Compare all generated assets in a project side by side.
+
+Options:
+  -o, --output [table|json]
+  --help                     Show this message and exit.
+
+===== brandly concat --help (exit 0) =====
+Usage: cli concat [OPTIONS] INPUTS... OUTPUT
+
+  Concatenate multiple videos into one.
+
+Options:
+  --codec TEXT  Video codec
+  --help        Show this message and exit.
+
+===== brandly config --help (exit 0) =====
+Usage: cli config [OPTIONS]
+
+  Show current configuration (API keys status, root dir).
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly cost --help (exit 0) =====
+Usage: cli cost [OPTIONS] PROJECT_ID
+
+  Show cost summary for a project.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly director --help (exit 0) =====
+Usage: cli director [OPTIONS]
+
+  Show the Director prompt for AI tools.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly edit --help (exit 0) =====
+Usage: cli edit [OPTIONS] INPUT OUTPUT
+
+  Trim a video to a segment.
+
+Options:
+  --start FLOAT    Start time in seconds
+  --end TEXT       End time in seconds
+  --duration TEXT  Duration in seconds (alternative to --end)
+  --codec TEXT     Video codec
+  --preset TEXT    Encoding preset
+  --help           Show this message and exit.
+
+===== brandly estimate --help (exit 0) =====
+Usage: cli estimate [OPTIONS]
+
+  Estimate credit cost before starting.
+
+Options:
+  --style TEXT     Video style
+  --shots INTEGER  Number of shots (3-10)
+  --help           Show this message and exit.
+
+===== brandly export --help (exit 0) =====
+Usage: cli export [OPTIONS] PROJECT_ID
+
+  Export a completed project's artifacts.
+
+Options:
+  -o, --output TEXT  Output directory (default: .brandly/{id}/export/)
+  --help             Show this message and exit.
+
+===== brandly export-platforms --help (exit 0) =====
+Usage: cli export-platforms [OPTIONS] PROJECT_ID
+
+  Export project to platform-optimized formats.
+
+Options:
+  --platforms TEXT  Target platforms (tiktok, instagram_reel, youtube_standard,
+                    etc.)
+  --output TEXT     Output directory
+  --root TEXT       Working directory
+  --help            Show this message and exit.
+
+===== brandly gate --help (exit 0) =====
+Usage: cli gate [OPTIONS] PROJECT_ID [ELEMENT]
+
+  Verify a generated element before proceeding (anti-slop/drift gate).
+
+  Runs cheap offline pre-checks and a multimodal model analysis of the candidate
+  (and optional reference). Exits 0 for pass, 1 for warn, 2 for fail.
+
+  POLICY (issue #34): the gate fails on (1) any deterministic pre-check failure,
+  (2) artifact cutoffs distortion>=6/10, slop>=7/10, drift>=6/10, or (3) a
+  configured --threshold score floor. --strict promotes warnings to failures;
+  --lenient raises the artifact cutoffs and demotes the model's 'fail' verdict
+  to a warning. The active policy + score comparison are written into the gate
+  report (docs/tmp/gate_*.md).
+
+Options:
+  --ref TEXT                      Reference image to compare against (drift
+                                  check)
+  --kind [auto|image|video]       Element type (default: infer from extension)
+  -d, --description TEXT          Expected subject/description
+  --matt-background / --no-matt-background
+                                  Require a seamless matte mid-grey backdrop.
+                                  Default: on for reference/sheet images, off
+                                  for videos.
+  --use-ai / --no-ai              Use the Agnes multimodal model for visual
+                                  analysis (default: on)
+  --strict                        Promote warnings to failures
+  --threshold INTEGER             Quality-score floor (0-100). The gate FAILs
+                                  when the AI quality_score is below this value,
+                                  even if the model's own verdict is pass.
+                                  Default: no floor — the gate enforces only
+                                  deterministic pre-checks plus artifact cutoffs
+                                  (distortion>=6/10, slop>=7/10, drift>=6/10).
+  --lenient                       Lenient mode: raise artifact fail cutoffs by
+                                  +2 and demote the model's own 'fail' verdict
+                                  to a warning. Deterministic pre-checks still
+                                  fail the gate. Use to approve borderline
+                                  takes.
+  -o, --output [text|json]
+  --help                          Show this message and exit.
+
+===== brandly image --help (exit 0) =====
+Usage: cli image [OPTIONS]
+
+  Generate an image via Agnes AI.
+
+Options:
+  --project-id TEXT               Optional project UUID
+  -p, --prompt TEXT               Image generation prompt  [required]
+  --model TEXT                    Agnes image model (2.5-flash is the current
+                                  default)
+  --size TEXT                     Image size tier (1K, 2K, 3K, 4K)
+  --ratio TEXT                    Aspect ratio
+  --style-preset [photorealistic|editorial|cinematic|commercial|documentary]
+                                  Style preset to avoid AI slop
+  --help                          Show this message and exit.
+
+===== brandly init --help (exit 0) =====
+Usage: cli init [OPTIONS]
+
+  Start a new Brandly video project.
+
+Options:
+  -n, --name TEXT       Product name  [required]
+  -i, --idea TEXT       Product idea / brief  [required]
+  -s, --style TEXT      Video style (default: cinematic). Choices: cinematic,
+                        ugc, montage, multi_shot, continuous, unboxing,
+                        lifestyle, collage_motion_graphic, brand_short_video,
+                        explainer_video
+  -b, --budget INTEGER  Max credits to spend (default: 500)
+  --shots INTEGER       Number of shots (3-10, default: 5)
+  -p, --platforms TEXT  Target platforms (tiktok, instagram, youtube, all)
+  -img, --image TEXT    Optional product image path
+  --layout [v1|v2]      On-disk layout (issue #43): v1 = everything under
+                        .brandly/<project>/; v2 = .brandly docs/config + pre-
+                        production/ assets + production/ outputs in the project
+                        workspace. New projects default to v1 for compatibility.
+                        [default: v1]
+  --help                Show this message and exit.
+
+===== brandly job-cancel --help (exit 0) =====
+Usage: cli job-cancel [OPTIONS] VIDEO_ID
+
+  Cancel a pending video generation job.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly job-resume --help (exit 0) =====
+Usage: cli job-resume [OPTIONS] VIDEO_ID
+
+  Poll a video job to completion and download the video to disk.
+
+  If the job is still running, polls until it completes (or --max-wait is
+  reached). Once a URL is available the video is downloaded to
+  .brandly/<project>/videos/scenes/ — use --no-download to skip saving.
+
+Options:
+  --project-id TEXT   Project to save the video under (default: auto-detect from
+                      project.json)
+  --max-wait INTEGER  Max wait seconds while polling (default: 600)
+  --model TEXT        Agnes video model name used when polling (2.5-flash is the
+                      current default)
+  --no-download       Only report status, do not download the video
+  --help              Show this message and exit.
+
+===== brandly jobs --help (exit 0) =====
+Usage: cli jobs [OPTIONS]
+
+  List recent video generation jobs from the API.
+
+Options:
+  -s, --status TEXT          Filter by status (pending, completed, failed)
+  -n, --limit INTEGER        Max number of jobs to show
+  -o, --output [table|json]
+  --help                     Show this message and exit.
+
+===== brandly list --help (exit 0) =====
+Usage: cli list [OPTIONS]
+
+  List all projects.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly memory --help (exit 0) =====
+Usage: cli memory [OPTIONS] {view|like|dislike|reset} [HOOK]
+
+  View or update user preferences.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly migrate --help (exit 0) =====
+Usage: cli migrate [OPTIONS] PROJECT_ID
+
+  Restructure a project's folders into the v2 layout (issue #43).
+
+  Documents/config stay in .brandly/<project>/; reference plates and storyboards
+  move to pre-production/<project>/; generated clips and audio move to
+  production/<project>/. Move-only: nothing is copied or deleted. Dry-run
+  previews every move; --apply executes and stamps layout_version=2 so all
+  layout-aware commands resolve the new roots.
+
+Options:
+  --apply  Actually move the folders (default: dry-run preview).
+  --help   Show this message and exit.
+
+===== brandly minimax-image --help (exit 0) =====
+Usage: cli minimax-image [OPTIONS] PROMPT
+
+  Generate images using MiniMax API.
+
+Options:
+  --model TEXT               Model ID (image-01 or image-01-live)
+  --ratio TEXT               Aspect ratio (1:1, 16:9, 4:3, 3:2, 2:3, 3:4, 9:16,
+                             21:9)
+  --width INTEGER            Image width in px (512-2048)
+  --height INTEGER           Image height in px (512-2048)
+  -n, --count INTEGER RANGE  Number of images to generate  [1<=x<=9]
+  --subject TEXT             Subject reference image URL for i2i generation
+  --seed INTEGER             Seed for reproducible generations
+  --style TEXT               Art style for image-01-live (e.g. cinematic, anime,
+                             oil-painting)
+  -o, --output [table|json]
+  --help                     Show this message and exit.
+
+===== brandly minimax-jobs --help (exit 0) =====
+Usage: cli minimax-jobs [OPTIONS]
+
+  List recent MiniMax video generation jobs.
+
+Options:
+  --status TEXT              Filter by status (queued, running, succeeded,
+                             failed, cancelled)
+  -n, --limit INTEGER        Max number of jobs to show
+  -o, --output [table|json]
+  --help                     Show this message and exit.
+
+===== brandly minimax-video --help (exit 0) =====
+Usage: cli minimax-video [OPTIONS] PROMPT
+
+  Generate videos using MiniMax API.
+
+Options:
+  --model TEXT               Model (MiniMax-H3 or MiniMax-H3-Max)
+  --resolution TEXT          Resolution (480P, 768P, 2K)
+  --duration INTEGER RANGE   Duration in seconds  [4<=x<=15]
+  --ratio TEXT               Aspect ratio
+  --first-frame TEXT         First frame image URL or local file path
+  --last-frame TEXT          Last frame image URL or local file path
+  --reference-images TEXT    Comma-separated reference image URLs or local file
+                             paths
+  --reference-videos TEXT    Comma-separated reference video URLs
+  --reference-audios TEXT    Comma-separated reference audio URLs
+  --wait                     Wait for completion
+  -o, --output [table|json]
+  --help                     Show this message and exit.
+
+===== brandly model --help (exit 0) =====
+Usage: cli model [OPTIONS] MODEL_ID
+
+  Show detailed info about a specific AI model.
+
+Options:
+  -o, --output [text|json]
+  --help                    Show this message and exit.
+
+===== brandly models --help (exit 0) =====
+Usage: cli models [OPTIONS]
+
+  List all available AI generation models.
+
+Options:
+  -c, --category [image|video|audio|all]
+                                  Filter by category
+  -q, --query TEXT                Search models by name or provider
+  -o, --output [table|json]       Output format
+  --help                          Show this message and exit.
+
+===== brandly music --help (exit 0) =====
+Usage: cli music [OPTIONS]
+
+  Generate background music via MiniMax Audio.
+
+Options:
+  --project-id TEXT       Optional project UUID
+  -p, --prompt TEXT       Music description prompt  [required]
+  --model TEXT            Music generation model (music-3.0, music-2.6)
+  -d, --duration INTEGER  Duration in seconds
+  --instrumental          Instrumental only
+  --lyrics TEXT           Song lyrics (\n separated, max 3500 chars)
+  --help                  Show this message and exit.
+
+===== brandly pause --help (exit 0) =====
+Usage: cli pause [OPTIONS] PROJECT_ID
+
+  Pause a project.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly probe --help (exit 0) =====
+Usage: cli probe [OPTIONS] INPUT
+
+  Analyze a video file's metadata and properties.
+
+Options:
+  -o, --output [table|json]
+  --help                     Show this message and exit.
+
+===== brandly produce --help (exit 0) =====
+Usage: cli produce [OPTIONS] PROJECT_ID
+
+  Generate a multi-shot film shot by shot from the production plan.
+
+  The production plan is the source of truth: ALL shots are first registered on
+  it (docs/plan/production_plan.md), then generation is pulled from the plan one
+  shot at a time — there is deliberately NO batch or parallel mode, honouring
+  the Agnes 1 request/minute rate limit.
+
+  Shots already COMPLETED in the production plan are skipped, so the run is
+  resumable: fix a failed shot and run the same command again.
+
+  A structured shot list ({"acts": ...}), or any of --no-auto-refs / --character
+  / --allow-referenceless / --only / --max, routes the run through the progress-
+  file runner instead: resumable via
+  .brandly/<project>/docs/tmp/produce_progress.txt, per-act prompt prefix and
+  style, plate-stem reference resolution (optimized .opt.jpg twins preferred),
+  character anchoring, transition clips moved to videos/transition/, clips
+  renamed to the deterministic Scene-<scene:02d>-Shot-<scene>-<shot-in-
+  scene>.mp4 convention (scene = act-level/shot-level "scene" key, else the
+  act's position in the shot list), and a post-generation-step failure (quality
+  gate crash) tolerates a downloaded clip.
+
+Options:
+  --shots TEXT           Path to a shot list JSON file. Flat schema: [{"name":
+                         "shot-1", "prompt": "...", "duration": 5, "style":
+                         "cinematic", "references": "a.png,b.png"}, ...].
+                         Structured schema (acts with per-act
+                         prefix/style/folder and plate-stem references):
+                         {"character": "...", "acts": {"act1": {"prefix": "...",
+                         "style": "cinematic", "folder": "scenes", "shots":
+                         [{"id": "shot01", "prompt": "...", "duration": 6,
+                         "refs": ["char_rebel", "loc_ink"]}]}}}  [required]
+  --interval FLOAT       Seconds to wait BETWEEN shot generations (Agnes: 1
+                         request per minute).  [default: 60.0]
+  --no-auto-refs         Do NOT auto-inject project images as references (issue
+                         #20). Each shot's reference payload comes from the shot
+                         list only. Routes the run through the progress-file
+                         runner (docs/tmp/produce_progress.txt).
+  --character TEXT       Character identity anchor passed to every shot whose
+                         references include a character plate. Overrides the
+                         shot list's top-level 'character' string.
+  --allow-referenceless  Bypass the require-reference check for shots without
+                         references.
+  --max-wait INTEGER     Max wait seconds per shot generation.  [default: 600]
+  --only TEXT            Run only this shot id (repeatable). Routes through the
+                         progress-file runner.
+  --max INTEGER          Run at most N shots, then stop. Routes through the
+                         progress-file runner.  [default: 0]
+  --retries INTEGER      On-the-spot retries per failed shot (issue #39). Each
+                         retry waits the retry backoff (default: --interval) and
+                         is logged to the progress file as RETRY retry=N
+                         backoff=Xs <reason>; terminal failures log FAIL with
+                         the attempt count. 0 = fail fast (legacy).  [default:
+                         0]
+  --split-long-shots     Split shots whose duration exceeds the Agnes model max
+                         (12s) into 6s parts with continuity notes, so takes are
+                         no longer silently clamped (issue #35).
+  --aspect-ratio TEXT    Crop every generated clip to this aspect ratio (e.g.
+                         2.39:1) as a post-processing step when the model cannot
+                         output it natively (issue #40). Requires ffmpeg.
+  --no-plan              Do not register runner-path shots on the production
+                         plan (legacy behavior). By default each shot gets a
+                         plan file named with its shot ID (issue #37).
+  --help                 Show this message and exit.
+
+===== brandly progress --help (exit 0) =====
+Usage: cli progress [OPTIONS] PROJECT_ID
+
+  Show detailed progress of a project.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly prompt --help (exit 0) =====
+Usage: cli prompt [OPTIONS]
+
+  Generate a cinematic video prompt for Agnes AI.
+
+Options:
+  -s, --subject TEXT              Main subject (person, product, or object)
+                                  [required]
+  -a, --action TEXT               What the subject does  [required]
+  -e, --environment TEXT          Where the scene takes place  [required]
+  -n, --shots INTEGER             Number of shots (1-6, default: 3)
+  -st, --style [commercial|cinematic|documentary|ugc|luxury|action|lifestyle|montage|multi_shot|continuous|unboxing|brand_short_video|explainer_video|collage_motion_graphic]
+                                  Video style preset
+  -c, --character TEXT            Character description for identity locking
+  -o, --output [text|code]        Output format (default: text)
+  --help                          Show this message and exit.
+
+===== brandly rate-limits --help (exit 0) =====
+Usage: cli rate-limits [OPTIONS]
+
+  Show provider rate limits for Agnes AI and MiniMax.
+
+  Values mirror the official documentation (Agnes Token Plan FAQ + MiniMax rate-
+  limits page). Use these to plan batch / parallel generation.
+
+Options:
+  -o, --output [table|json]
+  --help                     Show this message and exit.
+
+===== brandly record-cost --help (exit 0) =====
+Usage: cli record-cost [OPTIONS] PROJECT_ID PHASE ACTION CREDITS
+
+  Record actual credit spend for a phase operation.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly reference --help (exit 0) =====
+Usage: cli reference [OPTIONS] PROJECT_ID
+
+  Generate the primary reference image for a project.
+
+  The primary reference is a GOLD-grade image that locks the appearance of a key
+  asset (object, character, location, etc.) across all subsequent `brandly
+  video` generations. Should be the FIRST generation step.
+
+  The generated image is saved to .brandly/<project_id>/images/<category>/ (e.g.
+  images/prop/ for objects) with the prefix `reference_<subject_type>_*` and is
+  auto-detected by `brandly video` (auto-injected as the strongest reference
+  image).
+
+Options:
+  --subject-type [object|character|location|vehicle|animal|plant|mecha]
+                                  What kind of asset this reference is (object,
+                                  character, location, etc.)  [required]
+  -s, --subject TEXT              The asset itself, e.g. 'Nike Air Max 1, white
+                                  colorway, visible Air unit'. This is the asset
+                                  that subsequent videos will reference.
+                                  [required]
+  --style-preset [photorealistic|editorial|cinematic|commercial|documentary]
+                                  Style preset (default: commercial — best for
+                                  product references)
+  --size TEXT                     Image size tier (1K, 2K, 3K, 4K)
+  --ratio TEXT                    Aspect ratio (16:9 default; multi-view grid
+                                  for object/character, full-frame for location)
+  --model TEXT                    Agnes image model (2.1-flash default,
+                                  2.0-flash for higher quality)
+  --gate / --no-gate              Run the quality gate (AI check) on the
+                                  generated sheet (default: on)
+  --image TEXT                    Import an existing local image file as the
+                                  project's primary reference instead of
+                                  generating one (issue #23: adopt client-
+                                  supplied plates without spending credits).
+  --no-generate                   With --image: skip generation entirely and
+                                  just register the file.
+  --format [jpg|png]              Standardized reference format (issue #41): the
+                                  plate is converted to this format and
+                                  duplicate twins (same stem, other extension)
+                                  in the category folder are removed. A
+                                  resolution sanity warning is printed for
+                                  plates smaller than 512px on the short side.
+                                  [default: jpg]
+  --help                          Show this message and exit.
+
+===== brandly report --help (exit 0) =====
+Usage: cli report [OPTIONS]
+
+  Report a bug or feature request to the GitHub issues tracker.
+
+  Prints a preview of the issue body and asks for confirmation before submitting
+  — unless --auto is passed (or auto-consent was previously granted via a prior
+  interactive report).
+
+Options:
+  -e, --error TEXT    Error message to report (otherwise interactive prompt)
+  -p, --project TEXT  Project ID to attach context to
+  --root TEXT         Brandly root directory
+  --dry-run           Show issue body without submitting
+  --auto              Submit without asking (requires prior consent or
+                      GITHUB_TOKEN)
+  --help              Show this message and exit.
+
+===== brandly resize --help (exit 0) =====
+Usage: cli resize [OPTIONS] INPUT OUTPUT
+
+  Resize a video to given dimensions or aspect ratio.
+
+Options:
+  --width INTEGER   Target width in pixels
+  --height INTEGER  Target height in pixels
+  --aspect TEXT     Aspect ratio (16:9, 9:16, 1:1, 4:3)
+  --codec TEXT      Video codec
+  --help            Show this message and exit.
+
+===== brandly resume --help (exit 0) =====
+Usage: cli resume [OPTIONS] PROJECT_ID
+
+  Resume a paused project.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly run --help (exit 0) =====
+Usage: cli run [OPTIONS] PROJECT_ID
+
+  Run the next phase of the pipeline.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly share --help (exit 0) =====
+Usage: cli share [OPTIONS] FILE_PATH
+
+  Upload file to cloud for sharing.
+
+Options:
+  --provider TEXT  Share provider (local, s3)
+  --root TEXT      Working directory
+  --help           Show this message and exit.
+
+===== brandly speed --help (exit 0) =====
+Usage: cli speed [OPTIONS] INPUT OUTPUT SPEED
+
+  Change video playback speed.
+
+Options:
+  --codec TEXT
+  --help        Show this message and exit.
+
+===== brandly status --help (exit 0) =====
+Usage: cli status [OPTIONS] PROJECT_ID
+
+  Show project status and phase progress.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly stitch --help (exit 0) =====
+Usage: cli stitch [OPTIONS] CLIPS... OUTPUT
+
+  Stitch multiple video clips with transitions and color grading.
+
+Options:
+  --transition TEXT            Transition type (fade, dissolve, wipe, slide)
+  --transition-duration FLOAT  Transition duration in seconds
+  --color-grade TEXT           Color grade (cinematic, warm, cool, desaturated,
+                               none)
+  --root TEXT                  Working directory
+  --help                       Show this message and exit.
+
+===== brandly storyboard --help (exit 0) =====
+Usage: cli storyboard [OPTIONS] PROJECT_ID
+
+  Generate storyboard keyframes for each shot before spending video credits.
+
+  Pipeline (issue #33): Reference Import → Storyboard (1-2 credits) → Gate →
+  Video Generation (20 credits) → Gate. A keyframe that fails the offline
+  composition check is flagged so composition/character errors are caught at
+  image cost, not video cost. Approved keyframes are stored under
+  .brandly/<project>/images/storyboard/ with the canonical Scene-XX-Shot-X-Y
+  name and can be re-used as references for the video pass. The run is
+  resumable: an approved keyframe skips regeneration
+  (.brandly/<project>/docs/tmp/storyboard_progress.txt).
+
+Options:
+  --shots TEXT      Path to the shot list JSON used for the production run.
+                    [required]
+  --only TEXT       Generate keyframes for only this shot id (repeatable).
+  --model TEXT      Agnes image model for keyframe generation (1-2 credits
+                    each).  [default: agnes-image-2.5-flash]
+  --interval FLOAT  Seconds between image generations (Agnes 1 request/min).
+                    [default: 60.0]
+  --no-gate         Skip the offline composition pre-check (blank/undecodable
+                    frames).
+  --character TEXT  Character identity anchor (same semantics as brandly
+                    produce).
+  --help            Show this message and exit.
+
+===== brandly sync --help (exit 0) =====
+Usage: cli sync [OPTIONS]
+
+  Auto-detect AI-tool configs and write Brandly API keys into them.
+
+  Reads AGNES_API_KEY and MINIMAX_API_KEY from the current environment, then
+  writes them into the configuration files of supported AI tools so they can use
+  Agnes AI (image/video) and MiniMax (audio) directly.
+
+  Supported tools: qwen, claude, gemini, codex, pi, opencode
+
+Options:
+  --tools TEXT  Comma-separated tool names to sync (default: all detected)
+  --dry-run     Show what would be synced without writing
+  --help        Show this message and exit.
+
+===== brandly template --help (exit 0) =====
+Usage: cli template [OPTIONS] NAME
+
+  Create or manage project templates.
+
+Options:
+  --style TEXT        Style preset
+  --shots INTEGER     Number of shots
+  --duration INTEGER  Duration in seconds
+  --budget INTEGER    Budget in credits
+  --platforms TEXT    Target platforms
+  --save              Save as custom template
+  --root TEXT         Working directory
+  --help              Show this message and exit.
+
+===== brandly template-list --help (exit 0) =====
+Usage: cli template-list [OPTIONS]
+
+  List available templates.
+
+Options:
+  --root TEXT  Working directory
+  --help       Show this message and exit.
+
+===== brandly thumbnail --help (exit 0) =====
+Usage: cli thumbnail [OPTIONS] PROJECT_ID
+
+  Generate thumbnails from project video.
+
+Options:
+  --count INTEGER  Number of thumbnails to generate
+  --style TEXT     Style preset (commercial, minimal, bold)
+  --root TEXT      Working directory
+  --help           Show this message and exit.
+
+===== brandly trend --help (exit 0) =====
+Usage: cli trend [OPTIONS] [CATEGORY]
+
+  Research trending video formats.
+
+Options:
+  --platforms TEXT  Filter by platforms
+  --json            Output as JSON
+  --help            Show this message and exit.
+
+===== brandly tts --help (exit 0) =====
+Usage: cli tts [OPTIONS] TEXT
+
+  Generate voiceover via MiniMax TTS.
+
+Options:
+  --project-id TEXT      Optional project UUID
+  --model TEXT           TTS model
+  --voice-id TEXT        Voice ID (e.g. English_Insightful_Speaker)
+  --speed FLOAT          Speech speed (0.5–2.0)
+  --vol FLOAT            Volume (0.1-2.0)
+  --pitch INTEGER RANGE  Pitch shift in semitones (-12 to 12)  [-12<=x<=12]
+  --emotion TEXT         Emotion tag: happy, sad, angry, fearful, neutral
+  --help                 Show this message and exit.
+
+===== brandly validate --help (exit 0) =====
+Usage: cli validate [OPTIONS] PROJECT_ID
+
+  Run virality validation on a finished video.
+
+Options:
+  --video-path TEXT  Path to rendered video
+  --help             Show this message and exit.
+
+===== brandly version --help (exit 0) =====
+Usage: cli version [OPTIONS]
+
+  Show version information.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly video --help (exit 0) =====
+Usage: cli video [OPTIONS] PROJECT_ID
+
+  Generate an AI video via Agnes AI.
+
+  For best results, the project should have a primary reference image generated
+  first via `brandly reference`. The reference is auto-injected as the FIRST
+  reference image (strongest influence). Use --require-reference to fail if the
+  reference is missing.
+
+  By default the command polls until generation completes and downloads the
+  video to .brandly/<project>/videos/scenes/ (disable with --no-wait).
+
+  Mode is auto-inferred unless --mode is given explicitly: text (no image
+  inputs) → reference (reference images provided) → keyframe (start/end frame
+  provided).
+
+Options:
+  -p, --prompt TEXT               Video generation prompt  [required]
+  --model TEXT                    Agnes video model (2.5-flash is the current
+                                  default; 720P, 4-12s)
+  --style [commercial|cinematic|documentary|ugc|luxury|action|lifestyle|montage|multi_shot|continuous|unboxing|brand_short_video|explainer_video|collage_motion_graphic]
+                                  Video style preset for consistent output
+  --mode [auto|text|keyframe|reference]
+                                  Generation mode. 'auto' (default) infers it:
+                                  keyframe when a start/end frame is provided,
+                                  reference when reference images are provided,
+                                  text otherwise.
+  -d, --duration INTEGER          Duration in seconds (default: 10)
+  --aspect-ratio TEXT             Aspect ratio
+  --first-frame TEXT              Start frame image URL or local file path
+                                  (keyframe mode)
+  --last-frame TEXT               End frame image URL or local file path
+                                  (keyframe mode)
+  -r, --reference-images TEXT     Comma-separated image URLs or local file paths
+                                  for character/object consistency (reference
+                                  mode)
+  -c, --character TEXT            Character description for identity locking
+                                  (e.g. 'woman in red dress, blonde hair')
+  --wait / --no-wait              Poll until generation completes and download
+                                  the video to disk (default: on)
+  --max-wait INTEGER              Max wait seconds (default: 600)
+  --require-reference / --no-require-reference
+                                  If set, fail when project has no primary
+                                  reference image.
+  --allow-referenceless           Bypass the require-reference check (escape
+                                  hatch for re-runs/edge cases).
+  --gate / --no-gate              Run the quality gate on the generated video
+                                  (default: on)
+  --reference-audios TEXT         Comma-separated reference audio URLs
+                                  (reference mode)
+  --no-auto-refs                  Do NOT auto-inject every project image as a
+                                  reference (issue #20: prevents payload bloat
+                                  and style bleed between visual worlds).
+  --scene INTEGER                 Scene number for the deterministic clip name
+                                  (Scene-<scene:02d>-Shot-<scene>-<shot>.mp4).
+                                  Needs --shot.
+  --shot INTEGER                  Shot number inside --scene (the trailing
+                                  number of the clip name).
+  --auto-ref-category TEXT        Scope auto-injected references to one image
+                                  category (e.g. 'prop', 'character',
+                                  'location') instead of all images.
+  --help                          Show this message and exit.
+
+===== brandly voice-match --help (exit 0) =====
+Usage: cli voice-match [OPTIONS] VIDEO_PATH
+
+  Dub a video to a target language.
+
+Options:
+  --source TEXT       Source language code
+  --target TEXT       Target language code (en, es, fr, de, ja, ko, zh, pt, ar,
+                      hi)  [required]
+  --voice-style TEXT  Voice style
+  --output TEXT       Output path
+  --root TEXT         Working directory
+  --help              Show this message and exit.
+
+===== brandly voices --help (exit 0) =====
+Usage: cli voices [OPTIONS]
+
+  List available TTS voices.
+
+Options:
+  --help  Show this message and exit.
+
+===== brandly webhook --help (exit 0) =====
+Usage: cli webhook [OPTIONS]
+
+  Start webhook server for CI/CD integration.
+
+Options:
+  --host TEXT     Host address
+  --port INTEGER  Port number
+  --help          Show this message and exit.

@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased] — structural refactors (version stays 0.3.17; CLI surface unchanged)
+
+### Changed — PR A: `cmd/` split (structural 10/10, P0-1)
+- `cli.py` demoted to a thin registration module: command bodies live in
+  `brandly_cli/cmd/{production,generation,gate,post,providers,tools}.py`,
+  each with a `register(cli)` entry point; `cli.py` keeps the root group,
+  shared helpers and the `register()` call (1,202 → 784 lines).
+- Reference-sheet prompt templates moved from `cli.py` to
+  `brandly_cli/reference_prompts.py` (re-exported by `cli.py` for
+  compatibility with the cmd modules).
+- All 64 command `--help` texts verified byte-identical before/after
+  (snapshot in `dev-notes/_cli_snapshot_before.txt` vs `_after.txt`).
+
+### Changed — PR B: director demotion + provider hygiene (P0-2, P1-3, P1-4)
+- `brandly_cli/director.py` is now a pure prompt composer (fan-out 0):
+  `DIRECTOR_PROMPT` + `get_director_prompt()`. The `Director` / `DirectorConfig`
+  orchestrator classes moved to `brandly_cli/cmd/production.py` (the caller
+  layer that owns provider/state calls). **Import note:**
+  `from brandly_cli.director import Director` →
+  `from brandly_cli.cmd.production import Director`.
+- Providers (`agnes_client`, `ark_client`) no longer import the prompting
+  layer: style-preset application moved to the callers (`cmd/generation.py`
+  video, `cmd/production.py` batch, `cmd/providers.py` ark commands).
+  The `style_preset` keyword was removed from `agnes_client.generate_image` /
+  `create_video_task` and `ark_client.generate_image`; the Ark video task's
+  previously hard-coded "cinematic" preset is now applied explicitly by the
+  callers (behavior preserved). Unit tests updated from provider-side to
+  caller-side assertions.
+- `agent_tools ⇄ agnes_client` import cycle broken via new
+  `brandly_cli/job_polling.py` (shared tool-result serialization, `to_json`
+  — re-exported from `agent_tools`). Static graph: zero hard cycles, zero
+  upward provider→prompting edges (`python scripts/import_graph.py`).
+
 ## [0.3.17] — 2026-09-22
 
 ### Added — production-pipeline issues #31–#43 (PR #44)

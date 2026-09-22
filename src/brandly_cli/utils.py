@@ -10,6 +10,10 @@ from typing import Any
 
 from brandly_cli import layout
 
+#: Directory of the installed brandly_cli package — pip installs carry the
+#: bundled skills here even without a repo-level ``skills/`` folder.
+__package_dir__ = Path(__file__).resolve().parent
+
 
 def generate_project_id() -> str:
     """Generate a human-readable project ID from slug + timestamp.
@@ -251,6 +255,9 @@ def write_generation_plan(
     style: str,
     extra_config: dict[str, Any] | None = None,
     source: str = "",
+    shot_id: str | None = None,
+    scene: int | None = None,
+    act: str | None = None,
 ) -> tuple[Path, bool]:
     """Write a generation plan BEFORE attempting API calls.
 
@@ -259,7 +266,12 @@ def write_generation_plan(
     generation. A new plan is only created when something in the
     configuration (asset type, prompt, model, style, extra config) changed.
 
-    Creates: {root}/.brandly/{id}/docs/plan/plan_{asset_type}_{timestamp}.md
+    Creates: {root}/.brandly/{id}/docs/plan/plan_{asset_type}[_{shot_id}]_{timestamp}.md
+
+    When ``shot_id`` is given it is embedded in the file name and recorded
+    in the plan metadata + production plan table (issue #37), so a reviewer
+    can match a plan file to its shot without reading the file. ``scene``
+    and ``act`` are recorded as plan metadata when provided.
 
     This ensures we have a record of what we INTENDED to generate,
     even if the API call fails. Every plan is registered in the production
@@ -281,7 +293,13 @@ def write_generation_plan(
     )
     plan_dir.mkdir(parents=True, exist_ok=True)
 
-    config = extra_config or {}
+    config = dict(extra_config or {})
+    if shot_id:
+        config["Shot ID"] = str(shot_id)
+    if scene is not None:
+        config["Scene"] = str(scene)
+    if act:
+        config["Act"] = str(act)
     signature = _plan_signature(asset_type, prompt, model, style, config)
 
     # Reuse an existing plan when nothing changed (retry after failure)
@@ -310,21 +328,32 @@ def write_generation_plan(
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
+    # Issue #37: shot-id plans are named plan_{asset_type}_{shot_id}_{ts}.md
+    name_tag = f"{asset_type}_{sanitize_filename(str(shot_id))}" if shot_id else asset_type
+
     md_content = f"""# Generation Plan: {asset_type.title()}
 
 {marker}
 **Project:** {project_id}
 **Planned:** {datetime_iso()}
 **Status:** PENDING
-
-## Configuration
-
-| Parameter | Value |
-|-----------|-------|
-| Model | {model} |
-| Style | {style} |
-| Asset Type | {asset_type} |
 """
+    if shot_id:
+        md_content += f"**Shot ID:** {shot_id}\n"
+    if scene is not None:
+        md_content += f"**Scene:** {scene}\n"
+    if act:
+        md_content += f"**Act:** {act}\n"
+    md_content += "\n"
+
+    md_content += "## Configuration\n\n"
+    md_content += (
+        "| Parameter | Value |\n"
+        "|-----------|-------|\n"
+        f"| Model | {model} |\n"
+        f"| Style | {style} |\n"
+        f"| Asset Type | {asset_type} |\n"
+    )
 
     # Add extra config
     for key, value in config.items():
@@ -344,12 +373,12 @@ def write_generation_plan(
 - Use this to track generation intent vs actual output
 """
 
-    plan_path = plan_dir / f"plan_{asset_type}_{ts}.md"
+    plan_path = plan_dir / f"plan_{name_tag}_{ts}.md"
     if plan_path.exists():
         # A different config was written within the same second — use a
         # disambiguated filename so both plans survive.
         for i in range(2, 100):
-            candidate = plan_dir / f"plan_{asset_type}_{ts}_{i}.md"
+            candidate = plan_dir / f"plan_{name_tag}_{ts}_{i}.md"
             if not candidate.exists():
                 plan_path = candidate
                 break
@@ -363,6 +392,7 @@ def write_generation_plan(
         model=model,
         status="PENDING",
         source=source,
+        shot_id=str(shot_id) if shot_id else "",
     )
 
     return plan_path, False
@@ -385,7 +415,11 @@ def production_plan_path(project_id: str, *, root: Path | None = None) -> Path:
 
 
 def _read_production_plan_rows(path: Path) -> dict[str, dict[str, str]]:
-    """Parse the production plan table into ``{plan_filename: {col: value}}``."""
+    """Parse the production plan table into ``{plan_filename: {col: value}}``.
+
+    Handles both the legacy 7-column table and the current 8-column table
+    (with a ``Shot ID`` column, issue #37).
+    """
     rows: dict[str, dict[str, str]] = {}
     if not path.exists():
         return rows
@@ -396,16 +430,33 @@ def _read_production_plan_rows(path: Path) -> dict[str, dict[str, str]]:
         ):
             continue
         cells = [c.strip() for c in line.strip("|").split("|")]
-        if len(cells) < 7 or cells[0] in ("Plan", ""):
+        if cells[0] in ("Plan", ""):
             continue
-        rows[cells[0]] = {
-            "asset": cells[1],
-            "model": cells[2],
-            "source": cells[3],
-            "status": cells[4],
-            "created": cells[5],
-            "updated": cells[6],
-        }
+        if len(cells) == 8:
+            # | Plan | Asset | Shot ID | Model | Source | Status | Created | Updated |
+            if len(cells) < 8:
+                continue
+            rows[cells[0]] = {
+                "asset": cells[1],
+                "shot_id": cells[2],
+                "model": cells[3],
+                "source": cells[4],
+                "status": cells[5],
+                "created": cells[6],
+                "updated": cells[7],
+            }
+        elif len(cells) == 7:
+            rows[cells[0]] = {
+                "asset": cells[1],
+                "shot_id": "",
+                "model": cells[2],
+                "source": cells[3],
+                "status": cells[4],
+                "created": cells[5],
+                "updated": cells[6],
+            }
+        else:
+            continue
     return rows
 
 
@@ -418,13 +469,13 @@ def _write_production_plan(
         "Single source of truth for every generation plan in this project.",
         "Each row records where the plan came from (source command) and its status.",
         "",
-        "| Plan | Asset | Model | Source | Status | Created | Updated |",
-        "|------|-------|-------|--------|--------|---------|---------|",
+        "| Plan | Asset | Shot ID | Model | Source | Status | Created | Updated |",
+        "|------|-------|---------|-------|--------|--------|---------|---------|",
     ]
     for name in sorted(rows):
         r = rows[name]
         lines.append(
-            f"| {name} | {r['asset']} | {r['model']} | {r['source']} "
+            f"| {name} | {r['asset']} | {r.get('shot_id', '—') or '—'} | {r['model']} | {r['source']} "
             f"| {r['status']} | {r['created']} | {r['updated']} |"
         )
     lines.append("")
@@ -441,12 +492,15 @@ def upsert_production_plan(
     model: str,
     status: str,
     source: str = "",
+    shot_id: str = "",
 ) -> Path:
     """Register/update one plan in the production plan document.
 
     The production plan (``docs/plan/production_plan.md``) is the single
     source of truth for where each generation plan came from. Rows are
     keyed by plan filename; existing rows keep their creation time.
+    ``shot_id`` (issue #37) identifies which shot a video plan belongs to,
+    so a reviewer can match plan files to shots without opening them.
     """
     path = production_plan_path(project_id, root=root)
     rows = _read_production_plan_rows(path)
@@ -455,6 +509,7 @@ def upsert_production_plan(
     now = datetime_iso()
     rows[key] = {
         "asset": asset_type,
+        "shot_id": shot_id or prev.get("shot_id", ""),
         "model": model,
         "source": source or prev.get("source", "—"),
         "status": status,
@@ -605,18 +660,24 @@ def _update_plans(
 
 
 def find_skills_directory(root: Path | None = None) -> Path:
-    """Find the skills directory in the project.
+    """Find the skills directory.
 
-    Checks multiple locations:
-    1. ./skills/ (project-local)
-    2. ~/.qwen/skills/ (user-level)
-    3. ~/.agents/skills/ (agents directory)
+    Checks multiple locations, in priority order:
+    1. ./skills/ (project-local — wins so users can override/extend)
+    2. <root>/skills/ (explicit root)
+    3. ~/.qwen/skills/ (user-level)
+    4. ~/.agents/skills/ (agents directory)
+    5. the skills shipped inside the installed brandly-cli package
+       (pip installs carry no repo-level ``skills/`` folder)
+
+    Falls back to ``./skills`` (which may not exist) when nothing matches.
     """
     candidates = [
         Path("./skills"),
         Path(root / "skills") if root else Path("./skills"),
         Path.home() / ".qwen" / "skills",
         Path.home() / ".agents" / "skills",
+        __package_dir__ / "skills",
     ]
     for candidate in candidates:
         if candidate.exists() and candidate.is_dir():

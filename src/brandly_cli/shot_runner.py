@@ -27,6 +27,29 @@ resolved under ``.brandly/<project>/images/<category>/<stem>`` (categories:
 ``character``, ``location``, ``prop``), preferring the optimized
 ``<stem>.opt.jpg`` twin over the full-size original.
 
+Structured prompts (issue #31)
+-------------------------------
+A shot's ``prompt`` may be a plain string OR a dict using the 8-layer film
+direction framework (``subject, emotion, optics, motion, lighting, style,
+audio, continuity``). Dict prompts are expanded via
+``video_prompts.expand_structured_prompt``; unknown keys fail loudly at
+flatten time.
+
+Character presence (issue #38)
+-------------------------------
+Per-shot ``character`` (string or comma-separated) or ``characters`` (list)
+declare which characters are PRESENT in the shot; only those appear in the
+identity anchor. Shots without an explicit presence declaration fall back to
+the top-level character string when they reference a character plate.
+
+Retry/backoff logging (issue #39)
+---------------------------------
+When ``RunnerConfig.retries`` > 0, a failing shot is retried on the spot:
+intermediate failures log ``RETRY retry=N backoff=Xs <reason>``, the
+terminal failure logs ``FAIL retry=N <reason>``, and a successful retry logs
+``OK retry=N``. ``completed_ids`` only trusts ``OK`` lines, so resume
+behavior is unchanged.
+
 Transition shots (``folder: "transition"``) have their generated clips
 moved from ``videos/scenes/`` to ``videos/transition/`` so assembly
 tooling can address them separately.
@@ -48,9 +71,14 @@ scene/shot.
 from __future__ import annotations
 
 import json
+import math
+import os
+import shutil
+import subprocess
+import tempfile
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -60,6 +88,12 @@ _PLATE_SUFFIXES = (".opt.jpg", ".opt.png", ".jpg", ".jpeg", ".png")
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp")
 DEFAULT_INTERVAL = 60.0  # Agnes: 1 request per minute
 PROGRESS_FILENAME = "produce_progress.txt"  # under <project>/docs/tmp/
+
+#: Agnes video models silently clamp shots longer than this (issue #35):
+#: the model max is 12s; plans requesting 8-12s come back as ~5-6s takes.
+AGNES_MAX_SHOT_DURATION = 12
+#: Default segment length when splitting over-long shots.
+SPLIT_SEGMENT_DURATION = 6
 
 
 def utcnow() -> str:
@@ -222,17 +256,41 @@ def flatten_shots(
                     if path.parent.name == "character":
                         has_character_plate = True
             character_anchor: str | None = None
-            if shot.get("character"):
+            # Issue #38: presence-declared characters win — only those that
+            # are actually in the shot go into the identity anchor.
+            present = shot.get("characters")
+            if isinstance(present, str):
+                present = [p for p in (c.strip() for c in present.split(",")) if p]
+            if isinstance(present, (list, tuple)) and present:
+                character_anchor = ", ".join(str(c) for c in present)
+            elif shot.get("character"):
                 character_anchor = str(shot["character"])
             elif has_character_plate and global_character:
                 character_anchor = str(global_character)
+
+            # Issue #31: structured 8-layer prompt dicts expand to text here.
+            raw_prompt = shot.get("prompt", "")
+            if isinstance(raw_prompt, Mapping):
+                from brandly_cli.video_prompts import expand_structured_prompt
+
+                try:
+                    raw_prompt = expand_structured_prompt(
+                        raw_prompt,
+                        character=character_anchor,
+                        duration=int(shot.get("duration", 5)),
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        f"shot {shot_id!r}: {exc}"
+                    ) from exc
+
             shots.append(
                 Shot(
                     id=shot_id,
                     act=act_name,
                     style=str(shot.get("style", default_style)),
                     folder=str(shot.get("folder", default_folder)),
-                    prompt=prefix + str(shot.get("prompt", "")),
+                    prompt=prefix + str(raw_prompt),
                     duration=int(shot.get("duration", 5)),
                     refs=refs,
                     character=character_anchor,
@@ -261,9 +319,9 @@ class ProgressLog:
     def completed_ids(self, known: Iterable[str]) -> set[str]:
         """Shot ids already recorded as terminal (``OK``) in the progress file.
 
-        Lines are ``<ts> <shot-id> <OK|FAIL> exit=<n> [note]``; only the
-        shot-id field followed by the status field is trusted, so free-text
-        notes can never accidentally mark a shot complete.
+        Lines are ``<ts> <shot-id> <OK|RETRY|FAIL> exit=<n> [retry=N] [note]``;
+        only the shot-id field followed by the status field is trusted, so
+        free-text notes can never accidentally mark a shot complete.
         """
         if not self.path.is_file():
             return set()
@@ -275,10 +333,30 @@ class ProgressLog:
                 done.add(parts[1])
         return done
 
-    def record(self, shot_id: str, status: str, exit_code: int | None, note: str = "") -> None:
+    def record(
+        self,
+        shot_id: str,
+        status: str,
+        exit_code: int | None,
+        note: str = "",
+        retry: int = 0,
+        backoff: float = 0.0,
+    ) -> None:
+        """Append one line: ``<ts> <id> <status> exit=<n> [retry=N backoff=Xs] [note]``.
+
+        ``RETRY`` marks an intermediate failure that will be retried; ``FAIL``
+        marks a terminal failure (after all retries). Both carry the retry
+        count, backoff delay, and failure reason so a reader of the log can
+        reconstruct exactly what happened between two lines (issue #39).
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        extras = ""
+        if retry > 0:
+            extras = f" retry={retry}"
+            if backoff > 0:
+                extras += f" backoff={backoff:.0f}s"
         with self.path.open("a", encoding="utf-8") as fh:
-            fh.write(f"{utcnow()} {shot_id} {status} exit={exit_code}{note}\n")
+            fh.write(f"{utcnow()} {shot_id} {status} exit={exit_code}{extras}{note}\n")
 
 
 @dataclass
@@ -296,6 +374,20 @@ class RunnerConfig:
     only: set[str] | None = None
     max_shots: int = 0
     say: Callable[[str], None] = lambda _msg: None
+    retries: int = 0
+    """On-the-spot retries per shot (issue #39). ``0`` = fail fast (legacy).
+    Each retry is preceded by a ``retry_backoff``-second wait and logged as a
+    ``RETRY`` line carrying the attempt count, backoff and failure reason."""
+    retry_backoff: float = 0.0
+    """Seconds to wait between retries of the same shot. Defaults to the
+    shot ``interval`` (Agnes 1 request/minute) when left at ``0``."""
+    on_shot_done: Callable[[Shot, bool], None] | None = None
+    """Called after each shot's terminal result as ``(shot, ok)`` — used to
+    update production-plan rows and project.json (issues #36/#37). A hook
+    exception is reported but never aborts the run."""
+    aspect_ratio: str | None = None
+    """Target aspect ratio (e.g. ``"2.39:1"``). When set, every freshly
+    generated clip is cropped to it after naming (issue #40)."""
 
     def move_shot_clips(self, shot: Shot, new_clips: Sequence[Path]) -> list[Path]:
         """After generating ``shot``, relocate its clips when the shot is a
@@ -313,6 +405,118 @@ class RunnerConfig:
             self.say(f"moved transition clip -> {target}")
             moved.append(target)
         return moved
+
+
+def split_long_shots(
+    shots: list[Shot],
+    max_duration: int = AGNES_MAX_SHOT_DURATION,
+    segment: int = SPLIT_SEGMENT_DURATION,
+) -> list[Shot]:
+    """Split shots longer than one segment into uniform parts (issue #35).
+
+    In production, Agnes clamps every shot down to ~5-6s no matter what the
+    plan requested (8-12s takes came back at 5-6s while burning full
+    credits). Shots longer than a single ``segment`` are therefore sliced
+    into ``n = ceil(duration / segment)`` uniform parts (a 12s shot → two
+    6s parts, a 7s shot → 4+3), each carrying a ``[CONTINUITY]`` note so the
+    model knows which slice of the action it owns. Scene/act/style/folder/
+    references are preserved; only parts longer than ``max_duration`` are
+    additionally rejected upstream by the plan-time warning.
+    """
+    out: list[Shot] = []
+    for shot in shots:
+        if shot.duration <= segment:
+            out.append(shot)
+            continue
+        n = max(1, math.ceil(shot.duration / segment))
+        base = math.ceil(shot.duration / n)
+        for k in range(1, n + 1):
+            part_len = base if k < n else shot.duration - base * (n - 1)
+            part = replace(
+                shot,
+                id=f"{shot.id}-p{k}",
+                duration=max(1, part_len),
+            )
+            part = replace(
+                part,
+                prompt=(
+                    f"{shot.prompt}\n"
+                    f"[CONTINUITY] This take is part {k} of {n} of a longer shot "
+                    f"({shot.duration}s total). Cover only this slice of the action."
+                ),
+            )
+            out.append(part)
+    return out
+
+
+def apply_aspect_ratio(
+    clip: Path, target: str, say: Callable[[str], None] | None = None
+) -> bool:
+    """Crop a generated clip to the target aspect ratio (issue #40).
+
+    ``target`` accepts ``"2.39:1"``, ``"16:9"`` or a bare ratio like
+    ``"2.39"``. Source clips wider than the target are center-cropped
+    vertically; narrower ones are center-cropped horizontally. Without
+    ffmpeg the clip is left untouched and a warning is reported.
+    """
+    if not clip.is_file():
+        return False
+    try:
+        if ":" in target:
+            w_s, h_s = target.split(":", 1)
+            ratio = float(w_s) / float(h_s)
+        else:
+            ratio = float(target)
+        if ratio <= 0:
+            raise ValueError
+    except ValueError:
+        if say:
+            say(f"ignoring --aspect-ratio: cannot parse {target!r}")
+        return False
+
+    if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        if say:
+            say(f"--aspect-ratio skipped for {clip.name}: ffmpeg not available")
+        return False
+
+    probe = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height", "-of", "csv=p=0", str(clip),
+        ],
+        capture_output=True, text=True, timeout=30,
+    )
+    parts = (probe.stdout or "").split(",")
+    if len(parts) < 2:
+        if say:
+            say(f"--aspect-ratio skipped for {clip.name}: could not probe dimensions")
+        return False
+    w, h = int(parts[0]), int(parts[1])
+    if w <= 0 or h <= 0:
+        return False
+    source_ratio = w / h
+    if abs(source_ratio - ratio) / ratio < 0.02:
+        return True  # already at target — nothing to do
+    if source_ratio > ratio:
+        vfilter = f"crop=iw:2*trunc(iw/{ratio}/2)"
+    else:
+        vfilter = f"crop=2*trunc(ih*{ratio}/2):ih"
+    fd, tmp_name = tempfile.mkstemp(suffix=".mp4", dir=str(clip.parent))
+    os.close(fd)
+    cmd = [
+        "ffmpeg", "-y", "-i", str(clip), "-vf", vfilter,
+        "-c:v", "libx264", "-crf", "16", "-c:a", "copy", tmp_name,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if result.returncode != 0:
+        Path(tmp_name).unlink(missing_ok=True)
+        if say:
+            say(f"--aspect-ratio crop failed for {clip.name}: {result.stderr.strip()[:200]}")
+        return False
+    Path(tmp_name).replace(clip)
+    if say:
+        say(f"cropped {clip.name} to {target}")
+    return True
 
 
 def name_clips(
@@ -391,36 +595,80 @@ def run_shots(config: RunnerConfig) -> int:
 
     config.say(f"pending: {len(pending)} of {len(shots)} shots (done: {len(done)})")
     scenes = config.scenes_dir
+    backoff = config.retry_backoff or config.interval
+    max_attempts = 1 + max(config.retries, 0)
     for i, shot in enumerate(pending):
         if i > 0:
             config.say(
                 f"rate limit: waiting {config.interval:.0f}s before {shot.id}..."
             )
             time.sleep(config.interval)
-        before = _clip_snapshot(scenes)
-        succeeded, exit_code, note = config.generate_one(shot)
-        new_clips = _new_clips(scenes, before)
-        ok = succeeded or bool(new_clips)
-        if ok and not succeeded:
-            note = (note + " " if note else "") + "(clip downloaded; post-gen step failed)"
-        config.progress.record(
-            shot.id,
-            "OK" if ok else "FAIL",
-            exit_code,
-            f" {note}" if note and ok else "",
-        )
-        config.say(f"{shot.id} {'OK' if ok else 'FAIL'} exit={exit_code}" + (f" {note}" if note and ok else ""))
-        if ok:
-            # Deterministic Scene-XX-Shot-X-Y name, then any transition move.
-            config.move_shot_clips(shot, name_clips(shot, new_clips, config.say))
-        else:
+        for attempt in range(1, max_attempts + 1):
+            before = _clip_snapshot(scenes)
+            succeeded, exit_code, note = config.generate_one(shot)
+            new_clips = _new_clips(scenes, before)
+            ok = succeeded or bool(new_clips)
+            if ok and not succeeded:
+                note = (note + " " if note else "") + "(clip downloaded; post-gen step failed)"
+            if ok:
+                retries_used = attempt - 1
+                # Final OK line: retry count only when a retry actually happened.
+                config.progress.record(
+                    shot.id, "OK", exit_code, f" {note}" if note and retries_used == 0 else "", retry=retries_used,
+                )
+                config.say(
+                    f"{shot.id} OK exit={exit_code}" + (f" (retry {retries_used})" if retries_used else "")
+                )
+                # Deterministic Scene-XX-Shot-X-Y name, then any transition move.
+                moved = config.move_shot_clips(shot, name_clips(shot, new_clips, config.say))
+                if config.aspect_ratio:
+                    targets = moved or _shot_clips(config.scenes_dir, shot)
+                    for clip in targets:
+                        apply_aspect_ratio(clip, config.aspect_ratio, config.say)
+                _fire_hook(config, shot, True)
+                break
+            if attempt < max_attempts:
+                reason = f" {note}" if note else ""
+                config.progress.record(
+                    shot.id, "RETRY", exit_code, reason, retry=attempt, backoff=backoff,
+                )
+                config.say(
+                    f"{shot.id} RETRY {attempt}/{config.retries} exit={exit_code}{reason} — "
+                    f"backoff {backoff:.0f}s"
+                )
+                time.sleep(backoff)
+                continue
+            # Terminal failure after all attempts.
+            reason = f" {note}" if note else ""
+            config.progress.record(
+                shot.id, "FAIL", exit_code, reason, retry=attempt - 1,
+            )
+            config.say(f"{shot.id} FAIL exit={exit_code}{reason}")
+            _fire_hook(config, shot, False)
             config.say(
-                f"STOP: {shot.id} failed. Fix and re-run to resume "
-                f"(remaining shots stay pending)."
+                f"STOP: {shot.id} failed after {max_attempts} attempt(s). Fix and "
+                f"re-run to resume (remaining shots stay pending)."
             )
             return 1
     config.say("all pending shots complete")
     return 0
+
+
+def _shot_clips(scenes: Path, shot: Shot) -> list[Path]:
+    """Canonical clip files for a shot (primary take + -2/-3 extras)."""
+    stem = Path(shot.clip_name).stem
+    found = list(scenes.glob(f"{stem}*.mp4")) if scenes.is_dir() else []
+    return sorted(found)
+
+
+def _fire_hook(config: RunnerConfig, shot: Shot, ok: bool) -> None:
+    """Run the optional on_shot_done hook without letting it crash the run."""
+    if config.on_shot_done is None:
+        return
+    try:
+        config.on_shot_done(shot, ok)
+    except Exception as e:  # state syncs must never abort a production run
+        config.say(f"on_shot_done hook error (non-fatal): {e}")
 
 
 def load_shots_file(path: Path) -> dict[str, Any] | list[dict[str, Any]]:

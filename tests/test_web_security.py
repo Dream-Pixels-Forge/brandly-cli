@@ -69,6 +69,9 @@ class TestSafeJoin:
         assert safe_join(project_root, "../../secret.txt") is None
 
     def test_rejects_absolute_escape(self, project_root: Path) -> None:
+        import sys
+
+        pytest.skip("Windows-only: C:/... is a relative path on POSIX") if sys.platform != "win32" else None
         from brandly_cli.web.security import safe_join
 
         assert safe_join(project_root, "C:/Windows/win.ini") is None

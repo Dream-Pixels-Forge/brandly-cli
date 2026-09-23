@@ -64,7 +64,7 @@ export default function PreviewPanel() {
       v.currentTime = currentFrame / fps || 0;
       if (isPlaying) v.play().catch(() => {});
     }
-  }, [clip, activeProject, currentFrame, isPlaying]);
+  }, [clip, activeProject, currentFrame, isPlaying, timeline?.fps]);
 
   return (
     <div style={{

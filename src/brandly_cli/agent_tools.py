@@ -154,6 +154,104 @@ def _list_models(category: str | None = None) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Studio tools (issue #60): same handlers the web routes use, exposed to the
+# agent loop so the studio UI actions need no ad-hoc tools.
+# ---------------------------------------------------------------------------
+
+def _get_timeline(project_id: str, root: str | None = None) -> dict[str, Any]:
+    """Return the timeline (clips, fps, aspect ratio) for a project."""
+    try:
+        from brandly_cli.web.state import TimelineState
+
+        state = TimelineState(project_id, Path(root or ".").resolve())
+        timeline = state.load()
+        return {
+            "project_id": project_id,
+            "clips": [c.model_dump() for c in timeline.clips],
+            "fps": timeline.fps,
+            "aspect_ratio": timeline.aspect_ratio,
+            "color_grade": timeline.color_grade,
+        }
+    except Exception as e:
+        return {"error": f"get_timeline: {e}"}
+
+
+def _update_clip(
+    project_id: str,
+    clip_id: str,
+    updates: dict[str, Any],
+    root: str | None = None,
+) -> dict[str, Any]:
+    """Patch clip fields (prompt, duration, volume, transition, style)."""
+    try:
+        from brandly_cli.web.models import ClipUpdate
+        from brandly_cli.web.state import TimelineState
+
+        state = TimelineState(project_id, Path(root or ".").resolve())
+        if state.get_clip(clip_id) is None:
+            return {"error": f"clip not found: {clip_id}"}
+        updated = state.update_clip(clip_id, ClipUpdate(**updates))
+        if updated is None:
+            return {"error": f"update_clip failed: {clip_id}"}
+        return {"clip_id": clip_id, "clip": updated.model_dump()}
+    except Exception as e:
+        return {"error": f"update_clip: {e}"}
+
+
+def _reorder_timeline(
+    project_id: str,
+    order: list[str],
+    root: str | None = None,
+) -> dict[str, Any]:
+    """Reorder timeline clips (mirrors PUT /api/projects/{id}/timeline)."""
+    try:
+        from brandly_cli.web.models import Clip as ClipModel
+        from brandly_cli.web.state import TimelineState
+
+        state = TimelineState(project_id, Path(root or ".").resolve())
+        timeline = state.load()
+        by_id = {c.id: c for c in timeline.clips}
+        unknown = [cid for cid in order if cid not in by_id]
+        if unknown:
+            return {"error": f"unknown clip ids: {unknown}"}
+        ordered = [by_id[cid] for cid in order]
+        remaining = [c for c in timeline.clips if c.id not in set(order)]
+        reordered = ordered + remaining
+        state.replace_clips([ClipModel(**c.model_dump()) for c in reordered])
+        return {"project_id": project_id, "order": [c.id for c in reordered]}
+    except Exception as e:
+        return {"error": f"reorder_timeline: {e}"}
+
+
+def _run_gate(
+    project_id: str,
+    clip_id: str,
+    root: str | None = None,
+) -> dict[str, Any]:
+    """Run the deterministic quality gate on a clip (no AI, offline)."""
+    import asyncio
+
+    try:
+        from brandly_cli.quality_gate import verify_element
+        from brandly_cli.web import deps
+
+        root_path = Path(root or ".").resolve()
+        _, media = deps.require_clip_media(root_path, project_id, clip_id)
+        result = asyncio.run(
+            verify_element(
+                media,
+                use_ai=False,
+                root=root_path,
+                project_id=project_id,
+                write_report=False,
+            )
+        )
+        return {"clip_id": clip_id, "status": result.status, "score": result.score}
+    except Exception as e:
+        return {"error": f"run_gate: {e}"}
+
+
+# ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
 
@@ -259,6 +357,68 @@ BUILTIN_TOOLS: dict[str, dict[str, Any]] = {
             },
         },
         "description": "List available model IDs and metadata across image/video/audio.",
+    },
+    "get_timeline": {
+        "handler": _get_timeline,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "UUID or slug of the project.",
+                },
+                "root": {"type": "string", "description": "Project root directory."},
+            },
+            "required": ["project_id"],
+        },
+        "description": "Get a project's timeline: clips, fps, aspect ratio, color grade.",
+    },
+    "update_clip": {
+        "handler": _update_clip,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "clip_id": {"type": "string"},
+                "updates": {
+                    "type": "object",
+                    "description": "Clip fields to patch (prompt, duration, volume, transition_in, style).",
+                },
+                "root": {"type": "string"},
+            },
+            "required": ["project_id", "clip_id", "updates"],
+        },
+        "description": "Update a single timeline clip (mirrors PATCH clip route).",
+    },
+    "reorder_timeline": {
+        "handler": _reorder_timeline,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "order": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Clip IDs in the desired order.",
+                },
+                "root": {"type": "string"},
+            },
+            "required": ["project_id", "order"],
+        },
+        "description": "Reorder timeline clips (mirrors PUT timeline route).",
+    },
+    "run_gate": {
+        "handler": _run_gate,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "clip_id": {"type": "string"},
+                "root": {"type": "string"},
+            },
+            "required": ["project_id", "clip_id"],
+        },
+        "description": "Run the deterministic quality gate on a clip (offline, no AI).",
     },
 }
 

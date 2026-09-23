@@ -17,10 +17,6 @@ These tests pin the correct behaviour:
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from brandly_cli import shot_runner
 
 

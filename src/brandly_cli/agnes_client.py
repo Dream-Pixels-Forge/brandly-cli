@@ -288,20 +288,18 @@ async def generate_image(
     size: str = "2K",
     ratio: str = "16:9",
     images: list[str] | None = None,
-    style_preset: str | None = None,
 ) -> dict[str, Any]:
     """Generate an image via Agnes AI and return {url, revised_prompt}.
 
     Note: The Agnes API does not support negative_prompt — accuracy is
-    achieved through prompt engineering via style presets.
+    achieved through prompt engineering via style presets. Style presets are
+    applied by the caller (prompt layer, ``style_presets.apply_style_preset``);
+    this provider stays a dumb transport.
     """
-    from brandly_cli.style_presets import apply_style_preset
-
-    enhanced = apply_style_preset(prompt, style_preset) if style_preset else prompt
 
     body: dict[str, Any] = {
         "model": model,
-        "prompt": enhanced,
+        "prompt": prompt,
         "size": size,
     }
     if ratio:
@@ -385,7 +383,6 @@ async def create_video_task(
     last_frame: str | None = None,
     reference_images: list[str] | None = None,
     reference_audios: list[str] | None = None,
-    style_preset: str | None = None,
 ) -> dict[str, Any]:
     """Create a video generation task and return {id, video_id, status, progress}.
 
@@ -398,18 +395,10 @@ async def create_video_task(
     keyframe when a start/end frame is provided, reference when reference
     images are provided, otherwise text.
 
-    ``style_preset`` (issue #21) controls the style-preset suffix: pass a
-    preset name to apply it, or ``None``/``"none"`` to disable. It no longer
-    hardcodes ``cinematic`` regardless of the requested style.
+    Style presets (issue #21) are applied by the caller — e.g. the CLI passes
+    ``"cinematic"`` only when the requested style is cinematic; this provider
+    no longer imports the prompt layer.
     """
-    from brandly_cli.style_presets import apply_style_preset
-
-    enhanced = (
-        apply_style_preset(prompt, style_preset)
-        if style_preset and style_preset != "none"
-        else prompt
-    )
-
     if mode == "auto":
         mode = infer_video_mode(
             first_frame=first_frame, last_frame=last_frame, reference_images=reference_images
@@ -435,7 +424,7 @@ async def create_video_task(
 
     body: dict[str, Any] = {
         "model": model,
-        "prompt": enhanced,
+        "prompt": prompt,
         "mode": mode,
     }
     if seed is not None:
@@ -447,7 +436,7 @@ async def create_video_task(
         "and physical features across all shots. No identity drift. Same object "
         "properties (color, texture, size) in every frame."
     )
-    body["prompt"] = enhanced + consistency_hint
+    body["prompt"] = prompt + consistency_hint
 
     # Video 2.5 Flash workflow: duration 4-12s, 720P
     body["seconds"] = str(max(4, min(12, duration or 5)))
@@ -947,7 +936,7 @@ async def agent_tool_loop(
                 result = {"error": f"unknown tool: {fn_name}"}
 
             # Stringify for the model
-            from brandly_cli.agent_tools import to_json
+            from brandly_cli.job_polling import to_json
 
             tool_payload = to_json(result)
             history.append(

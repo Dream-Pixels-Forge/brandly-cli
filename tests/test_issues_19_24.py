@@ -17,6 +17,7 @@ from click.testing import CliRunner
 from PIL import Image
 
 from brandly_cli.cli import cli
+from brandly_cli.style_presets import apply_style_preset
 from brandly_cli.utils import (
     _read_production_plan_rows,
     generate_project_id,
@@ -125,7 +126,8 @@ def _make_fake_client(captured: dict[str, Any]) -> Any:
 
 
 class TestStylePresetFollowsStyle:
-    async def test_no_preset_when_style_preset_none(self) -> None:
+    async def test_provider_passes_prompt_through(self) -> None:
+        """Providers no longer touch the prompt layer — prompt goes out as-is."""
         from brandly_cli.agnes_client import create_video_task
 
         captured: dict[str, Any] = {}
@@ -133,38 +135,19 @@ class TestStylePresetFollowsStyle:
             patch("brandly_cli.agnes_client.httpx.AsyncClient", _make_fake_client(captured)),
             patch.dict("os.environ", {"AGNES_API_KEY": "k"}),
         ):
-            await create_video_task(
-                "monochrome ink wash on paper, no color", style_preset=None
-            )
+            await create_video_task("monochrome ink wash on paper, no color")
 
         prompt = captured["body"]["prompt"]
         assert "monochrome ink wash" in prompt
         assert "anamorphic lens" not in prompt
         assert "Kodak Vision3" not in prompt
 
-    async def test_explicit_preset_applied(self) -> None:
-        from brandly_cli.agnes_client import create_video_task
-
-        captured: dict[str, Any] = {}
-        with (
-            patch("brandly_cli.agnes_client.httpx.AsyncClient", _make_fake_client(captured)),
-            patch.dict("os.environ", {"AGNES_API_KEY": "k"}),
-        ):
-            await create_video_task("a cat on a sofa", style_preset="cinematic")
-
-        assert "anamorphic lens" in captured["body"]["prompt"]
+    async def test_explicit_preset_applied_by_caller(self) -> None:
+        """Style application now happens in the caller (prompt layer)."""
+        assert "anamorphic lens" in apply_style_preset("a cat on a sofa", "cinematic")
 
     async def test_preset_none_string_disables(self) -> None:
-        from brandly_cli.agnes_client import create_video_task
-
-        captured: dict[str, Any] = {}
-        with (
-            patch("brandly_cli.agnes_client.httpx.AsyncClient", _make_fake_client(captured)),
-            patch.dict("os.environ", {"AGNES_API_KEY": "k"}),
-        ):
-            await create_video_task("plain prompt", style_preset="none")
-
-        assert "anamorphic lens" not in captured["body"]["prompt"]
+        assert apply_style_preset("plain prompt", "none") == "plain prompt"
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +163,7 @@ class TestVideoCreateErrorVisibility:
         _write_project(project_dir, pid)
 
         with patch(
-            "brandly_cli.cli.create_video_task",
+            "brandly_cli.cmd.generation.create_video_task",
             AsyncMock(side_effect=RuntimeError("backend exploded")),
         ):
             result = runner.invoke(
@@ -200,7 +183,7 @@ class TestVideoCreateErrorVisibility:
         _write_project(project_dir, pid)
 
         with patch(
-            "brandly_cli.cli.create_video_task",
+            "brandly_cli.cmd.generation.create_video_task",
             AsyncMock(side_effect=httpx.ReadTimeout("")),
         ):
             result = runner.invoke(
@@ -221,7 +204,7 @@ class TestVideoCreateErrorVisibility:
             patch("brandly_cli.agnes_client.httpx.AsyncClient", _make_fake_client(captured)),
             patch.dict("os.environ", {"AGNES_API_KEY": "k"}),
         ):
-            await create_video_task("x", style_preset=None)
+            await create_video_task("x")
 
         assert captured["client_kwargs"]["timeout"] >= 120
 
@@ -267,7 +250,7 @@ class TestScopedAutoRefs:
             capture["reference_images"] = kwargs.get("reference_images")
             return dict(FAKE_TASK)
 
-        with patch("brandly_cli.cli.create_video_task", side_effect=fake_create):
+        with patch("brandly_cli.cmd.generation.create_video_task", side_effect=fake_create):
             return runner.invoke(
                 cli,
                 [
@@ -353,7 +336,7 @@ class TestReferenceImport:
         plate = _add_image(project_dir, pid, "general", "client_plate.png")
 
         with patch(
-            "brandly_cli.cli.generate_image",
+            "brandly_cli.cmd.generation.generate_image",
             AsyncMock(side_effect=AssertionError("must not generate")),
         ):
             result = runner.invoke(cli, _import_args(pid, plate), input="y\n")
@@ -379,7 +362,7 @@ class TestReferenceImport:
         plate = _add_image(project_dir, pid, "general", "client_plate2.png")
 
         with patch(
-            "brandly_cli.cli.generate_image",
+            "brandly_cli.cmd.generation.generate_image",
             AsyncMock(side_effect=AssertionError("must not generate")),
         ):
             result = runner.invoke(cli, _import_args(pid, plate), input="y\n")
@@ -419,8 +402,8 @@ class TestBatchRateLimit:
             return dict(FAKE_TASK)
 
         with (
-            patch("brandly_cli.cli.create_video_task", side_effect=fake_create),
-            patch("brandly_cli.cli.time.sleep", side_effect=sleeps.append),
+            patch("brandly_cli.cmd.production.create_video_task", side_effect=fake_create),
+            patch("brandly_cli.cmd.production.time.sleep", side_effect=sleeps.append),
         ):
             result = runner.invoke(
                 cli,
@@ -438,7 +421,7 @@ class TestBatchRateLimit:
         # 1 request/min: exactly one 60s wait between consecutive variants.
         assert sleeps == [60.0, 60.0]
 
-    def test_batch_passes_cinematic_preset_for_cinematic_style(
+    def test_batch_applies_cinematic_preset_for_cinematic_style(
         self, runner: CliRunner, project_dir: Path, tmp_path: Path
     ) -> None:
         pid = generate_project_id()
@@ -447,12 +430,13 @@ class TestBatchRateLimit:
         captured: dict[str, Any] = {}
 
         async def fake_create(prompt: str, **kwargs: Any) -> dict[str, Any]:
+            captured["prompt"] = prompt
             captured.update(kwargs)
             return dict(FAKE_TASK)
 
         with (
-            patch("brandly_cli.cli.create_video_task", side_effect=fake_create),
-            patch("brandly_cli.cli.time.sleep"),
+            patch("brandly_cli.cmd.production.create_video_task", side_effect=fake_create),
+            patch("brandly_cli.cmd.production.time.sleep"),
         ):
             result = runner.invoke(
                 cli,
@@ -460,9 +444,11 @@ class TestBatchRateLimit:
             )
 
         assert result.exit_code == 0, result.output
-        # Parity with the old hardcoded behaviour: cinematic style keeps the
-        # cinematic preset; other styles must not receive it.
-        assert captured.get("style_preset") == "cinematic"
+        # Parity with the old behaviour: cinematic style (the default) keeps
+        # the cinematic preset — now applied in the caller, so the prompt
+        # itself carries the cinematic cues and the provider kwarg is gone.
+        assert "anamorphic lens" in captured["prompt"]
+        assert "style_preset" not in captured
 
     def test_batch_no_preset_for_non_photographic_style(
         self, runner: CliRunner, project_dir: Path, tmp_path: Path
@@ -473,12 +459,13 @@ class TestBatchRateLimit:
         captured: dict[str, Any] = {}
 
         async def fake_create(prompt: str, **kwargs: Any) -> dict[str, Any]:
+            captured["prompt"] = prompt
             captured.update(kwargs)
             return dict(FAKE_TASK)
 
         with (
-            patch("brandly_cli.cli.create_video_task", side_effect=fake_create),
-            patch("brandly_cli.cli.time.sleep"),
+            patch("brandly_cli.cmd.production.create_video_task", side_effect=fake_create),
+            patch("brandly_cli.cmd.production.time.sleep"),
         ):
             result = runner.invoke(
                 cli,
@@ -486,7 +473,8 @@ class TestBatchRateLimit:
             )
 
         assert result.exit_code == 0, result.output
-        assert captured.get("style_preset") is None
+        assert "anamorphic lens" not in captured["prompt"]
+        assert "style_preset" not in captured
 
 # (no batch; 1 request per minute Agnes rate limit)
 # ---------------------------------------------------------------------------
@@ -520,8 +508,8 @@ class TestProduceShotByShot:
             return True
 
         with (
-            patch("brandly_cli.cli._generate_shot", side_effect=fake_generate),
-            patch("brandly_cli.cli.time.sleep", side_effect=sleeps.append),
+            patch("brandly_cli.cmd.production._generate_shot", side_effect=fake_generate),
+            patch("brandly_cli.cmd.production.time.sleep", side_effect=sleeps.append),
         ):
             result = runner.invoke(cli, ["produce", pid, "--shots", str(shots)])
 
@@ -557,8 +545,8 @@ class TestProduceShotByShot:
             return shot["name"] != "bad-shot"
 
         with (
-            patch("brandly_cli.cli._generate_shot", side_effect=fake_generate),
-            patch("brandly_cli.cli.time.sleep"),
+            patch("brandly_cli.cmd.production._generate_shot", side_effect=fake_generate),
+            patch("brandly_cli.cmd.production.time.sleep"),
         ):
             result = runner.invoke(cli, ["produce", pid, "--shots", str(shots)])
 

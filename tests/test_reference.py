@@ -245,8 +245,8 @@ def test_reference_generates_image_and_saves_metadata(
         return target
 
     with (
-        patch("brandly_cli.cli.generate_image", AsyncMock(return_value=fake_result)),
-        patch("brandly_cli.cli._save_artifact", side_effect=fake_save),
+        patch("brandly_cli.cmd.generation.generate_image", AsyncMock(return_value=fake_result)),
+        patch("brandly_cli.cmd.generation._save_artifact", side_effect=fake_save),
     ):
         result = runner.invoke(
             cli,
@@ -294,7 +294,7 @@ def test_reference_image_api_failure_writes_fail_doc(
     _write_project(project_dir, pid)
 
     with patch(
-        "brandly_cli.cli.generate_image",
+        "brandly_cli.cmd.generation.generate_image",
         AsyncMock(side_effect=RuntimeError("Service Unavailable")),
     ):
         result = runner.invoke(
@@ -333,7 +333,7 @@ def test_video_warns_when_no_reference(runner: CliRunner, project_dir: Path) -> 
         "progress": 0,
     }
     with patch(
-        "brandly_cli.cli.create_video_task", AsyncMock(return_value=fake_result)
+        "brandly_cli.cmd.generation.create_video_task", AsyncMock(return_value=fake_result)
     ):
         result = runner.invoke(
             cli,
@@ -410,7 +410,7 @@ def test_video_picks_up_primary_reference(
         "progress": 0,
     }
     with patch(
-        "brandly_cli.cli.create_video_task", AsyncMock(return_value=fake_result)
+        "brandly_cli.cmd.generation.create_video_task", AsyncMock(return_value=fake_result)
     ):
         result = runner.invoke(
             cli,
@@ -449,7 +449,7 @@ def test_video_stale_reference_metadata_falls_back_to_warning(
 
     # Mock the API so the test never touches the network (or spends credits).
     with patch(
-        "brandly_cli.cli.create_video_task",
+        "brandly_cli.cmd.generation.create_video_task",
         AsyncMock(
             return_value={
                 "video_id": "video-task-stale",

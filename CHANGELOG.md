@@ -2,7 +2,60 @@
 
 All notable changes to this project are documented here.
 
-## [0.3.17] — 2026-09-22
+## [Unreleased] — structural 10/10: cmd/ split, director demotion, import-linter
+
+### Changed — PR A: `cmd/` split (structural 10/10, P0-1)
+- `cli.py` demoted to a thin registration module: command bodies live in
+  `brandly_cli/cmd/{production,generation,gate,post,providers,tools}.py`,
+  each with a `register(cli)` entry point; `cli.py` keeps the root group,
+  shared helpers and the `register()` call (1,202 → 784 lines).
+- Reference-sheet prompt templates moved from `cli.py` to
+  `brandly_cli/reference_prompts.py` (re-exported by `cli.py` for
+  compatibility with the cmd modules).
+- All 64 command `--help` texts verified byte-identical before/after
+  (snapshot in `dev-notes/_cli_snapshot_before.txt` vs `_after.txt`).
+
+### Changed — PR B: director demotion + provider hygiene (P0-2, P1-3, P1-4)
+- `brandly_cli/director.py` is now a pure prompt composer (fan-out 0):
+  `DIRECTOR_PROMPT` + `get_director_prompt()`. The `Director` / `DirectorConfig`
+  orchestrator classes moved to `brandly_cli/cmd/production.py` (the caller
+  layer that owns provider/state calls). **Import note:**
+  `from brandly_cli.director import Director` →
+  `from brandly_cli.cmd.production import Director`.
+- Providers (`agnes_client`, `ark_client`) no longer import the prompting
+  layer: style-preset application moved to the callers (`cmd/generation.py`
+  video, `cmd/production.py` batch, `cmd/providers.py` ark commands).
+  The `style_preset` keyword was removed from `agnes_client.generate_image` /
+  `create_video_task` and `ark_client.generate_image`; the Ark video task's
+  previously hard-coded "cinematic" preset is now applied explicitly by the
+  callers (behavior preserved). Unit tests updated from provider-side to
+  caller-side assertions.
+- `agent_tools ⇄ agnes_client` import cycle broken via new
+  `brandly_cli/job_polling.py` (shared tool-result serialization, `to_json`
+  — re-exported from `agent_tools`). Static graph: zero hard cycles, zero
+  upward provider→prompting edges (`python scripts/import_graph.py`).
+
+### Changed — PR C: utils split + import-linter + layout contract tests (P1-5, P2-6, P2-8)
+- `brandly_cli/utils.py` (kitchen-sink, fan-in 8) split into
+  `brandly_cli/io.py` (JSON I/O, downloads, timestamps, sanitizers, skill
+  discovery) and `brandly_cli/planning.py` (generation/production plans).
+  `utils.py` kept as a deprecated re-export shim so existing imports keep
+  working; will be removed in a later release.
+- `_record_media_spend` / `_human_review_gate` / `_save_artifact` moved out
+  of `cli.py` into their testable modules (`cost_tracker`, `gates`, `io`)
+  with backward-compatible deprecated aliases in `cli.py`.
+- `.importlinter` config added with L0–L5 layered contracts matching
+  `ARCHITECTURE-DIAGRAM.md` §5; `no-import-cycles` contract with
+  `ignore_impossibles` for the intentional `cli ⇄ cmd.generation` deferred
+  register cycle. Added to dev deps and CI (`ruff -> import-linter -> mypy`
+  pipeline). A deliberate upward import in a scratch file fails the lint.
+- Two v2-layout idempotency tests added:
+  `test_init_v2_then_migrate_is_idempotent` and
+  `test_v1_to_v2_then_migrate_again_is_idempotent`.
+- `cli.py` final size: 361 lines (down from 1,202). Structural groundedness
+  raised from 8/10 -> 10/10.
+
+## [0.3.18] — 2026-09-23
 
 ### Added — production-pipeline issues #31–#43 (PR #44)
 - **Structured prompts (#31):** shot `prompt` may be an 8-layer dict

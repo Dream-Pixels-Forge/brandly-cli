@@ -125,25 +125,21 @@ async def generate_image(
     size: str = "16:9",
     ratio: str | None = None,
     n: int = 1,
-    style_preset: str | None = None,
 ) -> dict[str, Any]:
     """Generate image(s) via BytePlus Ark API (Seedream).
 
     Args:
-        prompt: Text description of the image.
+        prompt: Text description of the image (apply style presets in the
+            caller — this provider stays a dumb transport).
         model: Model ID — "seedream-4.0" or "seedream-3.5".
         size: Aspect ratio — "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3".
         ratio: Alternative aspect ratio format.
         n: Number of images to generate (1-4).
-        style_preset: Optional style preset to apply.
     """
-    from brandly_cli.style_presets import apply_style_preset
-
-    enhanced = apply_style_preset(prompt, style_preset) if style_preset else prompt
 
     body: dict[str, Any] = {
         "model": model,
-        "prompt": enhanced,
+        "prompt": prompt,
         "n": n,
     }
     if size:
@@ -247,14 +243,14 @@ async def create_video_task(
         last_frame: URL for last frame image.
         reference_images: URLs for reference images.
         reference_audios: URLs for reference audio.
-    """
-    from brandly_cli.style_presets import apply_style_preset
 
-    enhanced = apply_style_preset(prompt, "cinematic")
+    Style presets are applied by the caller (prompt layer); historically this
+    provider hard-coded the "cinematic" preset — callers now do that explicitly.
+    """
 
     body: dict[str, Any] = {
         "model": model,
-        "prompt": enhanced,
+        "prompt": prompt,
         "duration": duration,
     }
 

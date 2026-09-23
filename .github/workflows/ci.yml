@@ -33,9 +33,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]" build twine types-PyYAML
+          pip install import-linter
 
       - name: Lint
         run: ruff check src/ tests/
+
+      - name: Import-linter
+        run: python -c "from importlinter.cli import lint_imports; exit(lint_imports())"
 
       - name: Type check
         run: mypy src/

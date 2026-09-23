@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
+
+from rich.console import Console
+
+console = Console()
 
 
 class CostEntry:
@@ -169,3 +174,47 @@ class CostTracker:
             "by_phase": by_phase,
             "entries": [e.to_dict() for e in state.cost_log],
         }
+
+
+
+# ---------------------------------------------------------------------------
+# Media spend auto-recording (moved out of cli.py — P2-8)
+# ---------------------------------------------------------------------------
+
+
+def record_media_spend(root: Path, project_id: str, kind: str, model_id: str) -> None:
+    """Auto-record credit spend after a successful media generation.
+
+    Looks up the model's ``cost_credits`` from constants and calls
+    CostTracker.record_spend, then syncs the result back into the
+    project's ``spent`` field so ``brandly status`` stays accurate.
+    """
+    from brandly_cli.constants import IMAGE_MODEL_INFO, VIDEO_MODEL_INFO
+
+    cost = (
+        VIDEO_MODEL_INFO.get(model_id, {}).get("cost_credits")  # type: ignore[call-overload]
+        or IMAGE_MODEL_INFO.get(model_id, {}).get("cost_credits")  # type: ignore[call-overload]
+        or 0
+    )
+    if cost <= 0:
+        return
+    ct = CostTracker(root / ".brandly")
+    from brandly_cli.project_manager import ProjectManager
+
+    pm = ProjectManager(root)
+    try:
+        proj = asyncio.run(pm.read(project_id))
+        budget = proj.budget if proj else None
+    except Exception:
+        budget = None
+    try:
+        result = asyncio.run(ct.record_spend(project_id, kind, kind, cost, budget_credits=budget))
+        asyncio.run(pm.update(project_id, {"spent": result["total_spent"]}))
+        console.print(
+            f"[dim]  Spent: {result['credits']} credits for {kind} ({model_id})  "
+            f"Total: {result['total_spent']}/{result['budget']}[/dim]"
+        )
+    except ValueError as e:
+        console.print(f"[yellow]⚠ Budget exceeded — {e}[/yellow]")
+    except Exception as e:
+        console.print(f"[dim]  Cost record failed (non-fatal): {e}[/dim]")

@@ -14,12 +14,15 @@ videos?" without any new user input.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
+
+from brandly_cli.job_polling import (
+    to_json,  # noqa: F401  # re-exported: tests import agent_tools.to_json
+)
 
 console = Console()
 
@@ -298,15 +301,5 @@ def invoke_tool(name: str, **kwargs: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# JSON helpers
+# JSON helpers (re-exported from job_polling — shared with agnes_client's agent loop)
 # ---------------------------------------------------------------------------
-
-
-def to_json(value: Any) -> str:
-    """Stringify a tool result for feeding back to the LLM."""
-    if isinstance(value, str):
-        return value
-    try:
-        return json.dumps(value, default=str, ensure_ascii=False)
-    except (TypeError, ValueError):
-        return str(value)

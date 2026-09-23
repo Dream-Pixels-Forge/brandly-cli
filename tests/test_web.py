@@ -256,3 +256,43 @@ class TestClipRoute:
             json={"duration": 7.0},
         )
         assert res.status_code == 404
+
+
+class TestSpaBundle:
+    """Issue #61: the shipped SPA must be a real built bundle, never the
+    dev placeholder. A silently stale/drify static dir is a prod outage for
+    every ``brandly studio`` user."""
+
+    def test_root_serves_built_spa_not_placeholder(self, runner) -> None:  # type: ignore[reportUnknownVariableType]
+        from fastapi.testclient import TestClient
+
+        from brandly_cli.web.server import create_app
+
+        app = create_app(root=str(runner.tmp_path))
+        client = TestClient(app, base_url="http://127.0.0.1:8765")
+        res = client.get("/")
+        assert res.status_code == 200
+        body = res.text
+        assert "Frontend SPA not yet built" not in body, (
+            "GET / serves the dev placeholder — static bundle missing/stale (issue #61)"
+        )
+        assert "/static/" in body, (
+            "GET / does not reference the built /static/ bundle (issue #61)"
+        )
+
+    def test_static_index_matches_source_build(self) -> None:
+        from brandly_cli.web import server as server_module
+
+        static_dir = Path(server_module.__file__).parent / "static"
+        index = static_dir / "index.html"
+        assert index.is_file(), "static/index.html missing — run npm run build in web/"
+        body = index.read_text(encoding="utf-8")
+        assert "/static/assets/" in body, (
+            "static/index.html is not a vite build output (issue #61)"
+        )
+        assets = list((static_dir / "assets").glob("index-*.js"))
+        assert assets, "static/assets bundle missing — run npm run build in web/"
+        for asset in assets:
+            assert asset.stat().st_size > 10_000, (
+                f"{asset.name} suspiciously small — stale bundle? (issue #61)"
+            )

@@ -94,3 +94,36 @@ jobs:
           name: coverage
           path: coverage.xml
           if-no-files-found: warn
+
+  web-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: web
+        run: npm run lint
+
+      - name: Typecheck + build frontend
+        working-directory: web
+        run: npm run build
+
+      - name: Verify bundled SPA is fresh
+        run: |
+          test -f src/brandly_cli/web/static/index.html
+          grep -q "/static/assets/" src/brandly_cli/web/static/index.html
+          test -n "$(ls src/brandly_cli/web/static/assets/index-*.js)"
+          git diff --exit-code -- src/brandly_cli/web/static/ || (
+            echo "::error::Bundled SPA is stale — run 'npm run build' in web/ and commit src/brandly_cli/web/static/"
+            exit 1
+          )

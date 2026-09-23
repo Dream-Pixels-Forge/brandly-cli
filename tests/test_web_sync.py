@@ -365,7 +365,6 @@ class TestWaveformEndpoint:
         self, client: TestClient, project_root: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """When ffmpeg is available and the clip has an audio stream, return points."""
-        import struct
 
         # Mock _ffmpeg_available to return True
         import brandly_cli.web.routes.waveform as wf_mod
@@ -425,7 +424,6 @@ class TestGateEndpoint:
 
         fake_result = GateResult(element="dummy", kind="video", status="pass", score=95)
 
-        import brandly_cli.web.routes.gate as gate_mod
 
         async def _fake_verify(*a, **kw):  # type: ignore[no-untyped-def]
             return fake_result

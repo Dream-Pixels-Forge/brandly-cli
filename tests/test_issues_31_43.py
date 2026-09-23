@@ -540,7 +540,6 @@ def test_init_v2_then_migrate_is_idempotent(tmp_path: Path) -> None:
     """init --layout v2 → migrate should be a no-op (already v2-clean)."""
     import os
 
-    from brandly_cli import layout
     from brandly_cli.cli import cli
 
     runner = CliRunner(env={**os.environ, "ROOT": str(tmp_path)})

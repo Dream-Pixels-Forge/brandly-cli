@@ -745,6 +745,12 @@ def image(
     help="Scope auto-injected references to one image category "
     "(e.g. 'prop', 'character', 'location') instead of all images.",
 )
+@click.option(
+    "--open-ui",
+    is_flag=True,
+    default=False,
+    help="Open the timeline editor UI after generation completes.",
+)
 @click.pass_context
 def video(
     ctx: click.Context,
@@ -769,6 +775,7 @@ def video(
     auto_ref_category: str | None,
     scene: int | None,
     shot_number: int | None,
+    open_ui: bool,
 ) -> None:
     """Generate an AI video via Agnes AI.
 
@@ -1195,6 +1202,22 @@ def video(
     _record_media_spend(root, project_id, "video", model)
 
     _print_json(task)
+
+    # Open UI if requested
+    if open_ui:
+        console.print("[dim]Opening timeline editor...[/dim]")
+        try:
+            import threading
+
+            from brandly_cli.web import start_server
+            def _open_ui():
+                import time
+                time.sleep(1)  # give server a moment to start
+                start_server(str(root), port=8765, open_browser=True)
+            t = threading.Thread(target=_open_ui, daemon=True)
+            t.start()
+        except ImportError:
+            console.print("[yellow]Web UI not available — install with: pip install brandly-cli[web][/yellow]")
 
 @click.command()
 @click.option("--subject", "-s", required=True, help="Main subject (person, product, or object)")

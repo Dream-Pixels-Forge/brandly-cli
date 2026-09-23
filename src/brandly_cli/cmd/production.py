@@ -458,6 +458,12 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
         "ID (issue #37)."
     ),
 )
+@click.option(
+    "--open-ui",
+    is_flag=True,
+    default=False,
+    help="Open the timeline editor UI after all shots are generated.",
+)
 @click.pass_context
 def produce(
     ctx: click.Context,
@@ -474,6 +480,7 @@ def produce(
     split_long_shots: bool,
     aspect_ratio: str | None,
     no_plan: bool,
+    open_ui: bool,
 ) -> None:
     """Generate a multi-shot film shot by shot from the production plan.
 
@@ -657,6 +664,22 @@ def produce(
             sys.exit(1)
 
     console.print(f"[green]✓ Production complete — see {plan_doc}[/green]")
+
+    # Open UI if requested
+    if open_ui:
+        console.print("[dim]Opening timeline editor...[/dim]")
+        try:
+            import threading
+
+            from brandly_cli.web import start_server
+            def _open_ui():
+                import time
+                time.sleep(1)
+                start_server(str(root), port=8765, open_browser=True)
+            t = threading.Thread(target=_open_ui, daemon=True)
+            t.start()
+        except ImportError:
+            console.print("[yellow]Web UI not available — install with: pip install brandly-cli[web][/yellow]")
 
 @click.command(name="storyboard")
 @click.argument("project_id")

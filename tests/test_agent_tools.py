@@ -192,6 +192,57 @@ class TestInvokeTool:
 
 
 # ---------------------------------------------------------------------------
+# Studio tools (issue #60): agent-callable coverage for every studio action
+# ---------------------------------------------------------------------------
+
+
+class TestStudioTools:
+    def test_registry_covers_studio_actions(self) -> None:
+        names = {name for name, _, _, _ in agent_tools.get_builtin_tools()}
+        for expected in (
+            "get_timeline",
+            "update_clip",
+            "reorder_timeline",
+            "run_gate",
+        ):
+            assert expected in names, f"missing studio tool: {expected}"
+
+    def test_describe_tools_includes_studio(self) -> None:
+        described = agent_tools.describe_tools()
+        assert "get_timeline" in described
+        assert "update_clip" in described
+
+    def test_get_timeline_returns_contract_shape(self, tmp_path) -> None:
+        out = agent_tools.invoke_tool(
+            "get_timeline", project_id="nope", root=str(tmp_path)
+        )
+        # TimelineState.load() synthesizes an empty timeline for unknown
+        # projects (editor source-of-truth semantics) — the tool must at
+        # least return the contract shape, never raise.
+        assert out["project_id"] == "nope"
+        assert "clips" in out
+
+    def test_reorder_timeline_unknown_ids_return_error(self, tmp_path) -> None:
+        out = agent_tools.invoke_tool(
+            "reorder_timeline",
+            project_id="nope",
+            order=["ghost"],
+            root=str(tmp_path),
+        )
+        assert "error" in out
+
+    def test_update_clip_missing_clip_returns_error(self, tmp_path) -> None:
+        out = agent_tools.invoke_tool(
+            "update_clip",
+            project_id="nope",
+            clip_id="ghost",
+            updates={"volume": 0.5},
+            root=str(tmp_path),
+        )
+        assert "error" in out
+
+
+# ---------------------------------------------------------------------------
 # chat_completion payload assembly (real function, mocked transport)
 # ---------------------------------------------------------------------------
 

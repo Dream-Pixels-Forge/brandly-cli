@@ -272,11 +272,11 @@ class TestFlattenShots:
             (2, 1),
         ]
         assert [s.clip_name for s in shots] == [
-            "Scene-01-Shot-1-1.mp4",
-            "Scene-01-Shot-1-2.mp4",
-            "Scene-01-Shot-1-3.mp4",
-            "Scene-01-Shot-1-4.mp4",
-            "Scene-02-Shot-2-1.mp4",
+            "Scene-01-Shot-1-1-act1.mp4",
+            "Scene-01-Shot-1-2-act1.mp4",
+            "Scene-01-Shot-1-3-act1.mp4",
+            "Scene-01-Shot-1-4-act1.mp4",
+            "Scene-02-Shot-2-1-act2.mp4",
         ]
 
     def test_flat_list_defaults_to_scene_one(
@@ -350,7 +350,7 @@ def _make_config(
 def _shots(ids: list[str], folder: str = "scenes") -> list[shot_runner.Shot]:
     return [
         shot_runner.Shot(
-            id=sid, act="ACT", style="cinematic", folder=folder,
+            id=sid, act="", style="cinematic", folder=folder,
             prompt=f"p {sid}", duration=5,
         )
         for sid in ids
@@ -438,13 +438,14 @@ class TestRunShots:
         )
         assert shot_runner.run_shots(config) == 0
         assert not (scenes / "clip_trans.mp4").exists()
-        # Renamed to the Scene-XX-Shot-X-Y convention, then moved.
+        # Renamed to the Scene-XX-Shot-X-Y convention (act="" -> no slug),
+        # then moved.
         assert (tmp_path / "videos" / "transition" / "Scene-01-Shot-1-1.mp4").is_file()
 
     def test_generated_clip_is_renamed_to_canonical_name(self, tmp_path: Path) -> None:
         scenes = tmp_path / "videos" / "scenes"
         scenes.mkdir(parents=True, exist_ok=True)
-        existing_take = scenes / "Scene-01-Shot-1-2.mp4"
+        existing_take = scenes / "Scene-01-Shot-1-2-act-i.mp4"
         existing_take.write_bytes(b"old")  # a previous take
 
         def generate_one(shot):
@@ -459,7 +460,7 @@ class TestRunShots:
         ]
         config = _make_config(tmp_path, shots, generate_one)
         assert shot_runner.run_shots(config) == 0
-        canonical = scenes / "Scene-01-Shot-1-2.mp4"
+        canonical = scenes / "Scene-01-Shot-1-2-act-i.mp4"
         assert canonical.read_bytes() == b"new"  # the redo replaces the old take
         assert not (scenes / "videos_2026-09-21T00-00-00_establishing.mp4").exists()
 
@@ -475,6 +476,7 @@ class TestRunShots:
 
         config = _make_config(tmp_path, _shots(["shot01"]), generate_one)
         assert shot_runner.run_shots(config) == 0
+        # act="" (default in _shots) -> no act slug, base canonical name
         assert (scenes / "Scene-01-Shot-1-1.mp4").is_file()
         assert (scenes / "Scene-01-Shot-1-1-2.mp4").is_file()
 
@@ -688,9 +690,11 @@ class TestProduceRunnerRouting:
                 cli, ["produce", pid, "--shots", str(shots), "--interval", "0"]
             )
         assert result.exit_code == 0, result.output
+        # Structured shot list with an act named "act1" → the act slug is
+        # appended to the canonical clip name (issue #50 collision fix).
         assert sorted(p.name for p in clips.glob("*.mp4")) == [
-            "Scene-01-Shot-1-1.mp4",
-            "Scene-01-Shot-1-2.mp4",
+            "Scene-01-Shot-1-1-act1.mp4",
+            "Scene-01-Shot-1-2-act1.mp4",
         ]
 
     def test_invalid_shot_list_exits_one_with_clear_message(

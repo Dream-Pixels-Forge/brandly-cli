@@ -106,8 +106,25 @@ def clip_filename(scene: int, index_in_scene: int, ext: str = ".mp4") -> str:
 
     ``Scene-{scene:02d}-Shot-{scene}-{index_in_scene}{ext}`` — the first
     shot of scene 1 is ``Scene-01-Shot-1-1.mp4``.
+
+    Note: this is the *base* name. ``Shot.clip_name`` may append an
+    act-based disambiguator (issue #50) when two shots share the same
+    ``(scene, index_in_scene)`` pair.
     """
     return f"Scene-{scene:02d}-Shot-{scene}-{index_in_scene}{ext}"
+
+
+def _slugify(text: str) -> str:
+    """Filesystem-safe slug for an act name (issue #50).
+
+    Lowercase, alphanumerics and hyphens only; spaces/underscores become a
+    single hyphen; leading/trailing hyphens stripped. An empty result
+    signals the act should not be appended.
+    """
+    import re
+
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return s
 
 
 def as_int(value: Any, default: int) -> int:
@@ -140,8 +157,27 @@ class Shot:
 
     @property
     def clip_name(self) -> str:
-        """Canonical file name for this shot's generated clip."""
-        return clip_filename(self.scene, self.index_in_scene)
+        """Canonical file name for this shot's generated clip.
+
+        Issue #50: when two distinct shots share the same ``(scene,
+        index_in_scene)`` pair (e.g. a road shot and a chapel shot that both
+        map to ``scene=9`` within their own acts), the canonical name collides
+        and the later shot silently overwrites the earlier one's clip.
+
+        Fix: when this shot's ``act`` is non-empty and not already encoded in
+        the base name, append ``-<slug>`` where ``slug`` is a filesystem-safe
+        version of the act name. This keeps the deterministic convention
+        readable (``Scene-09-Shot-9-1-act5_midpoint.mp4``) while guaranteeing
+        that two shots in different acts with the same scene+index produce
+        distinct files.
+        """
+        base = clip_filename(self.scene, self.index_in_scene)
+        if self.act:
+            slug = _slugify(self.act)
+            if slug and slug not in base:
+                stem = Path(base).stem
+                return f"{stem}-{slug}{Path(base).suffix}"
+        return base
 
     def to_video_kwargs(self) -> dict[str, Any]:
         """Fields understood by the standard ``video`` pipeline."""

@@ -11,7 +11,7 @@ const PANELS: { kind: PanelKind; label: string; icon: string; badge?: string }[]
 ];
 
 export default function SidebarNav() {
-  const { activePanel, timeline, projects, activeProject, selectProject, setPanel } = useAppStore();
+  const { activePanel, timeline, projects, activeProject, selectProject, setPanel, loading, error } = useAppStore();
 
   return (
     <nav className="sidebar" style={{
@@ -45,6 +45,21 @@ export default function SidebarNav() {
           Projects
         </div>
         <div style={{ maxHeight: 120, overflowY: 'auto' }}>
+          {loading && projects.length === 0 && (
+            <div style={{ padding: '8px 10px', fontSize: 11, color: 'var(--md-on-surface-variant)', opacity: 0.7 }}>
+              Loading projects…
+            </div>
+          )}
+          {error && projects.length === 0 && (
+            <div style={{ padding: '8px 10px', fontSize: 11, color: '#f87171' }} role="alert">
+              Failed to load projects: {error}
+            </div>
+          )}
+          {!loading && !error && projects.length === 0 && (
+            <div style={{ padding: '8px 10px', fontSize: 11, color: 'var(--md-on-surface-variant)', opacity: 0.7 }}>
+              No projects found
+            </div>
+          )}
           {projects.map((p) => (
             <div
               key={p.id}

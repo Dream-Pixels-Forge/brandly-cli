@@ -203,8 +203,15 @@ function AgnesPlaceholder() {
 }
 
 export default function Shell() {
-  const { activePanel, activeProject, wsEvent } = useAppStore();
+  const { activePanel, activeProject, wsEvent, fetchProjects } = useAppStore();
   const [wsReady, setWsReady] = useState(false);
+
+  // Boot: load the project list once on mount so the sidebar is
+  // populated on first paint (issue #58). Panel switches must not
+  // re-trigger this — empty dep array, stable zustand action ref.
+  useEffect(() => {
+    void fetchProjects();
+  }, [fetchProjects]);
 
   useEffect(() => {
     if (!activeProject) return;

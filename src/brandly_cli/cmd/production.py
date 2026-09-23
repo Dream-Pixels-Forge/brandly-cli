@@ -1685,3 +1685,29 @@ def register(cli) -> None:
     cli.add_command(resume)
     cli.add_command(batch)
     cli.add_command(compare)
+    cli.add_command(timeline)
+
+
+@click.command()
+@click.option("--port", "-p", default=8765, help="Port to serve the editor on (default: 8765)")
+@click.option("--no-browser", is_flag=True, help="Do not open browser automatically")
+@click.pass_context
+def timeline(ctx: click.Context, port: int, no_browser: bool) -> None:
+    """Open the visual timeline editor in a browser.
+
+    Lists all .brandly/ projects and lets you view/edit the timeline
+    for any project with a generated shot list.
+
+    If no project ID is given, the UI shows a project picker.
+    """
+    try:
+        from brandly_cli.web import start_server
+    except ImportError as e:
+        console.print(f"[red]Web UI dependency not installed: {e}[/red]")
+        console.print("[yellow]Install with: pip install brandly-cli[web][/yellow]")
+        sys.exit(1)
+
+    root = str(_get_root(ctx))
+    console.print(f"[dim]Starting timeline editor on http://127.0.0.1:{port}[/dim]")
+    console.print("[dim]Press Ctrl+C to stop[/dim]")
+    start_server(root, port=port, open_browser=not no_browser)

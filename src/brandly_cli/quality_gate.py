@@ -279,11 +279,10 @@ def detect_identity_bleed_heuristic(
             im.thumbnail((512, 512))
     except Exception:
         return False  # unreadable -> no signal, don't raise a false flag
-    # Count connected skin clusters on a 16x16 grid (no scipy).
-    # NOTE: im.getdata() is deprecated in Pillow 14; use get_flattened_data()
-    # when the minimum Pillow version allows. Kept as getdata() for the
-    # current pinned range (>=8.0).
-    pixels = list(im.getdata())
+    # Pillow 12+ deprecates getdata; retain a fallback for the supported
+    # Pillow 10+ floor where get_flattened_data does not exist yet.
+    flattened = getattr(im, "get_flattened_data", None)
+    pixels = list(flattened() if callable(flattened) else im.getdata())
     w, h = im.size
     # Build a coarse skin-tone mask.
     skin_mask: list[int] = []

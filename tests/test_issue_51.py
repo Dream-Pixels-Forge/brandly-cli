@@ -32,6 +32,7 @@ The tests below pin the contract:
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 from brandly_cli import quality_gate
@@ -163,6 +164,19 @@ class TestIdentityBleedHeuristic:
         fake.write_bytes(b"")  # unreadable is fine for count<=1
         assert quality_gate.detect_identity_bleed_heuristic(fake, 1) is False
         assert quality_gate.detect_identity_bleed_heuristic(fake, 0) is False
+
+    def test_pixel_analysis_emits_no_pillow_deprecation(
+        self, tmp_path: Path
+    ) -> None:
+        from PIL import Image
+
+        im = Image.new("RGB", (32, 32), (180, 120, 90))
+        frame = tmp_path / "skin.png"
+        im.save(frame)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert quality_gate.detect_identity_bleed_heuristic(frame, 2) is False
 
     def test_unreadable_frame_returns_false(self, tmp_path: Path) -> None:
         """A frame that can't be opened must not raise a false flag."""

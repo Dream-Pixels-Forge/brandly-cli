@@ -776,6 +776,7 @@ def video(
     scene: int | None,
     shot_number: int | None,
     open_ui: bool,
+    expected_characters: tuple[str, ...] | None = None,
 ) -> None:
     """Generate an AI video via Agnes AI.
 
@@ -1138,6 +1139,10 @@ def video(
                     use_ai=True,
                     root=root,
                     project_id=project_id,
+                    # Issue #51: when 2+ characters co-appear, ask the gate
+                    # to verify each is rendered distinctly (not the
+                    # dominant reference's face on every figure).
+                    expected_characters=list(expected_characters or []),
                 )
             )
             _print_gate_report(gate_result)
@@ -1409,6 +1414,45 @@ def _presence_character(shot: dict[str, Any]) -> str | None:
     return None
 
 
+def _expected_character_names(shot: dict[str, Any]) -> list[str] | None:
+    """Distinct co-appearing character *names* for the identity-bleed gate
+    check (issue #51).
+
+    Returns a list of names when 2+ characters are declared present in the
+    shot (via the ``characters`` presence key — a list or a comma-separated
+    string), else ``None``. A single-character or object shot gets ``None``
+    so the gate prompt is unchanged. The names are taken from the leading
+    token of each declared character (the part before the first comma in a
+    descriptor like "Silas Vanesky, 62, gaunt white man..."), which is what
+    the vision prompt uses to refer to each figure.
+    """
+    chars = shot.get("characters")
+    if isinstance(chars, str):
+        chars = [c.strip() for c in chars.split(",") if c.strip()]
+    if not isinstance(chars, (list, tuple)) or len(chars) < 2:
+        return None
+    names = []
+    for c in chars:
+        c = str(c).strip()
+        if not c:
+            continue
+        # If the entry is a short name (no descriptor comma), use it whole;
+        # otherwise use the first clause before a descriptive comma run. A
+        # simple heuristic: take the text up to the first ", " that is
+        # followed by a digit (age descriptor) OR keep the whole token when
+        # it is short (<= 3 words).
+        first = c.split(",")[0].strip()
+        names.append(first if first else c)
+    # De-dup while preserving order.
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in names:
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out or None
+
+
 def _generate_shot(
     project_id: str,
     shot: dict[str, Any],
@@ -1449,6 +1493,12 @@ def _generate_shot(
             allow_referenceless=allow_referenceless,
             scene=scene,
             shot_number=shot_number,
+            # Issue #51: when the shot declares 2+ co-appearing characters,
+            # hand their names to the gate so it can flag cross-character
+            # identity bleed (the dominant face painted onto every figure).
+            expected_characters=tuple(
+                _expected_character_names(shot) or ()
+            ),
         )
     except SystemExit as exc:
         return exc.code in (0, None)

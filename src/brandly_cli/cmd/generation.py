@@ -1513,6 +1513,20 @@ def _run_produce_runner(
                 f"[green]✓ Split over-long shots → {len(shots)} total shots.[/green]"
             )
 
+    # Issue #49: under --split-long-shots, a --only targeting a pre-split
+    # parent ID (e.g. "shot04_silas") must expand to its split parts
+    # (shot04_silas-p1, shot04_silas-p2), else the runner matches nothing
+    # and silently exits with "all pending shots complete".
+    if split_long_shots and only:
+        expanded = shot_runner.expand_only_ids(set(only), shots)
+        changed = sorted(expanded - set(only))
+        if changed:
+            console.print(
+                f"[dim]--only targets a split parent; expanding to parts: "
+                f"{', '.join(changed)}[/dim]"
+            )
+        only = tuple(expanded)
+
     # Issue #36: keep project.json live as production progresses.
     def _sync_project(status: str) -> None:
         from brandly_cli.project_manager import sync_production_state

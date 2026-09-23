@@ -449,6 +449,68 @@ def split_long_shots(
     return out
 
 
+def expand_only_ids(
+    only: set[str],
+    split_shots: list[Shot],
+) -> set[str]:
+    """Expand a ``--only`` set of pre-split shot IDs into their split parts.
+
+    Issue #49: when ``split_long_shots`` renames ``shot04_silas`` into
+    ``shot04_silas-p1`` / ``shot04_silas-p2``, a CLI invocation that passed
+    the *original* ID to ``--only`` matched zero pending shots and exited
+    with "all pending shots complete" without generating anything.
+
+    This helper maps each requested ID to the split IDs it produced:
+
+    * a pre-split parent ID (``shot04_silas``) expands to all of its parts;
+    * an explicit part ID (``shot04_silas-p1``) passes through unchanged;
+    * a mixed set with both a parent and one of its parts is de-duplicated;
+    * an unknown ID (neither a parent nor a part of any split shot) is
+      preserved as-is so the caller can still report "pending 0" rather than
+      silently dropping the user's input.
+
+    The result is a *superset* of the input: every ID the user asked for is
+    still representable in the expanded set, and split parents are replaced
+    by their parts so they actually match the post-split shot list.
+
+    Parameters
+    ----------
+    only:
+        The raw ``--only`` set the user passed on the command line. May be
+        empty (returns an empty set).
+    split_shots:
+        The shot list *after* ``split_long_shots`` has run — this is the
+        list the runner will actually iterate over. Used to know which part
+        IDs exist.
+
+    Returns
+    -------
+    A set of shot IDs that matches the post-split shot list.
+    """
+    if not only:
+        return set()
+
+    parent_to_parts: dict[str, set[str]] = {}
+    for s in split_shots:
+        m = _SPLIT_PART_RE.match(s.id)
+        if m:
+            parent = m.group(1)
+            parent_to_parts.setdefault(parent, set()).add(s.id)
+
+    expanded: set[str] = set()
+    for req in only:
+        if req in parent_to_parts:
+            expanded |= parent_to_parts[req]
+        else:
+            expanded.add(req)
+    return expanded
+
+
+# Matches a split-part ID like "shot04_silas-p1" / "shot04_silas-p2"
+# and captures the parent ("shot04_silas") in group 1.
+_SPLIT_PART_RE = __import__("re").compile(r"^(.+)-p(\d+)$")
+
+
 def apply_aspect_ratio(
     clip: Path, target: str, say: Callable[[str], None] | None = None,
     strict: bool = False,

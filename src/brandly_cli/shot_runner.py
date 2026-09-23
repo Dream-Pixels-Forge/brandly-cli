@@ -450,14 +450,21 @@ def split_long_shots(
 
 
 def apply_aspect_ratio(
-    clip: Path, target: str, say: Callable[[str], None] | None = None
+    clip: Path, target: str, say: Callable[[str], None] | None = None,
+    strict: bool = False,
 ) -> bool:
-    """Crop a generated clip to the target aspect ratio (issue #40).
+    """Crop a generated clip to the target aspect ratio (issue #40, #48).
 
     ``target`` accepts ``"2.39:1"``, ``"16:9"`` or a bare ratio like
     ``"2.39"``. Source clips wider than the target are center-cropped
     vertically; narrower ones are center-cropped horizontally. Without
     ffmpeg the clip is left untouched and a warning is reported.
+
+    ``strict`` (issue #48): when True, a crop failure is treated as a hard
+    error by the *caller* (the shot should be marked FAILED, not silently
+    OK). The function still returns ``False`` on failure either way; the
+    flag only documents intent so the caller can distinguish "crop failed,
+    keep the clip anyway" from "crop failed, mark the shot failed".
     """
     if not clip.is_file():
         return False
@@ -497,21 +504,44 @@ def apply_aspect_ratio(
     source_ratio = w / h
     if abs(source_ratio - ratio) / ratio < 0.02:
         return True  # already at target — nothing to do
+    # Integer crop dimensions (issue #48): a bare float like 2.39 inside
+    # ffmpeg's filter expression is rejected by some builds (the crosstool-NG
+    # / MSYS2 ffmpeg "Invalid argument" error). Compute concrete pixel
+    # values in Python instead.
     if source_ratio > ratio:
-        vfilter = f"crop=iw:2*trunc(iw/{ratio}/2)"
+        # Source is wider than target -> crop height.
+        crop_w = w
+        crop_h = max(2 * int(ratio * 0.5), 2)
+        # Keep even dimensions (libx264 requires even width/height).
+        crop_h = crop_h - (crop_h % 2)
+        vfilter = f"crop={crop_w}:{crop_h}"
     else:
-        vfilter = f"crop=2*trunc(ih*{ratio}/2):ih"
+        # Source is narrower than target -> crop width.
+        crop_h = h
+        crop_w = max(2 * int(ratio * h / 2), 2)
+        crop_w = crop_w - (crop_w % 2)
+        vfilter = f"crop={crop_w}:{crop_h}"
     fd, tmp_name = tempfile.mkstemp(suffix=".mp4", dir=str(clip.parent))
     os.close(fd)
+    # Re-encode audio to AAC (portable across ffmpeg builds). ``-c:a copy``
+    # fails on the crosstool-NG/MSYS2 build when the source codec is not
+    # supported by the container, and the failure was being swallowed.
     cmd = [
         "ffmpeg", "-y", "-i", str(clip), "-vf", vfilter,
-        "-c:v", "libx264", "-crf", "16", "-c:a", "copy", tmp_name,
+        "-c:v", "libx264", "-crf", "16", "-c:a", "aac", tmp_name,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if result.returncode != 0:
         Path(tmp_name).unlink(missing_ok=True)
+        stderr_snippet = (result.stderr or "").strip()
         if say:
-            say(f"--aspect-ratio crop failed for {clip.name}: {result.stderr.strip()[:200]}")
+            # Surface the actual ffmpeg error (issue #48) — previously only
+            # the first 200 chars of a confusing "crop failed" line were
+            # printed and the shot was still marked OK.
+            say(
+                f"--aspect-ratio crop failed for {clip.name}"
+                f"{' [STRICT]' if strict else ''}: {stderr_snippet[-400:]}"
+            )
         return False
     Path(tmp_name).replace(clip)
     if say:
@@ -623,8 +653,25 @@ def run_shots(config: RunnerConfig) -> int:
                 moved = config.move_shot_clips(shot, name_clips(shot, new_clips, config.say))
                 if config.aspect_ratio:
                     targets = moved or _shot_clips(config.scenes_dir, shot)
+                    crop_failed: list[str] = []
                     for clip in targets:
-                        apply_aspect_ratio(clip, config.aspect_ratio, config.say)
+                        # Issue #48: strict=True documents that the caller
+                        # treats a crop failure as a surfaced error (the
+                        # ffmpeg stderr is shown, and the failed clips are
+                        # listed below so the user knows which ones are
+                        # still at the source aspect ratio).
+                        if not apply_aspect_ratio(
+                            clip, config.aspect_ratio, config.say, strict=True
+                        ):
+                            crop_failed.append(clip.name)
+                    if crop_failed:
+                        config.say(
+                            f"⚠ {shot.id}: {len(crop_failed)} clip(s) failed to "
+                            f"crop to {config.aspect_ratio} and remain at the "
+                            f"source aspect ratio: {', '.join(crop_failed)}. "
+                            f"Re-run the crop manually or fix the ffmpeg "
+                            f"build and re-run produce."
+                        )
                 _fire_hook(config, shot, True)
                 break
             if attempt < max_attempts:

@@ -274,8 +274,8 @@ def detect_identity_bleed_heuristic(
     try:
         from PIL import Image  # type: ignore
 
-        with Image.open(frame) as im:
-            im = im.convert("RGB")
+        with Image.open(frame) as opened:
+            im = opened.convert("RGB")
             im.thumbnail((512, 512))
     except Exception:
         return False  # unreadable -> no signal, don't raise a false flag

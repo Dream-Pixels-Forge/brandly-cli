@@ -72,6 +72,8 @@ _VISION_SYSTEM = (
     '"distortion": 0-10, '
     '"drift": 0-10 or null (null if no reference image is provided), '
     '"matte_background": true/false/null (null if not a reference sheet), '
+    '"identity_bleed": true/false (true if a multi-character shot rendered any figure with a different character\'s face/identity than its own reference plate), '
+    '"identity_bleed_detail": "one-line explanation when identity_bleed is true, else empty string", '
     '"issues": ["short concrete problems"], '
     '"verdict": "pass"|"warn"|"fail", '
     '"notes": "one-line summary" '
@@ -81,10 +83,13 @@ _VISION_SYSTEM = (
     "severe artifacts; 'drift' 0 = identical to reference identity, 10 = "
     "completely different. 'matte_background' true only if the sheet is "
     "rendered against a seamless neutral mid-grey studio backdrop (not "
-    "white, not a scene, not a busy environment). Verdict: pass when "
+    "white, not a scene, not a busy environment). 'identity_bleed' true "
+    "only when a figure's face/identity matches a DIFFERENT character's "
+    "reference plate than the one it is supposed to be (cross-character "
+    "bleed in a multi-character shot). Verdict: pass when "
     "quality_score>=80 and no hard issues; warn when 50-79 or minor "
-    "issues; fail when <50, when distortion>=6, when drift>=6, or when "
-    "the asset is unusable."
+    "issues; fail when <50, when distortion>=6, when drift>=6, when "
+    "identity_bleed is true, or when the asset is unusable."
 )
 
 
@@ -93,6 +98,7 @@ def _vision_user_prompt(
     expect_matt_background: bool,
     has_reference: bool,
     kind: str,
+    expected_characters: list[str] | None = None,
 ) -> str:
     parts = [f"Asset type: {kind}."]
     if description:
@@ -107,6 +113,23 @@ def _vision_user_prompt(
         parts.append(
             "A reference image is attached: compare the candidate to it and "
             "score drift."
+        )
+    # Issue #51: multi-character identity bleed. When the caller names the
+    # characters that are supposed to co-appear in the frame, ask the model
+    # to verify each one is rendered distinctly (their own face, not the
+    # dominant/first-listed character's face), and to set identity_bleed.
+    if expected_characters:
+        names = ", ".join(expected_characters)
+        parts.append(
+            f"This shot is supposed to contain these distinct characters: "
+            f"{names}. For EACH character, check that the corresponding "
+            f"figure in the frame actually looks like THAT character's "
+            f"reference (face, skin tone, wardrobe) and NOT like another "
+            f"character in the same list. If any figure's face/identity has "
+            f"bled into a different character's identity (e.g. the "
+            f"secondary character rendered with the primary character's "
+            f"face), set identity_bleed=true and describe it in "
+            f"identity_bleed_detail. Otherwise set identity_bleed=false."
         )
     return "\n".join(parts)
 
@@ -223,6 +246,84 @@ class GateResult:
 def is_video(path: Path) -> bool:
     """Return True when *path* looks like a video file by extension."""
     return path.suffix.lower() in _VIDEO_EXTS
+
+
+def detect_identity_bleed_heuristic(
+    frame: Path,
+    expected_character_count: int,
+) -> bool:
+    """Deterministic backstop for multi-character identity bleed (issue #51).
+
+    The authoritative check is the AI verdict's ``identity_bleed`` field.
+    This helper is a cheap offline guard for when the AI check is
+    unavailable (no API key / use_ai off): it counts distinct skin-toned
+    face-like clusters in the frame and flags a mismatch with the expected
+    character count.
+
+    Heuristic only — a real face detector is out of scope for a quality
+    gate, so this is intentionally conservative: it returns ``True``
+    (suspected bleed) only when the observed cluster count differs from the
+    expected character count by more than 1. A single miscount is tolerated
+    because faces in shadow or partial framing are hard to count. Returns
+    ``False`` when the count matches, when the frame cannot be read, or
+    when the expected count is 0/1 (single-character or object shots — no
+    bleed possible).
+    """
+    if expected_character_count <= 1:
+        return False
+    try:
+        from PIL import Image  # type: ignore
+
+        with Image.open(frame) as im:
+            im = im.convert("RGB")
+            im.thumbnail((512, 512))
+    except Exception:
+        return False  # unreadable -> no signal, don't raise a false flag
+    # Count connected skin clusters on a 16x16 grid (no scipy).
+    # NOTE: im.getdata() is deprecated in Pillow 14; use get_flattened_data()
+    # when the minimum Pillow version allows. Kept as getdata() for the
+    # current pinned range (>=8.0).
+    pixels = list(im.getdata())
+    w, h = im.size
+    # Build a coarse skin-tone mask.
+    skin_mask: list[int] = []
+    for r, g, b in pixels:
+        # Loose skin-tone band (light + dark complexions): R > G > B,
+        # R above B, not near-black, not near-white.
+        if r > b + 12 and r > g and g > b and r > 50 and r < 245:
+            skin_mask.append(1)
+        else:
+            skin_mask.append(0)
+    # Count connected skin clusters on a 16x16 grid (no scipy).
+    grid = 16
+    cell_w = max(1, w // grid)
+    cell_h = max(1, h // grid)
+    clusters = 0
+    seen: set[tuple[int, int]] = set()
+    for cy in range(grid):
+        for cx in range(grid):
+            if (cx, cy) in seen:
+                continue
+            idx = (cy * cell_h) * w + cx * cell_w
+            if idx >= len(skin_mask) or skin_mask[idx] == 0:
+                continue
+            stack = [(cx, cy)]
+            size = 0
+            while stack:
+                x, y = stack.pop()
+                if (x, y) in seen or x < 0 or y < 0 or x >= grid or y >= grid:
+                    continue
+                i2 = (y * cell_h) * w + x * cell_w
+                if i2 >= len(skin_mask) or skin_mask[i2] == 0:
+                    continue
+                seen.add((x, y))
+                size += 1
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    stack.append((x + dx, y + dy))
+            if size >= 2:  # a real face spans >= 2 grid cells
+                clusters += 1
+    # Suspected bleed when the observed count differs from expected by > 1.
+    return abs(clusters - expected_character_count) > 1
 
 
 def _probe_video(path: Path) -> dict[str, Any] | None:
@@ -486,6 +587,26 @@ def _apply_ai_verdict(
                 detail=drift,
             )
 
+    # Identity bleed (issue #51): a multi-character shot rendered a figure
+    # with a different character's face/identity than its own reference.
+    identity_bleed = verdict.get("identity_bleed")
+    if identity_bleed is True:
+        detail = str(verdict.get("identity_bleed_detail") or "").strip()
+        msg = "Identity bleed: a figure was rendered with a different character's face/identity"
+        if detail:
+            msg += f" — {detail}"
+        result.add_issue(msg, check="identity_bleed", detail=detail or True)
+
+    # Identity bleed (issue #51): a multi-character shot rendered a figure
+    # with a different character's face/identity than its own reference.
+    identity_bleed = verdict.get("identity_bleed")
+    if identity_bleed is True:
+        detail = str(verdict.get("identity_bleed_detail") or "").strip()
+        msg = "Identity bleed: a figure was rendered with a different character's face/identity"
+        if detail:
+            msg += f" — {detail}"
+        result.add_issue(msg, check="identity_bleed", detail=detail or True)
+
     # Matte backdrop requirement
     if expect_matt_background and matte is not None and not matte:
         result.add_warning(
@@ -528,6 +649,7 @@ async def _run_vision_check(
     expect_matt_background: bool,
     kind: str,
     model: str,
+    expected_characters: list[str] | None = None,
 ) -> dict[str, Any]:
     """Single multimodal chat completion; returns the parsed verdict JSON."""
     import base64
@@ -555,7 +677,10 @@ async def _run_vision_check(
     labels.append("IMAGE " + ("2" if has_reference else "1") + " = CANDIDATE")
     user_text = "\n".join(
         [
-            _vision_user_prompt(description, expect_matt_background, has_reference, kind),
+            _vision_user_prompt(
+                description, expect_matt_background, has_reference, kind,
+                expected_characters=expected_characters,
+            ),
             *labels,
         ]
     )
@@ -609,6 +734,7 @@ async def verify_element(
     threshold: int | None = None,
     lenient: bool = False,
     write_report: bool = True,
+    expected_characters: list[str] | None = None,
 ) -> GateResult:
     """Run the quality gate on one element (image or video).
 
@@ -616,6 +742,14 @@ async def verify_element(
     distortion, drift, matte backdrop, description match) is made by the
     Agnes multimodal model. When ``use_ai`` is off or no key is available,
     the AI verdict is skipped and the gate reports the pre-checks only.
+
+    ``expected_characters`` (issue #51): a list of character names that are
+    supposed to co-appear distinctly in the frame. When given and the AI
+    check runs, the vision prompt asks the model to verify each character is
+    rendered with their own identity (not another character's face) and to
+    set ``identity_bleed`` in the verdict; a ``true`` bleed becomes a gate
+    issue. Pass ``None`` (the default) for single-character or object shots
+    to keep the prompt unchanged.
 
     Gate policy (issue #34): ``threshold`` sets a quality-score floor
     (None = no floor — default; pre-checks + artifact cutoffs only) and
@@ -648,6 +782,7 @@ async def verify_element(
                     expect_matt_background=expect_matt_background,
                     kind=kind,
                     model=model,
+                    expected_characters=expected_characters,
                 )
                 _apply_ai_verdict(
                     result,
@@ -705,6 +840,7 @@ __all__ = [
     "GATE_WARN_CUTOFFS",
     "drift_prevention",
     "PromptConsistencyChecker",
+    "detect_identity_bleed_heuristic",
 ]
 
 

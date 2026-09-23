@@ -42,42 +42,72 @@
 
   /* Button base */
   .btn-icon {
-    @apply inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded text-body-sm font-medium
-           transition-colors duration-150 cursor-pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: color 150ms, background-color 150ms, border-color 150ms;
+    cursor: pointer;
   }
   .btn-icon-sm {
-    @apply h-7 w-7 p-0;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
   }
   .btn-icon-xs {
-    @apply h-6 w-6 p-0;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
   }
 
   /* Panel container */
   .panel {
-    @apply bg-surface-container border border-surface-container-highest rounded-lg overflow-hidden;
+    background: var(--md-surface-container);
+    border: 1px solid var(--md-surface-container-highest);
+    border-radius: 0.5rem;
+    overflow: hidden;
   }
 
   /* Clip card */
   .clip-card {
-    @apply rounded-lg border transition-all duration-150 cursor-pointer
-           hover:border-primary/60 focus-within:border-primary;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    transition: all 150ms;
+    cursor: pointer;
   }
+  .clip-card:hover { border-color: color-mix(in srgb, var(--md-primary) 60%, transparent); }
+  .clip-card:focus-within { border-color: var(--md-primary); }
 
   /* Input fields */
   .input-field {
-    @apply bg-surface-container-lowest border border-surface-container-highest rounded
-           text-on-surface text-body-sm px-2 py-1 focus:border-primary focus:outline-none
-           transition-colors;
+    background: var(--md-surface-container-lowest);
+    border: 1px solid var(--md-surface-container-highest);
+    border-radius: 0.25rem;
+    color: var(--md-on-surface);
+    font-size: 0.875rem;
+    padding: 0.25rem 0.5rem;
+    transition: color 150ms, background-color 150ms, border-color 150ms;
   }
+  .input-field:focus { border-color: var(--md-primary); outline: none; }
 
   /* Badge */
   .badge {
-    @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-label-sm font-medium;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
   }
-  .badge-pass { @apply bg-green-900/30 text-green-400; }
-  .badge-warn { @apply bg-yellow-900/30 text-yellow-400; }
-  .badge-fail { @apply bg-red-900/30 text-red-400; }
-  .badge-pending { @apply bg-surface-container-highest text-on-surface-variant; }
+  .badge-pass { background: rgb(20 83 45 / 30%); color: #4ade80; }
+  .badge-warn { background: rgb(113 63 18 / 30%); color: #facc15; }
+  .badge-fail { background: rgb(127 29 29 / 30%); color: #f87171; }
+  .badge-pending { background: var(--md-surface-container-highest); color: var(--md-on-surface-variant); }
 }
 
 @layer utilities {

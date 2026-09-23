@@ -28,15 +28,6 @@ function ColorWheel({
   const svgRef = useRef<SVGSVGElement>(null);
   const dragging = useRef(false);
 
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    dragging.current = true;
-    move(e.nativeEvent);
-    const onMove = (ev: PointerEvent) => move(ev);
-    const onUp = () => { dragging.current = false; document.removeEventListener('pointermove', onMove); document.removeEventListener('pointerup', onUp); };
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
-  }, [onChange]);
-
   const move = useCallback((ev: PointerEvent) => {
     const svg = svgRef.current;
     if (!svg) return;
@@ -49,6 +40,15 @@ function ColorWheel({
     if (dist > 1) { x /= dist; y /= dist; }
     onChange({ x, y });
   }, [onChange]);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    dragging.current = true;
+    move(e.nativeEvent);
+    const onMove = (ev: PointerEvent) => move(ev);
+    const onUp = () => { dragging.current = false; document.removeEventListener('pointermove', onMove); document.removeEventListener('pointerup', onUp); };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }, [move]);
 
   const r = (offset.x * 80).toFixed(2);
   const g = (offset.y * 60).toFixed(2);

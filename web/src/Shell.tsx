@@ -43,10 +43,12 @@ export default function Shell() {
     void fetchProjects();
   }, [fetchProjects]);
 
+  const activeProjectId = activeProject?.id;
+
   useEffect(() => {
-    if (!activeProject) return;
+    if (!activeProjectId) return;
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${proto}//${window.location.host}/ws/${activeProject.id}`;
+    const wsUrl = `${proto}//${window.location.host}/ws/${activeProjectId}`;
     const cleanUrl = withToken(wsUrl).replace(window.location.origin, '');
     const ws = new WebSocket(cleanUrl);
 
@@ -65,7 +67,7 @@ export default function Shell() {
     ws.onclose = () => setWsReady(false);
 
     return () => { ws.close(); };
-  }, [activeProject?.id]);
+  }, [activeProjectId]);
 
   const Panel = PANELS[activePanel];
 

@@ -234,29 +234,29 @@ def _check_phase_artifacts(
 
     Returns an empty list when the phase passes its gate.
     """
-    proj_dir = layout.resolve_project_dir(root, project_id)
+    root_proj = Path(root)
     missing: list[tuple[str, Path]] = []
 
     if phase == "asset":
-        videos = list((proj_dir / "videos").rglob("*.mp4"))
-        images = list((proj_dir / "images").rglob("*"))
+        videos = list((root_proj / "production" / project_id / "videos").rglob("*.mp4"))
+        images = list((root_proj / "pre-production" / project_id).rglob("*"))
         images = [p for p in images if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
         if not videos and not images:
-            missing.append(("video or image", proj_dir / "videos"))
+            missing.append(("video or image", root_proj / "production" / project_id / "videos"))
 
     elif phase == "audio":
-        audios = list((proj_dir / "audio").rglob("*"))
+        audios = list((root_proj / "production" / project_id / "audio").rglob("*"))
         audios = [p for p in audios if p.suffix.lower() in (".mp3", ".wav", ".m4a", ".ogg")]
         # A silent-track-only project is still acceptable if there are videos (voiceover optional)
         if not audios:
-            videos = list((proj_dir / "videos").rglob("*.mp4"))
+            videos = list((root_proj / "production" / project_id / "videos").rglob("*.mp4"))
             if not videos:
-                missing.append(("audio file", proj_dir / "audio"))
+                missing.append(("audio file", root_proj / "production" / project_id / "audio"))
 
     elif phase == "re_edit":
-        videos = list((proj_dir / "videos").rglob("*.mp4"))
+        videos = list((root_proj / "production" / project_id / "videos").rglob("*.mp4"))
         if not videos:
-            missing.append(("video clip", proj_dir / "videos"))
+            missing.append(("video clip", root_proj / "production" / project_id / "videos"))
 
     return missing
 

@@ -84,18 +84,6 @@ from brandly_cli.video_prompts import build_enhanced_video_prompt
     "--platforms", "-p", multiple=True, help="Target platforms (tiktok, instagram, youtube, all)"
 )
 @click.option("--image", "-img", default=None, help="Optional product image path")
-@click.option(
-    "--layout",
-    "layout_mode",
-    type=click.Choice(["v1", "v2"]),
-    default="v1",
-    show_default=True,
-    help=(
-        "On-disk layout (issue #43): v1 = everything under .brandly/<project>/; "
-        "v2 = .brandly docs/config + pre-production/ assets + production/ outputs "
-        "in the project workspace. New projects default to v1 for compatibility."
-    ),
-)
 @click.pass_context
 def init(
     ctx: click.Context,
@@ -106,7 +94,6 @@ def init(
     shots: int,
     platforms: tuple[str, ...],
     image: str | None,
-    layout_mode: str,
 ) -> None:
     """Start a new Brandly video project."""
     if style not in VIDEO_STYLES:
@@ -138,20 +125,17 @@ def init(
         budget=budget,
         target_platforms=list(platforms) if platforms else ["tiktok", "instagram"],
     )
-    if layout_mode == "v2":
-        proj = proj.model_copy(update={"layout_version": 2})
+    proj = proj.model_copy(update={"layout_version": 2})
     asyncio.run(pm.create(proj))
-    if layout_mode == "v2":
-        from brandly_cli import migrate as migrate_mod
+    from brandly_cli import migrate as migrate_mod
 
-        migrate_mod.ensure_v2_skeleton(root, pid)
+    migrate_mod.ensure_v2_skeleton(root, pid)
     console.print(Panel(f"Project created! [green]{pid}[/green]", title="Brandly"))
     console.print(f"  Slug:      {slug}")
     console.print(f"  Name:      {name}")
     console.print(f"  Style:     {style}")
     console.print(f"  Shots:     {shots}")
     console.print(f"  Budget:    {budget} credits")
-    console.print(f"  Layout:    {layout_mode}")
     console.print(f"  Platforms: {proj.target_platforms}")
     console.print(f"\nNext: [bold]brandly run {pid}[/bold] to start the pipeline.")
 
@@ -1053,7 +1037,7 @@ def batch(
                 # keeps the cinematic preset, others get none. Applied here
                 # (prompt layer) because providers no longer import style_presets.
                 if style == "cinematic":
-                    variant_prompt = apply_style_preset(variant_prompt, "cinematic")
+                    variant_prompt = apply_style_preset(variant_prompt, "cinematic", media="still")
                 task = await create_video_task(
                     variant_prompt,
                     model=model,
@@ -1294,7 +1278,7 @@ class Director:
         n: int = 1,
     ) -> dict[str, Any]:
         """Generate an image and store result in project."""
-        enhanced = apply_style_preset(prompt, style_preset) if style_preset else prompt
+        enhanced = apply_style_preset(prompt, style_preset, media="still") if style_preset else prompt
         is_ark = model.startswith("seedream")
 
         if is_ark:

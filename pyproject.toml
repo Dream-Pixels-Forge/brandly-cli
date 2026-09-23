@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "brandly-cli"
-version = "0.3.19"
+version = "0.3.20"
 description = "AI product video orchestrator — add image, video, and sound generation to any AI tool"
 readme = "README.md"
 license = "MIT"

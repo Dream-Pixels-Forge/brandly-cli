@@ -188,30 +188,9 @@ def v2_media_root(root: str | Path, project_id: str, top: str) -> Path:
     raise ValueError(f"Unknown media top folder: {top!r}")
 
 
-def is_v2_layout(root: str | Path, project_id: str) -> bool:
-    """True when the project uses the v2 layout (migrated or init --layout v2).
-
-    Detection: ``project.json`` carries ``layout_version: 2`` (authoritative),
-    else the v2 media root already exists on disk.
-    """
-    proj = Path(root) / ".brandly" / project_id / "project.json"
-    if proj.is_file():
-        try:
-            import json as _json
-
-            data = _json.loads(proj.read_text(encoding="utf-8"))
-            if data.get("layout_version") == 2:
-                return True
-        except Exception:
-            pass
-    return (Path(root) / "pre-production" / project_id).is_dir()
-
-
 def resolve_media_root(root: str | Path, project_id: str, top: str) -> Path:
-    """Layout-aware media root: v2 for migrated/v2 projects, legacy otherwise."""
-    if is_v2_layout(root, project_id):
-        return v2_media_root(root, project_id, top)
-    return media_root(project_dir(root, project_id), top)
+    """Return the v2 media root for a project."""
+    return v2_media_root(root, project_id, top)
 
 
 def image_category_for_subject(subject_type: str) -> str:

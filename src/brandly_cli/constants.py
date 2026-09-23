@@ -120,15 +120,16 @@ STYLE_PRESET_OPTIONS: list[StylePreset] = [
 STYLE_CONFIG: dict[StylePreset, dict[str, str]] = {
     "photorealistic": {
         "prompt_suffix": (
-            ", shot on Sony A7IV, 85mm f/1.4 lens, shallow depth of field, "
-            "natural skin texture with visible pores, subtle film grain, "
-            "soft natural window light, slight lens imperfections, "
-            "raw unedited photograph look"
+            ", shot on Sony A7IV, 85mm f/1.4 lens, natural skin texture "
+            "with visible pores and fine details, subtle film grain, "
+            "soft natural window light, authentic material textures, "
+            "real fabric weave, genuine metal patina, organic imperfections"
         ),
         "negative_prompt": (
             "ai generated, smooth plastic skin, airbrushed, oversaturated colors, "
             "perfect symmetry, uncanny valley, digital art, 3d render, illustration, "
-            "painting, cartoon, anime, oversharpened, hdr overprocessed"
+            "painting, cartoon, anime, oversharpened, hdr overprocessed, "
+            "fuzzy out-of-focus, cloned textures, muddy low-contrast wash"
         ),
     },
     "editorial": {
@@ -144,13 +145,25 @@ STYLE_CONFIG: dict[StylePreset, dict[str, str]] = {
     },
     "cinematic": {
         "prompt_suffix": (
-            ", anamorphic lens, 2.39:1 widescreen aspect, teal and orange color grading, "
-            "film grain, volumetric light rays, shallow depth of field, cinematic color science, "
-            "Kodak Vision3 500T film stock look"
+            ", shot through anamorphic lens, teal and orange color grading, "
+            "volumetric light rays, shallow depth of field, cinematic color science, "
+            "Kodak Vision3 500T film stock, subtle film grain, organic skin texture "
+            "with visible pores and natural micro-details, real fabric weave texture, "
+            "authentic material sheen, soft practical lighting"
         ),
         "negative_prompt": (
-            "ai generated, flat lighting, oversaturated, plastic look, digital art, "
-            "illustration, cartoon, anime, overexposed, underexposed, blurry, low quality"
+            "ai generated, smooth plastic skin, airbrushed, oversaturated, "
+            "fuzzy out-of-focus areas, digital art, illustration, cartoon, anime, "
+            "perfect symmetry, uncanny valley, oversharpened, hdr overprocessed, "
+            "cloned repetitive textures, muddy low-contrast wash"
+        ),
+        # Distinct suffix for still-image generation (cinematic photo, not motion)
+        "prompt_suffix_still": (
+            ", cinematic still photograph, anamorphic lens, teal and orange color grading, "
+            "shallow depth of field, volumetric light rays, Kodak Vision3 500T film stock, "
+            "subtle film grain, authentic skin texture with visible pores and fine details, "
+            "real fabric weave texture, genuine material surfaces, soft practical lighting, "
+            "editorial photography quality, no motion blur, sharp static composition"
         ),
     },
     "commercial": {

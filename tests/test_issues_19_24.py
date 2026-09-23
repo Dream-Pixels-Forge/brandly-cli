@@ -1,4 +1,4 @@
-﻿r"""Tests for issue fixes #19, #20, #21, #23, #24 and the shot-by-shot
+r"""Tests for issue fixes #19, #20, #21, #23, #24 and the shot-by-shot
 production pipeline (`brandly produce`) driven by the production plan.
 
 Run under .venv\Scripts\python (editable install points at src/).
@@ -155,12 +155,23 @@ class TestStylePresetFollowsStyle:
 # ---------------------------------------------------------------------------
 
 
+def _ensure_plan(tmp_path: Path, project_id: str) -> None:
+    """Write a minimal production plan so brandly video passes its gate."""
+    plan_dir = tmp_path / ".brandly" / project_id / "docs" / "plan"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / "production_plan.md").write_text(
+        "| Plan | Asset | Shot ID | Model | Source | Status | Created | Updated |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+    )
+
+
 class TestVideoCreateErrorVisibility:
     def test_exception_type_and_message_printed(
         self, runner: CliRunner, project_dir: Path, tmp_path: Path
     ) -> None:
         pid = generate_project_id()
         _write_project(project_dir, pid)
+        _ensure_plan(tmp_path, pid)
 
         with patch(
             "brandly_cli.cmd.generation.create_video_task",
@@ -181,6 +192,7 @@ class TestVideoCreateErrorVisibility:
     ) -> None:
         pid = generate_project_id()
         _write_project(project_dir, pid)
+        _ensure_plan(tmp_path, pid)
 
         with patch(
             "brandly_cli.cmd.generation.create_video_task",
@@ -272,6 +284,7 @@ class TestScopedAutoRefs:
         _write_project(project_dir, pid)
         _add_image(project_dir, pid, "prop", "a.png")
         _add_image(project_dir, pid, "location", "b.png")
+        _ensure_plan(tmp_path, pid)
         capture: dict[str, Any] = {}
         result = self._invoke(runner, pid, capture=capture)
         assert result.exit_code == 0, result.output
@@ -285,6 +298,7 @@ class TestScopedAutoRefs:
         pid = generate_project_id()
         _write_project(project_dir, pid)
         _add_image(project_dir, pid, "prop", "a.png")
+        _ensure_plan(tmp_path, pid)
         capture: dict[str, Any] = {}
         result = self._invoke(runner, pid, "--no-auto-refs", capture=capture)
         assert result.exit_code == 0, result.output
@@ -298,6 +312,7 @@ class TestScopedAutoRefs:
         _write_project(project_dir, pid)
         _add_image(project_dir, pid, "prop", "a.png")
         _add_image(project_dir, pid, "location", "b.png")
+        _ensure_plan(tmp_path, pid)
         capture: dict[str, Any] = {}
         result = self._invoke(
             runner, pid, "--auto-ref-category", "location", capture=capture

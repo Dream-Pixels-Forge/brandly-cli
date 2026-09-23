@@ -677,7 +677,7 @@ def ark_image(
     console.print(f"[dim]Generating image with {model}...[/dim]")
     try:
         # Style presets are applied by the caller (providers stay dumb).
-        enhanced = apply_style_preset(prompt, style_preset) if style_preset else prompt
+        enhanced = apply_style_preset(prompt, style_preset, media="still") if style_preset else prompt
         result = asyncio.run(
             ark_generate_image(enhanced, model=model, size=size, n=n)
         )

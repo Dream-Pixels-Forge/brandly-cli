@@ -8,18 +8,23 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 from rich.panel import Panel
 from rich.table import Table
 
-from brandly_cli import __version__
+from brandly_cli import __version__, layout
 from brandly_cli.cli import (
     _ffmpeg_available,
     _ffprobe_available,
     console,
 )
 from brandly_cli.sync import SYNC_HANDLERS, TOOLS, detect_tools, sync_keys
+from brandly_cli.utils import (
+    _read_production_plan_rows,
+    production_plan_path,
+)
 
 
 @click.command()
@@ -134,8 +139,108 @@ def share(file_path: str, provider: str, root: str | None) -> None:
     if result.get("file_size_bytes"):
         console.print(f"  Size: {(result['file_size_bytes']//1024)}KB")
 
+
+@click.command()
+@click.argument("project_id")
+@click.option("--root", default=None, help="Working directory")
+@click.pass_context
+def analyze_project(ctx: click.Context, project_id: str, root: str | None) -> None:
+    """Analyze a project: what exists vs what the screenplay/plan requires."""
+    from brandly_cli.cli import _get_root
+    from brandly_cli.project_manager import ProjectManager
+
+    root_path = Path(root) if root else _get_root(ctx)
+    pm = ProjectManager(root_path)
+    proj = asyncio.run(pm.read(project_id))
+    if not proj:
+        console.print(f"[red]Project not found: {project_id}[/red]")
+        sys.exit(1)
+
+    console.print(f"[bold]Project Analysis: {proj.name or project_id}[/bold]")
+    console.print(f"  Style: {proj.style} | Shots: {proj.shot_count} | Status: {proj.status}")
+    console.print()
+
+    # --- Production plan rows ---
+    plan_path = production_plan_path(project_id, root=root_path)
+    rows = _read_production_plan_rows(plan_path) if plan_path.exists() else {}
+
+    if not rows:
+        console.print("[yellow]No production plan found. Run `brandly director` first.[/yellow]")
+        console.print()
+        _print_missing_assets_summary(root_path, project_id, proj)
+        return
+
+    # --- Group by asset type ---
+    by_type: dict[str, list[dict[str, str]]] = {}
+    for _, info in rows.items():
+        asset = info.get("asset", "")
+        by_type.setdefault(asset, []).append(info)
+
+    # --- Render per-type tables ---
+    for asset_type, items in sorted(by_type.items()):
+        table = Table(title=f"{asset_type.title()} Assets ({len(items)})")
+        table.add_column("Plan File", style="cyan")
+        table.add_column("Shot ID", style="dim")
+        table.add_column("Status", style="white")
+        table.add_column("Created", style="dim")
+        for info in items:
+            status = info.get("status", "?")
+            status_style = {
+                "COMPLETED": "green",
+                "PENDING": "yellow",
+                "FAILED": "red",
+                "RUNNING": "blue",
+            }.get(status, "white")
+            table.add_row(
+                info.get("asset", ""),
+                info.get("shot_id", ""),
+                f"[{status_style}]{status}[/]",
+                info.get("updated", "")[:10],
+            )
+        console.print(table)
+
+    # --- Missing assets check ---
+    console.print()
+    _print_missing_assets_summary(root_path, project_id, proj)
+
+
+def _print_missing_assets_summary(root: Path, project_id: str, proj: Any) -> None:
+    """Check what media files exist vs what the project needs."""
+    images_dir = layout.resolve_media_root(root, project_id, "images")
+    videos_dir = layout.resolve_media_root(root, project_id, "videos")
+    audio_dir = layout.resolve_media_root(root, project_id, "audio")
+
+    # Count existing assets
+    image_files = list(images_dir.rglob("*")) if images_dir.exists() else []
+    image_files = [f for f in image_files if f.is_file()]
+    video_files = list(videos_dir.rglob("*.mp4")) if videos_dir.exists() else []
+    audio_files = list(audio_dir.rglob("*")) if audio_dir.exists() else []
+    audio_files = [f for f in audio_files if f.is_file()]
+
+    shot_count = getattr(proj, "shot_count", 0) or 5
+
+    console.print("[bold]Asset Summary[/bold]")
+    console.print(f"  Images (plates):   {len(image_files)} found")
+    console.print(f"  Videos (clips):    {len(video_files)} found (need ~{shot_count})")
+    console.print(f"  Audio:             {len(audio_files)} found")
+
+    missing_videos = max(0, shot_count - len(video_files))
+    if missing_videos > 0:
+        console.print(f"  [yellow]⚠ {missing_videos} video clip(s) still needed[/yellow]")
+
+    has_references = any(f.name.startswith("reference_") for f in image_files)
+    if not has_references and image_files:
+        console.print("  [yellow]⚠ No primary reference image found — run `brandly reference`[/yellow]")
+    elif not image_files:
+        console.print("  [yellow]⚠ No reference images found — run `brandly reference` first[/yellow]")
+
+    console.print()
+    console.print("[dim]Tip: Run `brandly produce <id> --shots shots.json` to generate missing clips.[/dim]")
+
+
 def register(cli) -> None:
     cli.add_command(sync)
     cli.add_command(version)
     cli.add_command(webhook)
     cli.add_command(share)
+    cli.add_command(analyze_project)

@@ -84,18 +84,6 @@ from brandly_cli.video_prompts import build_enhanced_video_prompt
     "--platforms", "-p", multiple=True, help="Target platforms (tiktok, instagram, youtube, all)"
 )
 @click.option("--image", "-img", default=None, help="Optional product image path")
-@click.option(
-    "--layout",
-    "layout_mode",
-    type=click.Choice(["v1", "v2"]),
-    default="v1",
-    show_default=True,
-    help=(
-        "On-disk layout (issue #43): v1 = everything under .brandly/<project>/; "
-        "v2 = .brandly docs/config + pre-production/ assets + production/ outputs "
-        "in the project workspace. New projects default to v1 for compatibility."
-    ),
-)
 @click.pass_context
 def init(
     ctx: click.Context,
@@ -106,7 +94,6 @@ def init(
     shots: int,
     platforms: tuple[str, ...],
     image: str | None,
-    layout_mode: str,
 ) -> None:
     """Start a new Brandly video project."""
     if style not in VIDEO_STYLES:
@@ -138,20 +125,17 @@ def init(
         budget=budget,
         target_platforms=list(platforms) if platforms else ["tiktok", "instagram"],
     )
-    if layout_mode == "v2":
-        proj = proj.model_copy(update={"layout_version": 2})
+    proj = proj.model_copy(update={"layout_version": 2})
     asyncio.run(pm.create(proj))
-    if layout_mode == "v2":
-        from brandly_cli import migrate as migrate_mod
+    from brandly_cli import migrate as migrate_mod
 
-        migrate_mod.ensure_v2_skeleton(root, pid)
+    migrate_mod.ensure_v2_skeleton(root, pid)
     console.print(Panel(f"Project created! [green]{pid}[/green]", title="Brandly"))
     console.print(f"  Slug:      {slug}")
     console.print(f"  Name:      {name}")
     console.print(f"  Style:     {style}")
     console.print(f"  Shots:     {shots}")
     console.print(f"  Budget:    {budget} credits")
-    console.print(f"  Layout:    {layout_mode}")
     console.print(f"  Platforms: {proj.target_platforms}")
     console.print(f"\nNext: [bold]brandly run {pid}[/bold] to start the pipeline.")
 
@@ -474,6 +458,12 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
         "ID (issue #37)."
     ),
 )
+@click.option(
+    "--open-ui",
+    is_flag=True,
+    default=False,
+    help="Open the timeline editor UI after all shots are generated.",
+)
 @click.pass_context
 def produce(
     ctx: click.Context,
@@ -490,6 +480,7 @@ def produce(
     split_long_shots: bool,
     aspect_ratio: str | None,
     no_plan: bool,
+    open_ui: bool,
 ) -> None:
     """Generate a multi-shot film shot by shot from the production plan.
 
@@ -673,6 +664,22 @@ def produce(
             sys.exit(1)
 
     console.print(f"[green]✓ Production complete — see {plan_doc}[/green]")
+
+    # Open UI if requested
+    if open_ui:
+        console.print("[dim]Opening timeline editor...[/dim]")
+        try:
+            import threading
+
+            from brandly_cli.web import start_server
+            def _open_ui():
+                import time
+                time.sleep(1)
+                start_server(str(root), port=8765, open_browser=True)
+            t = threading.Thread(target=_open_ui, daemon=True)
+            t.start()
+        except ImportError:
+            console.print("[yellow]Web UI not available — install with: pip install brandly-cli[web][/yellow]")
 
 @click.command(name="storyboard")
 @click.argument("project_id")
@@ -1053,7 +1060,7 @@ def batch(
                 # keeps the cinematic preset, others get none. Applied here
                 # (prompt layer) because providers no longer import style_presets.
                 if style == "cinematic":
-                    variant_prompt = apply_style_preset(variant_prompt, "cinematic")
+                    variant_prompt = apply_style_preset(variant_prompt, "cinematic", media="still")
                 task = await create_video_task(
                     variant_prompt,
                     model=model,
@@ -1294,7 +1301,7 @@ class Director:
         n: int = 1,
     ) -> dict[str, Any]:
         """Generate an image and store result in project."""
-        enhanced = apply_style_preset(prompt, style_preset) if style_preset else prompt
+        enhanced = apply_style_preset(prompt, style_preset, media="still") if style_preset else prompt
         is_ark = model.startswith("seedream")
 
         if is_ark:
@@ -1685,3 +1692,29 @@ def register(cli) -> None:
     cli.add_command(resume)
     cli.add_command(batch)
     cli.add_command(compare)
+    cli.add_command(timeline)
+
+
+@click.command()
+@click.option("--port", "-p", default=8765, help="Port to serve the editor on (default: 8765)")
+@click.option("--no-browser", is_flag=True, help="Do not open browser automatically")
+@click.pass_context
+def timeline(ctx: click.Context, port: int, no_browser: bool) -> None:
+    """Open the visual timeline editor in a browser.
+
+    Lists all .brandly/ projects and lets you view/edit the timeline
+    for any project with a generated shot list.
+
+    If no project ID is given, the UI shows a project picker.
+    """
+    try:
+        from brandly_cli.web import start_server
+    except ImportError as e:
+        console.print(f"[red]Web UI dependency not installed: {e}[/red]")
+        console.print("[yellow]Install with: pip install brandly-cli[web][/yellow]")
+        sys.exit(1)
+
+    root = str(_get_root(ctx))
+    console.print(f"[dim]Starting timeline editor on http://127.0.0.1:{port}[/dim]")
+    console.print("[dim]Press Ctrl+C to stop[/dim]")
+    start_server(root, port=port, open_browser=not no_browser)

@@ -45,7 +45,8 @@ def _write_project(project_dir: Path, project_id: str) -> None:
 
 
 def _add_plate(project_dir: Path, pid: str, category: str, name: str) -> Path:
-    p = project_dir / pid / "images" / category / name
+    # v2 layout: plates live in pre-production/<pid>/<category>/
+    p = project_dir.parent / "pre-production" / pid / category / name
     p.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (16, 16), (10, 10, 10)).save(p, "PNG")
     return p
@@ -55,6 +56,16 @@ def _write_shots_file(tmp_path: Path, data: Any, name: str = "shots.json") -> Pa
     f = tmp_path / name
     f.write_text(json.dumps(data))
     return f
+
+
+def _ensure_plan(tmp_path: Path, project_id: str) -> None:
+    """Write a minimal production plan so brandly video passes its gate."""
+    plan_dir = tmp_path / ".brandly" / project_id / "docs" / "plan"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / "production_plan.md").write_text(
+        "| Plan | Asset | Shot ID | Model | Source | Status | Created | Updated |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -67,25 +78,33 @@ class TestResolvePlate:
         pid = generate_project_id()
         _add_plate(project_dir, pid, "character", "char_a.jpg")
         _add_plate(project_dir, pid, "character", "char_a.opt.jpg")
-        path = shot_runner.resolve_plate("char_a", project_dir / pid / "images")
+        path = shot_runner.resolve_plate(
+            "char_a", tmp_path / "pre-production" / pid
+        )
         assert path.name == "char_a.opt.jpg"
 
     def test_falls_back_to_plain_image(self, project_dir: Path, tmp_path: Path) -> None:
         pid = generate_project_id()
         _add_plate(project_dir, pid, "location", "loc_x.png")
-        path = shot_runner.resolve_plate("loc_x", project_dir / pid / "images")
+        path = shot_runner.resolve_plate(
+            "loc_x", tmp_path / "pre-production" / pid
+        )
         assert path.name == "loc_x.png"
 
     def test_searches_all_categories(self, project_dir: Path, tmp_path: Path) -> None:
         pid = generate_project_id()
         _add_plate(project_dir, pid, "prop", "prop_1.jpg")
-        path = shot_runner.resolve_plate("prop_1", project_dir / pid / "images")
+        path = shot_runner.resolve_plate(
+            "prop_1", tmp_path / "pre-production" / pid
+        )
         assert path.parent.name == "prop"
 
     def test_missing_plate_raises(self, project_dir: Path, tmp_path: Path) -> None:
         _add_plate(project_dir, "x", "character", "c.png")
         with pytest.raises(FileNotFoundError):
-            shot_runner.resolve_plate("ghost", project_dir / "x" / "images")
+            shot_runner.resolve_plate(
+                "ghost", tmp_path / "pre-production" / "x"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +143,7 @@ class TestFlattenShots:
                 },
             },
         }
-        shots = shot_runner.flatten_shots(data, project_dir / pid / "images")
+        shots = shot_runner.flatten_shots(data, tmp_path / "pre-production" / pid)
         assert [s.id for s in shots] == ["shot01", "trans12"]
         s1, t12 = shots
         assert s1.prompt == "Ink world: wide"
@@ -151,7 +170,7 @@ class TestFlattenShots:
                 },
             },
         }
-        (shot,) = shot_runner.flatten_shots(data, project_dir / pid / "images")
+        (shot,) = shot_runner.flatten_shots(data, tmp_path / "pre-production" / pid)
         assert shot.character is None
 
     def test_per_shot_character_wins_over_global(
@@ -170,7 +189,7 @@ class TestFlattenShots:
                 },
             },
         }
-        (shot,) = shot_runner.flatten_shots(data, project_dir / pid / "images")
+        (shot,) = shot_runner.flatten_shots(data, tmp_path / "pre-production" / pid)
         assert shot.character == "per-shot"
 
     def test_cli_character_argument_wins_over_global(
@@ -185,7 +204,7 @@ class TestFlattenShots:
             },
         }
         (shot,) = shot_runner.flatten_shots(
-            data, project_dir / pid / "images", character="cli"
+            data, tmp_path / "pre-production" / pid, character="cli"
         )
         assert shot.character == "cli"
 
@@ -196,7 +215,7 @@ class TestFlattenShots:
             {"name": "shot-1", "prompt": "establishing", "duration": 5,
              "references": "plates/a.png"},
         ]
-        (shot,) = shot_runner.flatten_shots(data, project_dir / "p" / "images")
+        (shot,) = shot_runner.flatten_shots(data, tmp_path / "pre-production" / "p")
         assert shot.refs == ["plates/a.png"]
         assert shot.prompt == "establishing"
         assert shot.style == "cinematic"  # default
@@ -207,7 +226,7 @@ class TestFlattenShots:
         data = [
             {"name": "shot-1", "prompt": "x", "references": "a.png, b.png"},
         ]
-        (shot,) = shot_runner.flatten_shots(data, project_dir / "p" / "images")
+        (shot,) = shot_runner.flatten_shots(data, tmp_path / "pre-production" / "p")
         assert shot.refs == ["a.png", "b.png"]
 
     def test_missing_plate_fails_with_clear_error(
@@ -225,7 +244,7 @@ class TestFlattenShots:
             "refs": ["top.png"],
             "acts": {"a": {"refs": ["act.png"], "shots": [{"id": "s", "refs": []}]}},
         }
-        (shot,) = shot_runner.flatten_shots(data, project_dir / "p" / "images")
+        (shot,) = shot_runner.flatten_shots(data, tmp_path / "pre-production" / "p")
         assert shot.refs == []
 
     def test_scene_and_shot_numbering_follow_act_order(
@@ -244,7 +263,7 @@ class TestFlattenShots:
                 "act2": {"shots": [{"id": "shot05", "prompt": "e"}]},
             },
         }
-        shots = shot_runner.flatten_shots(data, project_dir / "p" / "images")
+        shots = shot_runner.flatten_shots(data, tmp_path / "pre-production" / "p")
         assert [(s.scene, s.index_in_scene) for s in shots] == [
             (1, 1),
             (1, 2),
@@ -268,7 +287,7 @@ class TestFlattenShots:
             {"name": "shot-2", "prompt": "b"},
             {"name": "shot-3", "prompt": "c"},
         ]
-        shots = shot_runner.flatten_shots(data, project_dir / "p" / "images")
+        shots = shot_runner.flatten_shots(data, tmp_path / "pre-production" / "p")
         assert [(s.scene, s.index_in_scene) for s in shots] == [(1, 1), (1, 2), (1, 3)]
 
     def test_explicit_scene_overrides_act_order(
@@ -285,7 +304,7 @@ class TestFlattenShots:
                 },
             },
         }
-        shots = shot_runner.flatten_shots(data, project_dir / "p" / "images")
+        shots = shot_runner.flatten_shots(data, tmp_path / "pre-production" / "p")
         assert [(s.scene, s.index_in_scene) for s in shots] == [(7, 1), (2, 1), (9, 2)]
 
 
@@ -656,11 +675,12 @@ class TestProduceRunnerRouting:
                 },
             },
         )
-        clips = project_dir / pid / "videos" / "scenes"
+        clips = tmp_path / "production" / pid / "videos" / "scenes"
+        _ensure_plan(tmp_path, pid)
 
         def fake_generate(project_id: str, shot: dict[str, Any], **kw: Any) -> bool:
             clips.mkdir(parents=True, exist_ok=True)
-            (clips / f"videos_{shot['name']}.mp4").write_bytes(b"x")
+            (clips / f"Scene-01-Shot-1-{kw.get('shot_number', 1)}.mp4").write_bytes(b"x")
             return True
 
         with patch("brandly_cli.cmd.generation._generate_shot", side_effect=fake_generate):
@@ -776,10 +796,11 @@ class TestVideoClipNaming:
         )
 
     def test_scene_and_shot_flags_name_the_saved_clip(
-        self, runner: CliRunner, project_dir: Path
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
     ) -> None:
         pid = generate_project_id()
         _write_project(project_dir, pid)
+        _ensure_plan(tmp_path, pid)
         p1, p2, p3 = self._patch_pipeline()
         with p1, p2, p3:
             result = runner.invoke(
@@ -788,13 +809,14 @@ class TestVideoClipNaming:
                  "--scene", "2", "--shot", "3"],
             )
         assert result.exit_code == 0, result.output
-        assert (project_dir / pid / "videos" / "scenes" / "Scene-02-Shot-2-3.mp4").is_file()
+        assert (tmp_path / "production" / pid / "videos" / "scenes" / "Scene-02-Shot-2-3.mp4").is_file()
 
     def test_scene_without_shot_keeps_the_timestamped_name(
-        self, runner: CliRunner, project_dir: Path
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
     ) -> None:
         pid = generate_project_id()
         _write_project(project_dir, pid)
+        _ensure_plan(tmp_path, pid)
         p1, p2, p3 = self._patch_pipeline()
         with p1, p2, p3:
             result = runner.invoke(
@@ -802,6 +824,6 @@ class TestVideoClipNaming:
                 ["video", pid, "-p", "Test prompt", "--no-gate", "--scene", "2"],
             )
         assert result.exit_code == 0, result.output
-        clips = project_dir / pid / "videos" / "scenes"
+        clips = tmp_path / "production" / pid / "videos" / "scenes"
         assert not list(clips.glob("Scene-*.mp4"))
         assert list(clips.glob("videos_*.mp4"))

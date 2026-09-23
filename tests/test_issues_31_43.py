@@ -469,8 +469,7 @@ def test_migrate_moves_to_v2_layout(tmp_path: Path) -> None:
     assert (tmp_path / "pre-production" / "war" / "character" / "marcus.jpg").is_file()
     assert (tmp_path / "production" / "war" / "videos" / "scenes" / "Scene-01-Shot-1-1.mp4").is_file()
     assert (tmp_path / "production" / "war" / "audio" / "soundtrack" / "theme.mp3").is_file()
-    # Stamped + layout-aware resolution.
-    assert layout.is_v2_layout(tmp_path, "war") is True
+    # Stamped + layout-aware resolution (v2 is now the only layout).
     assert layout.resolve_media_root(tmp_path, "war", "images") == (
         tmp_path / "pre-production" / "war"
     )
@@ -480,10 +479,11 @@ def test_migrate_moves_to_v2_layout(tmp_path: Path) -> None:
 
 
 def test_legacy_layout_unchanged_for_unmigrated_project(tmp_path: Path) -> None:
+    # v2 is now the default; there is no legacy layout path.
     layout.ensure_project_dirs(tmp_path / ".brandly" / "old")
-    assert layout.is_v2_layout(tmp_path, "old") is False
+    # resolve_media_root always returns v2 roots now.
     assert layout.resolve_media_root(tmp_path, "old", "images") == (
-        tmp_path / ".brandly" / "old" / "images"
+        tmp_path / "pre-production" / "old"
     )
 
 
@@ -540,13 +540,12 @@ def test_init_v2_then_migrate_is_idempotent(tmp_path: Path) -> None:
     """init --layout v2 → migrate should be a no-op (already v2-clean)."""
     import os
 
-    from brandly_cli import layout
     from brandly_cli.cli import cli
 
     runner = CliRunner(env={**os.environ, "ROOT": str(tmp_path)})
 
-    # Init with v2 layout
-    result = runner.invoke(cli, ["init", "-n", "v2proj", "-i", "test", "--layout", "v2"])
+    # Init (now always v2 by default)
+    result = runner.invoke(cli, ["init", "-n", "v2proj", "-i", "test"])
     assert result.exit_code == 0
 
     # Create mock assets in v2 structure
@@ -556,9 +555,6 @@ def test_init_v2_then_migrate_is_idempotent(tmp_path: Path) -> None:
     (production / "videos" / "scenes").mkdir(parents=True, exist_ok=True)
     (pre_prod / "character" / "hero.jpg").write_bytes(b"mock")
     (production / "videos" / "scenes" / "Scene-01-Shot-1-1.mp4").write_bytes(b"mock")
-
-    # Verify v2 detection
-    assert layout.is_v2_layout(tmp_path, "v2proj") is True
 
     # Migrate --apply should be a no-op (already v2)
     result = runner.invoke(cli, ["migrate", "v2proj", "--apply"])
@@ -571,7 +567,7 @@ def test_init_v2_then_migrate_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_v1_to_v2_then_migrate_again_is_idempotent(tmp_path: Path) -> None:
-    """v1 init → produce-mock → migrate → migrate again should be idempotent."""
+    """Manual v1 assets → migrate → v2 → migrate again should be idempotent."""
     import os
 
     from brandly_cli import layout
@@ -579,12 +575,13 @@ def test_v1_to_v2_then_migrate_again_is_idempotent(tmp_path: Path) -> None:
 
     runner = CliRunner(env={**os.environ, "ROOT": str(tmp_path)})
 
-    # Init with v1 layout (default)
-    result = runner.invoke(cli, ["init", "-n", "v1proj", "-i", "test"])
-    assert result.exit_code == 0
-
-    # Create mock assets in v1 layout (.brandly/<project>/)
+    # Manually create a project with legacy (v1) layout
     proj_dir = tmp_path / ".brandly" / "v1proj"
+    proj_dir.mkdir(parents=True, exist_ok=True)
+    (proj_dir / "project.json").write_text(
+        '{"id":"v1proj","name":"v1proj","layout_version":1}'
+    )
+    # Create mock assets in v1 layout (.brandly/<project>/)
     (proj_dir / "images" / "character").mkdir(parents=True, exist_ok=True)
     (proj_dir / "videos" / "scenes").mkdir(parents=True, exist_ok=True)
     (proj_dir / "images" / "character" / "hero.jpg").write_bytes(b"mock")
@@ -593,7 +590,9 @@ def test_v1_to_v2_then_migrate_again_is_idempotent(tmp_path: Path) -> None:
     # First migration: v1 → v2
     result = runner.invoke(cli, ["migrate", "v1proj", "--apply"])
     assert result.exit_code == 0
-    assert layout.is_v2_layout(tmp_path, "v1proj") is True
+    assert layout.resolve_media_root(tmp_path, "v1proj", "images") == (
+        tmp_path / "pre-production" / "v1proj"
+    )
 
     # Verify assets moved correctly
     assert (tmp_path / "pre-production" / "v1proj" / "character" / "hero.jpg").is_file()

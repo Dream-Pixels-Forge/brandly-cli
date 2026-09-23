@@ -336,9 +336,8 @@ def save_artifact(
     """
     if not url:
         return None
-    proj_dir = layout.project_dir(root, project_id)
     media_category = category if category else "general"
-    artifacts_dir = layout.media_dir(proj_dir, type_label, media_category)
+    artifacts_dir = layout.resolve_media_root(root, project_id, type_label) / media_category
     ext = Path(url.split("?")[0]).suffix or (".mp3" if type_label == "audio" else "")
     if not ext:
         ext = ".bin"

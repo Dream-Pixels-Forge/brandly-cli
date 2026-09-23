@@ -282,7 +282,7 @@ def reference(
         pass  # project read failure is non-fatal for reference
 
     # Apply style preset
-    prompt = apply_style_preset(prompt, style_preset) if style_preset else prompt
+    prompt = apply_style_preset(prompt, style_preset, media="still") if style_preset else prompt
 
     # Load subject-skill reference docs for richer prompting
     skill_data = load_sheet_reference(subject_skill, root)
@@ -495,7 +495,7 @@ def image(
     style_preset: str | None,
 ) -> None:
     """Generate an image via Agnes AI."""
-    enhanced = apply_style_preset(prompt, style_preset) if style_preset else prompt
+    enhanced = apply_style_preset(prompt, style_preset, media="still") if style_preset else prompt
 
     # Try to load sheet reference for better prompting if project has context
     root = _get_root(ctx)
@@ -745,6 +745,12 @@ def image(
     help="Scope auto-injected references to one image category "
     "(e.g. 'prop', 'character', 'location') instead of all images.",
 )
+@click.option(
+    "--open-ui",
+    is_flag=True,
+    default=False,
+    help="Open the timeline editor UI after generation completes.",
+)
 @click.pass_context
 def video(
     ctx: click.Context,
@@ -769,6 +775,7 @@ def video(
     auto_ref_category: str | None,
     scene: int | None,
     shot_number: int | None,
+    open_ui: bool,
 ) -> None:
     """Generate an AI video via Agnes AI.
 
@@ -796,6 +803,20 @@ def video(
 
     # Auto-detect project artifacts as additional reference images
     root = _get_root(ctx)
+    # Enforce: production plan must exist before video generation (director → prompt phase).
+    from brandly_cli.planning import production_plan_path
+
+    plan_path = production_plan_path(project_id, root=root)
+    if not plan_path.exists():
+        console.print(
+            "[red]⚠ Production plan missing — run director before video.[/red]\n"
+            f"  Required: {plan_path.relative_to(root)}\n"
+            "  Generate it first:\n"
+            "    brandly director\n"
+            "  Then proceed with video generation:\n"
+            f"    brandly video {project_id} --prompt '...'"
+        )
+        sys.exit(1)
     auto_refs = get_reference_image_urls(project_id, root) if auto_refs_enabled else []
     # Issue #20: optionally scope auto-injected references to one category
     # (e.g. images/prop/, images/location/) so each scene is anchored to
@@ -949,9 +970,7 @@ def video(
             frame_path = Path(frame)
             if not frame_path.is_file():
                 continue  # remote URL or missing local file
-            keyframe_dir = layout.media_dir(
-                layout.project_dir(root, project_id), "images", "keyframe"
-            )
+            keyframe_dir = layout.resolve_media_root(root, project_id, "images") / "keyframe"
             keyframe_dir.mkdir(parents=True, exist_ok=True)
             slug = layout.image_name_token(frame_path.stem) or "frame"
             target = keyframe_dir / f"{label}_{slug}{frame_path.suffix or '.png'}"
@@ -1183,6 +1202,22 @@ def video(
     _record_media_spend(root, project_id, "video", model)
 
     _print_json(task)
+
+    # Open UI if requested
+    if open_ui:
+        console.print("[dim]Opening timeline editor...[/dim]")
+        try:
+            import threading
+
+            from brandly_cli.web import start_server
+            def _open_ui():
+                import time
+                time.sleep(1)  # give server a moment to start
+                start_server(str(root), port=8765, open_browser=True)
+            t = threading.Thread(target=_open_ui, daemon=True)
+            t.start()
+        except ImportError:
+            console.print("[yellow]Web UI not available — install with: pip install brandly-cli[web][/yellow]")
 
 @click.command()
 @click.option("--subject", "-s", required=True, help="Main subject (person, product, or object)")

@@ -68,6 +68,16 @@ def _write_project(project_dir: Path, project_id: str, **overrides: object) -> P
     return proj_file
 
 
+def _ensure_plan(tmp_path: Path, project_id: str) -> None:
+    """Write a minimal production plan so brandly video passes its gate."""
+    plan_dir = tmp_path / ".brandly" / project_id / "docs" / "plan"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / "production_plan.md").write_text(
+        "| Plan | Asset | Shot ID | Model | Source | Status | Created | Updated |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+    )
+
+
 def _plan_files(tmp_path: Path, project_id: str, asset_type: str) -> list[Path]:
     return sorted((tmp_path / ".brandly" / project_id / "docs" / "plan")
                   .glob(f"plan_{asset_type}_*.md"))
@@ -280,6 +290,7 @@ class TestKeyframeArchiving:
     ) -> None:
         pid = generate_project_id()
         _write_project(project_dir, pid)
+        _ensure_plan(tmp_path, pid)
         start = tmp_path / "start_kitchen.png"
         end = tmp_path / "end_exterior.png"
         start.write_bytes(b"\x89PNG\r\n\x1a\nstart")
@@ -313,7 +324,8 @@ class TestKeyframeArchiving:
         assert result.exit_code == 0, f"video failed: {result.output}"
         assert "Keyframe archived" in result.output
 
-        kf_dir = project_dir / pid / "images" / "keyframe"
+        # v2 layout: keyframes (images) go to pre-production/<pid>/keyframe/
+        kf_dir = tmp_path / "pre-production" / pid / "keyframe"
         files = {p.name for p in kf_dir.glob("*.png")}
         assert "start_frame_start_kitchen.png" in files
         assert "end_frame_end_exterior.png" in files
@@ -326,6 +338,7 @@ class TestKeyframeArchiving:
     ) -> None:
         pid = generate_project_id()
         _write_project(project_dir, pid)
+        _ensure_plan(tmp_path, pid)
 
         fake_result = {
             "video_id": "video-task-kf2",

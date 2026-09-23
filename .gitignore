@@ -50,3 +50,6 @@ skills_output/
 .pre-commit-cache/
 .agnes/
 debates/
+
+# Node / frontend tooling (never package or track dependency trees)
+node_modules/

@@ -64,6 +64,26 @@ def _write_project(project_dir: Path, project_id: str, **overrides: object) -> P
     return proj_file
 
 
+def _ensure_plan(tmp_path: Path, project_id: str) -> None:
+    """Write a minimal production plan so brandly video passes its gate."""
+    plan_dir = tmp_path / ".brandly" / project_id / "docs" / "plan"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / "production_plan.md").write_text(
+        "| Plan | Asset | Shot ID | Model | Source | Status | Created | Updated |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+    )
+
+
+def _ensure_plan(tmp_path: Path, project_id: str) -> None:
+    """Write a minimal production plan so brandly video passes its gate."""
+    plan_dir = tmp_path / ".brandly" / project_id / "docs" / "plan"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / "production_plan.md").write_text(
+        "| Plan | Asset | Shot ID | Model | Source | Status | Created | Updated |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+    )
+
+
 # ---------------------------------------------------------------------------
 # build_reference_prompt — pure function tests
 # ---------------------------------------------------------------------------
@@ -321,10 +341,11 @@ def test_reference_image_api_failure_writes_fail_doc(
 # ---------------------------------------------------------------------------
 
 
-def test_video_warns_when_no_reference(runner: CliRunner, project_dir: Path) -> None:
+def test_video_warns_when_no_reference(runner: CliRunner, project_dir: Path, tmp_path: Path) -> None:
     """When project has no primary reference, video shows a warning (default)."""
     pid = generate_project_id()
     _write_project(project_dir, pid)
+    _ensure_plan(tmp_path, pid)
 
     fake_result = {
         "video_id": "video-task-123",
@@ -353,11 +374,12 @@ def test_video_warns_when_no_reference(runner: CliRunner, project_dir: Path) -> 
 
 
 def test_video_fails_when_require_reference_and_no_reference(
-    runner: CliRunner, project_dir: Path
+    runner: CliRunner, project_dir: Path, tmp_path: Path
 ) -> None:
     """With --require-reference, video should exit 2 if no primary reference."""
     pid = generate_project_id()
     _write_project(project_dir, pid)
+    _ensure_plan(tmp_path, pid)
 
     result = runner.invoke(
         cli,
@@ -378,7 +400,7 @@ def test_video_fails_when_require_reference_and_no_reference(
 
 
 def test_video_picks_up_primary_reference(
-    runner: CliRunner, project_dir: Path
+    runner: CliRunner, project_dir: Path, tmp_path: Path
 ) -> None:
     """When project has primary_reference metadata, video uses it as first ref."""
     pid = generate_project_id()
@@ -402,6 +424,7 @@ def test_video_picks_up_primary_reference(
             "generated_at": "2026-01-01T00:00:00Z",
         },
     )
+    _ensure_plan(tmp_path, pid)
 
     fake_result = {
         "video_id": "video-task-456",
@@ -432,7 +455,7 @@ def test_video_picks_up_primary_reference(
 
 
 def test_video_stale_reference_metadata_falls_back_to_warning(
-    runner: CliRunner, project_dir: Path
+    runner: CliRunner, project_dir: Path, tmp_path: Path
 ) -> None:
     """If primary_reference points to a deleted file, treat as no reference."""
     pid = generate_project_id()
@@ -446,6 +469,7 @@ def test_video_stale_reference_metadata_falls_back_to_warning(
             "source_url": "",
         },
     )
+    _ensure_plan(tmp_path, pid)
 
     # Mock the API so the test never touches the network (or spends credits).
     with patch(

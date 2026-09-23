@@ -2,17 +2,36 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from brandly_cli.constants import STYLE_CONFIG, STYLE_PRESET_OPTIONS, StylePreset
 
+#: Media type selector for choosing the right cinematic variant.
+MediaMode = Literal["video", "still"]
 
-def apply_style_preset(prompt: str, preset: StylePreset | str) -> str:
-    """Append style suffix to a prompt."""
+
+def apply_style_preset(
+    prompt: str,
+    preset: StylePreset | str,
+    *,
+    media: MediaMode = "video",
+) -> str:
+    """Append style suffix to a prompt.
+
+    When ``media='still'`` and the preset has a ``prompt_suffix_still`` key
+    (currently only ``cinematic``), that variant is used instead — it omits
+    motion-specific language and emphasises sharp still-photography detail.
+    """
     if preset is None or preset == "none":
         return prompt
     config = STYLE_CONFIG.get(preset)  # type: ignore[call-overload]
     if not config:
         return prompt
-    suffix = config.get("prompt_suffix", "")
+    # Still-image variant (cinematic photo vs cinematic live-action video)
+    if media == "still" and "prompt_suffix_still" in config:
+        suffix = config["prompt_suffix_still"]
+    else:
+        suffix = config.get("prompt_suffix", "")
     if not suffix:
         return prompt
     return f"{prompt}{suffix}"

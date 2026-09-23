@@ -31,17 +31,10 @@ class Clip(BaseModel):
     volume: float = 1.0
     status: ClipStatus = "pending"
     aspect_ratio: str = "16:9"
+    start_time: float = 0.0  # set by caller; serialized for the frontend
+    quality_status: str | None = None  # "pass" | "warn" | "fail" from quality_gate
     created_at: str = ""
     updated_at: str = ""
-
-    @property
-    def start_time(self) -> float:
-        """Computed start time on the timeline (set by caller)."""
-        return getattr(self, "_start_time", 0.0)
-
-    @start_time.setter
-    def start_time(self, value: float) -> None:
-        self._start_time = value
 
     @property
     def end_time(self) -> float:

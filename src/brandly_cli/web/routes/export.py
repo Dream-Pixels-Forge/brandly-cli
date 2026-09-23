@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 
 from brandly_cli.web import deps
 from brandly_cli.web.models import ExportResult
@@ -87,3 +88,15 @@ async def export_project(project_id: str, request: Request) -> dict:
             file_size_bytes=0,
             error=str(e),
         ).model_dump()
+
+
+@router.get("/export/download")
+async def download_export(project_id: str, request: Request) -> FileResponse:
+    """Serve the stitched MP4 for download."""
+    root = request.app.state.root
+    proj_dir = deps.require_project_dir(root, project_id)
+    output_path = proj_dir / "export" / f"{project_id}_stitched.mp4"
+    if not output_path.exists():
+        raise HTTPException(status_code=404, detail="Export not found — run export first")
+    return FileResponse(str(output_path), media_type="video/mp4", filename=f"{project_id}.mp4")
+

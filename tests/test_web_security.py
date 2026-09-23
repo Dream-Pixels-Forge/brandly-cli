@@ -190,10 +190,16 @@ class TestAsyncRoutes:
             return {"video_id": "vid-1"}
 
         async def fake_poll(video_id, **_kwargs):  # type: ignore[no-untyped-def]
-            return {"status": "completed", "video_path": "/tmp/Scene-01-Shot-1-1.mp4"}
+            return {"status": "completed", "url": "http://example.com/test.mp4"}
 
         monkeypatch.setattr(agnes, "create_video_task", fake_create)
         monkeypatch.setattr(agnes, "poll_video", fake_poll)
+        # Mock download_file in the route module where it's imported
+        from brandly_cli.web.routes import clips as clips_route
+        async def fake_download(url, dest):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text("fake mp4 content", encoding="utf-8")
+        monkeypatch.setattr(clips_route, "download_file", fake_download)
         res = client.post("/api/projects/my-proj/clips/c1/regenerate")
         body = res.json()
         assert body["status"] == "completed", body

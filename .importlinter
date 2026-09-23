@@ -1,19 +1,26 @@
+; Architecture gate for brandly_cli (import-linter 2.x syntax).
+;
+; NOTE: cycle detection lives in scripts/import_graph.py -- import-linter 2.x
+; has no `no-import-cycles` contract type (built-ins: forbidden, layers,
+; independence, protected, acyclic_siblings), so no cycle contract is
+; declared here on purpose.
+;
+; Layer syntax (2.x): one `layers` line = one layer, ordered HIGHEST to LOWEST;
+; elements inside a line are separated by ":" and may import each other.
+; Rule: a module may import its own layer or any LOWER layer, never higher.
+
 [importlinter]
 root_package = brandly_cli
-contracts = layered-brandly, no-import-cycles
+contracts = layered-brandly
 
-[contract:layered-brandly]
-type = layered
+[importlinter:contract:layered-brandly]
+name = Layered brandly_cli (L0 -> L5)
+type = layers
 layers =
-    L0: brandly_cli.layout, brandly_cli.constants, brandly_cli.types, brandly_cli.io, brandly_cli.planning, brandly_cli.video_prompts, brandly_cli.style_presets, brandly_cli.stitch
-    L1: brandly_cli.project_manager, brandly_cli.cost_tracker, brandly_cli.memory, brandly_cli.issue_tracker, brandly_cli.sharing, brandly_cli.webhook, brandly_cli.templates, brandly_cli.trends
-    L2: brandly_cli.agnes_client, brandly_cli.minimax_client, brandly_cli.ark_client, brandly_cli.audio_client, brandly_cli.image_convert, brandly_cli.job_polling
-    L3: brandly_cli.cinematic_enhancer, brandly_cli.analyzer, brandly_cli.autodirector, brandly_cli.reference_prompts
-    L4: brandly_cli.shot_runner, brandly_cli.quality_gate, brandly_cli.migrate, brandly_cli.edit, brandly_cli.beat_sync, brandly_cli.dubbing, brandly_cli.captions, brandly_cli.thumbnails, brandly_cli.sync, brandly_cli.export_platforms
-    L5: brandly_cli.cli, brandly_cli.cmd, brandly_cli.agent_tools
+    brandly_cli.cli : brandly_cli.cmd : brandly_cli.agent_tools
+    brandly_cli.shot_runner : brandly_cli.quality_gate : brandly_cli.migrate : brandly_cli.edit : brandly_cli.beat_sync : brandly_cli.dubbing : brandly_cli.captions : brandly_cli.thumbnails : brandly_cli.sync : brandly_cli.export_platforms : brandly_cli.gates : brandly_cli.web
+    brandly_cli.cinematic_enhancer : brandly_cli.analyzer : brandly_cli.autodirector : brandly_cli.reference_prompts
+    brandly_cli.agnes_client : brandly_cli.minimax_client : brandly_cli.ark_client : brandly_cli.audio_client : brandly_cli.image_convert : brandly_cli.job_polling
+    brandly_cli.project_manager : brandly_cli.cost_tracker : brandly_cli.memory : brandly_cli.issue_tracker : brandly_cli.sharing : brandly_cli.webhook : brandly_cli.templates : brandly_cli.trends
+    brandly_cli.layout : brandly_cli.constants : brandly_cli.types : brandly_cli.io : brandly_cli.planning : brandly_cli.video_prompts : brandly_cli.style_presets : brandly_cli.stitch : brandly_cli.utils : brandly_cli.director : brandly_cli.blender_integration : brandly_cli.spatial_tracker
 
-[contract:no-import-cycles]
-type = no-import-cycles
-; The cli <-> cmd.generation deferred cycle (register at bottom of cli.py) is
-; intentional and handled via deferred imports — exclude it explicitly.
-ignore_impossibles = True

@@ -14,6 +14,10 @@ from brandly_cli.web.models import (
 
 TIMELINE_FILENAME = "timeline.json"
 
+#: Flat shot list mirrored alongside the timeline so `brandly produce
+#: --shots .brandly/{id}/shots.json` sees the editor's edits (plan line 60).
+SHOTS_FILENAME = "shots.json"
+
 #: Agnes' effective per-shot clamp, enforced on PATCH and PUT alike.
 MIN_CLIP_DURATION = 1.0
 MAX_CLIP_DURATION = 12.0  # Agnes model limit
@@ -45,7 +49,7 @@ class TimelineState:
         return self._timeline
 
     def save(self) -> None:
-        """Persist timeline to disk."""
+        """Persist the timeline and mirror it as ``shots.json`` (plan line 60)."""
         if self._timeline is None:
             return
         path = self._timeline_path()
@@ -55,6 +59,27 @@ class TimelineState:
         for clip in data.get("clips", []):
             clip.pop("_start_time", None)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        self._write_shots()
+
+    def _write_shots(self) -> None:
+        """Mirror the timeline as a flat shot list for ``brandly produce``.
+
+        ``timeline.json`` stays the editor's source of truth; ``shots.json`` is
+        regenerated from it so reordered/trimmed/retimed clips reach the CLI.
+        Empty timelines write nothing — produce rejects a 0-shot flat list.
+        """
+        assert self._timeline is not None
+        shots = [
+            {"name": c.id, "prompt": c.prompt, "duration": c.duration, "style": c.style}
+            for c in self._timeline.clips
+        ]
+        if not shots:
+            return
+        proj_dir = layout.project_dir(self.root, self.project_id)
+        proj_dir.mkdir(parents=True, exist_ok=True)
+        (proj_dir / SHOTS_FILENAME).write_text(
+            json.dumps(shots, indent=2), encoding="utf-8"
+        )
 
     def reload(self) -> ProjectTimeline:
         """Discard in-memory state and reload from disk."""
@@ -148,6 +173,38 @@ class TimelineState:
             clip.status = "generated"  # type: ignore[assignment]
             clip.updated_at = _now_iso()
             self.save()
+
+    def compute_quality_status(self, clip_id: str) -> str | None:
+        """Run the deterministic quality gate on a clip and persist the result."""
+        clip = self.get_clip(clip_id)
+        if clip is None or not clip.clip_path:
+            return None
+        proj_dir = layout.project_dir(self.root, self.project_id)
+        from brandly_cli.web.security import safe_join
+        full_path = safe_join(proj_dir, clip.clip_path)
+        if full_path is None or not full_path.is_file():
+            return None
+        import asyncio
+
+        from brandly_cli.quality_gate import PASS, verify_element
+        try:
+            result = asyncio.run(
+                verify_element(
+                    full_path,
+                    use_ai=False,
+                    root=self.root,
+                    project_id=self.project_id,
+                    write_report=False,
+                )
+            )
+            q = result.status
+            if q != PASS:
+                clip.quality_status = q  # type: ignore[assignment]
+                clip.updated_at = _now_iso()
+                self.save()
+            return q
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Time recalculation

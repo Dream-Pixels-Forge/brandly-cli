@@ -10,6 +10,9 @@ interface AppState {
   selectedClipId: string | null;
   zoomLevel: number;
   isPlaying: boolean;
+  wsEvent: string | null;
+  exportDone: boolean;
+  timelineElRef: HTMLDivElement | null;
 
   fetchProjects: () => Promise<void>;
   selectProject: (id: string) => Promise<void>;
@@ -20,6 +23,7 @@ interface AppState {
   reorderClips: (order: string[]) => Promise<void>;
   regenerateClip: (clipId: string) => Promise<void>;
   exportProject: () => Promise<void>;
+  generateClip: (clipId: string) => Promise<void>;
 }
 
 const TOKEN = new URLSearchParams(window.location.search).get('token');
@@ -30,6 +34,10 @@ export const withToken = (path: string) =>
 
 const API = (path: string) => withToken(`/api${path}`);
 
+function notifySave() {
+  window.dispatchEvent(new Event('brandly-save'));
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
   activeProject: null,
@@ -39,6 +47,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedClipId: null,
   zoomLevel: 100,
   isPlaying: false,
+  wsEvent: null,
+  exportDone: false,
+  timelineElRef: null,
 
   fetchProjects: async () => {
     set({ loading: true, error: null });
@@ -77,6 +88,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSelectedClip: (id) => set({ selectedClipId: id }),
   setZoom: (level) => set({ zoomLevel: level }),
+  setWsEvent: (ev: string | null) => set({ wsEvent: ev }),
 
   updateClip: async (clipId, updates) => {
     const { activeProject } = get();
@@ -97,6 +109,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           : null,
       }));
       await get().loadTimeline();
+      notifySave();
     } catch (e) {
       set({ error: String(e) });
     }
@@ -114,6 +127,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clips: reordered, color_grade: timeline.color_grade }) }
       );
       set({ timeline: { ...timeline, clips: reordered } });
+      notifySave();
     } catch (e) {
       set({ error: String(e) });
     }
@@ -143,8 +157,31 @@ export const useAppStore = create<AppState>((set, get) => ({
         { method: 'POST' }
       );
       const data = await res.json();
-      if (data.error) alert('Export failed: ' + data.error);
-      else alert('Export complete: ' + data.output_path);
+      if (data.error) {
+        set({ error: data.error });
+      } else {
+        // Trigger download
+        const dlUrl = withToken(`/api/projects/${activeProject.id}/export/download`);
+        window.open(dlUrl, '_blank');
+        set({ exportDone: true });
+        setTimeout(() => set({ exportDone: false }), 3000);
+      }
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  generateClip: async (clipId) => {
+    const { activeProject } = get();
+    if (!activeProject) return;
+    try {
+      const res = await fetch(
+        API(`/projects/${activeProject.id}/clips/${clipId}/regenerate`),
+        { method: 'POST' }
+      );
+      const data = await res.json();
+      if (data.status === 'completed') await get().loadTimeline();
+      else set({ error: data.error || 'Generation failed' });
     } catch (e) {
       set({ error: String(e) });
     }

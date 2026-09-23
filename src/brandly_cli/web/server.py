@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import webbrowser
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -108,19 +107,19 @@ def create_app(root: str | Path | None = None, *, token: str | None = None) -> F
 
     # WebSocket for generation progress
     @app.websocket("/ws/{project_id}")
-    async def websocket_endpoint(websocket: WebSocket, project_id: str, root: str) -> None:
-        """WebSocket endpoint for real-time updates."""
+    async def websocket_endpoint(websocket: WebSocket, project_id: str) -> None:
+        """Register connection then forward generation events."""
+        from brandly_cli.web.websocket import register, unregister
+
         await websocket.accept()
+        register(project_id, websocket)
         try:
             while True:
                 await websocket.receive_text()
-                # Echo back with a timestamp (placeholder for real events)
-                await websocket.send_json({
-                    "type": "ping",
-                    "timestamp": asyncio.get_event_loop().time(),
-                })
         except WebSocketDisconnect:
             pass
+        finally:
+            unregister(project_id, websocket)
 
     return app
 

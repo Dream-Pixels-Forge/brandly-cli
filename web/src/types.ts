@@ -24,6 +24,7 @@ export interface Clip {
   volume: number;
   status: 'pending' | 'generating' | 'generated' | 'failed';
   aspect_ratio: string;
+  quality_status: 'pass' | 'warn' | 'fail' | null;
   start_time?: number;
   created_at: string;
   updated_at: string;

@@ -17,8 +17,6 @@ the act is non-empty, guaranteeing distinct names for distinct acts.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from brandly_cli import shot_runner
 
 

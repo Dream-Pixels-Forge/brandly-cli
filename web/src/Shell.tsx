@@ -6,6 +6,12 @@ import Header from './Header';
 import SidebarNav from './SidebarNav';
 import PreviewPanel from './components/panels/PreviewPanel';
 import TransportControls from './components/panels/TransportControls';
+import TimelinePanel from './components/timeline/TimelinePanel';
+import ShotListPanel from './components/panels/ShotListPanel';
+import PropsInspectorPanel from './components/panels/PropsInspectorPanel';
+import ColorGradingPanel from './components/panels/ColorGradingPanel';
+import AudioMixerPanel from './components/panels/AudioMixerPanel';
+import RenderDispatchPanel from './components/panels/RenderDispatchPanel';
 import './Shell.css';
 
 type PanelComponent = () => ReactNode;
@@ -17,13 +23,13 @@ const PANELS: Record<PanelKind, PanelComponent> = {
       <TransportControls />
     </>
   ),
-  timeline: () => <TimelinePlaceholder />,
-  asset_manifest: () => <AssetManifestPlaceholder />,
-  props: () => <PropsPlaceholder />,
-  color: () => <ColorPlaceholder />,
-  audio: () => <AudioPlaceholder />,
-  render: () => <RenderPlaceholder />,
-  agnes_ai: () => <AgnesPlaceholder />,
+  timeline: () => <TimelinePanel />,
+  asset_manifest: () => <ShotListPanel />,
+  props: () => <PropsInspectorPanel />,
+  color: () => <ColorGradingPanel />,
+  audio: () => <AudioMixerPanel />,
+  render: () => <RenderDispatchPanel />,
+  agnes_ai: () => <ShotListPanel />,
 };
 
 function TimelinePlaceholder() {

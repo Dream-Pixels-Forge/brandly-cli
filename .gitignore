@@ -53,3 +53,11 @@ debates/
 
 # Node / frontend tooling (never package or track dependency trees)
 node_modules/
+
+# Design-tool scratch (21st AI working dir + dev preview screenshots)
+.21st/
+preview.png
+web/preview.png
+
+# 21st-design local preview + registry caches
+*.21st/

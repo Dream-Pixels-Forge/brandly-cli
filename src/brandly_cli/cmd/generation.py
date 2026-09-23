@@ -1351,6 +1351,231 @@ def director(ctx: click.Context) -> None:
     prompt = get_director_prompt()
     console.print(Panel(Markdown(prompt), title="Brandly Director Mode"))
 
+
+
+
+# ---------------------------------------------------------------------------
+# Produce-runner helpers (moved out of cli.py — P2-8; sibling of the `video`
+# command so _generate_shot can ctx.invoke it without a cli -> cmd.generation edge)
+# ---------------------------------------------------------------------------
+
+
+def _presence_character(shot: dict[str, Any]) -> str | None:
+    """Character anchor from a flat shot dict (issue #38): explicit
+    ``character`` wins; else the shot's ``characters`` presence declaration
+    (list or comma-separated string)."""
+    if shot.get("character"):
+        return str(shot["character"])
+    chars = shot.get("characters")
+    if isinstance(chars, str):
+        chars = [c.strip() for c in chars.split(",") if c.strip()]
+    if isinstance(chars, (list, tuple)) and chars:
+        return ", ".join(str(c) for c in chars)
+    return None
+
+
+def _generate_shot(
+    project_id: str,
+    shot: dict[str, Any],
+    *,
+    ctx: click.Context,
+    root: Path,
+    auto_refs_enabled: bool = True,
+    allow_referenceless: bool = False,
+    max_wait: int = 600,
+    scene: int | None = None,
+    shot_number: int | None = None,
+) -> bool:
+    """Generate ONE shot through the standard ``brandly video`` pipeline.
+
+    This keeps every per-shot safeguard: pre-generation plan, quality gate,
+    human gate, generation doc and credit recording. Returns True when the
+    shot finished successfully.
+    """
+    references = shot.get("references")
+    if isinstance(references, list):
+        references = ",".join(str(r) for r in references if str(r).strip())
+
+    try:
+        ctx.invoke(
+            video,
+            project_id=project_id,
+            prompt=str(shot.get("prompt", "")),
+            duration=int(shot.get("duration", 5)),
+            style=str(shot.get("style", "cinematic")),
+            reference_images=references or None,
+            # Issue #38: presence-declared characters only — either a single
+            # string anchor or the shot's comma-separated/listed roster.
+            character=_presence_character(shot),
+            wait=True,
+            max_wait=max_wait,
+            require_reference=False,
+            auto_refs_enabled=auto_refs_enabled,
+            allow_referenceless=allow_referenceless,
+            scene=scene,
+            shot_number=shot_number,
+        )
+    except SystemExit as exc:
+        return exc.code in (0, None)
+    return True
+
+
+
+
+def _run_produce_runner(
+    ctx: click.Context,
+    project_id: str,
+    data: dict[str, Any] | list[dict[str, Any]],
+    root: Path,
+    interval: float,
+    no_auto_refs: bool,
+    character: str | None,
+    allow_referenceless: bool,
+    max_wait: int,
+    only: tuple[str, ...],
+    max_shots: int,
+    *,
+    retries: int = 0,
+    split_long_shots: bool = False,
+    aspect_ratio: str | None = None,
+    no_plan: bool = False,
+) -> None:
+    """Progress-file runner path for ``brandly produce`` (see produce())."""
+    project_dir = layout.resolve_project_dir(root, project_id)
+    # v2-aware roots (issue #43): migrated projects keep media next to
+    # .brandly/ — pre-production/<p>/ for plates, production/<p>/videos/ for clips.
+    images_dir = layout.resolve_media_root(root, project_id, "images")
+    videos_root = layout.resolve_media_root(root, project_id, "videos")
+    scenes_dir = videos_root / "scenes"
+    progress = shot_runner.ProgressLog(
+        layout.docs_dir(project_dir, "tmp") / shot_runner.PROGRESS_FILENAME
+    )
+    shots = shot_runner.flatten_shots(data, images_dir, character=character)
+
+    # Issue #35: duration validation at plan time. Agnes clamps every take
+    # to ~5-6s regardless of the requested duration, so shots longer than
+    # one segment burn full credits for a clamped result. --split-long-shots
+    # slices them instead of letting the model silently clamp them.
+    over = [
+        s for s in shots if s.duration > shot_runner.SPLIT_SEGMENT_DURATION
+    ]
+    if over:
+        console.print(
+            f"[yellow]⚠ {len(over)} shot(s) exceed {shot_runner.SPLIT_SEGMENT_DURATION}s and "
+            f"will be silently clamped to ~5-6s by the Agnes model: "
+            f"{', '.join(s.id for s in over[:8])}" + ("…" if len(over) > 8 else "")
+        )
+        if not split_long_shots:
+            console.print(
+                "[dim]  Re-run with --split-long-shots to slice them into "
+                f"≤{shot_runner.SPLIT_SEGMENT_DURATION}s parts instead of burning full "
+                "credits on clamped takes.[/dim]"
+            )
+    if split_long_shots:
+        shots = shot_runner.split_long_shots(shots)
+        if over:
+            console.print(
+                f"[green]✓ Split over-long shots → {len(shots)} total shots.[/green]"
+            )
+
+    # Issue #36: keep project.json live as production progresses.
+    def _sync_project(status: str) -> None:
+        from brandly_cli.project_manager import sync_production_state
+
+        result = sync_production_state(
+            root,
+            project_id,
+            status=status,
+            current_phase="video",
+            shot_count=len(shots),
+        )
+        if result is not None:
+            console.print(
+                f"[dim]project.json synced: status={status} "
+                f"shot_count={len(shots)}[/dim]"
+            )
+
+    _sync_project("in_progress")
+
+    # Issue #37: register every shot on the production plan with its shot ID
+    # so a reviewer can match plan files to shots without opening them.
+    plan_files: dict[str, Path] = {}
+    if not no_plan:
+        from brandly_cli.utils import write_generation_plan
+
+        model = "agnes-video-2.5-flash"
+        for shot in shots:
+            plan, _ = write_generation_plan(
+                project_id,
+                "video",
+                root=root,
+                prompt=shot.prompt,
+                model=model,
+                style=shot.style,
+                extra_config={
+                    "Shot": shot.id,
+                    "Duration": f"{shot.duration}s",
+                    "Act": shot.act or "—",
+                    "Role": "shot",
+                },
+                source="brandly produce",
+                shot_id=shot.id,
+                scene=shot.scene,
+                act=shot.act or None,
+            )
+            plan_files[shot.id] = plan
+
+    def _on_shot_done(shot: shot_runner.Shot, ok: bool) -> None:
+        # Issue #37: update the plan row; Issue #36: sync project.json.
+        plan = plan_files.get(shot.id)
+        if plan is not None:
+            from brandly_cli.utils import upsert_production_plan
+
+            upsert_production_plan(
+                project_id,
+                root=root,
+                plan_file=str(plan),
+                asset_type="video",
+                model="agnes-video-2.5-flash",
+                status="COMPLETED" if ok else "FAILED",
+                source="brandly produce",
+                shot_id=shot.id,
+            )
+        _sync_project("in_progress")
+
+    def generate_one(shot: shot_runner.Shot) -> tuple[bool, int, str]:
+        ok = _generate_shot(
+            project_id,
+            {**shot.to_video_kwargs(), "character": shot.character},
+            ctx=ctx,
+            root=root,
+            auto_refs_enabled=not no_auto_refs,
+            allow_referenceless=allow_referenceless,
+            max_wait=max_wait,
+            # Names the download Scene-XX-Shot-X-Y.mp4 at save time.
+            scene=shot.scene,
+            shot_number=shot.index_in_scene,
+        )
+        return ok, 0 if ok else 1, ""
+
+    config = shot_runner.RunnerConfig(
+        shots=shots,
+        generate_one=generate_one,
+        scenes_dir=scenes_dir,
+        progress=progress,
+        interval=interval,
+        only=set(only) if only else None,
+        max_shots=max_shots,
+        say=lambda msg: console.print(f"[dim]{msg}[/dim]"),
+        retries=retries,
+        on_shot_done=_on_shot_done,
+        aspect_ratio=aspect_ratio,
+    )
+    rc = shot_runner.run_shots(config)
+    _sync_project("complete" if rc == 0 else "failed")
+    sys.exit(rc)
+
+
 def register(cli) -> None:
     cli.add_command(reference)
     cli.add_command(image)

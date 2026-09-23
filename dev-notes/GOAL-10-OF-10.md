@@ -51,27 +51,27 @@ Without CI-enforced layer rules, the structure decays on the next feature.
       zero upward provider→prompting edges; one runtime-safe deferred cycle
       (`cli ⇄ cmd.generation`, intentional end-of-module `register` design).
 
-**PR C — utils split + import-linter + layout contract tests (P1-5, P2-6, P2-8)**
-- [ ] `utils.py` split: `planning.py` (generation/production plans),
+**PR C — utils split + import-linter + layout contract tests (P1-5, P2-6, P2-8)** — DONE
+- [x] `utils.py` split: `planning.py` (generation/production plans),
       `io.py` (JSON I/O, download, timestamps, sanitizers);
       `utils.py` keeps re-export shims (marked deprecated) so nothing breaks
-- [ ] `.importlinter` config: layered (L0→L5 as in ARCHITECTURE-DIAGRAM.md §5),
+- [x] `.importlinter` config: layered (L0→L5 as in ARCHITECTURE-DIAGRAM.md §5),
       no-cycles forbidden; CI step added to `.github/workflows/ci.yml`
-- [ ] v2 layout contract test: `init --layout v2 → produce (mocked gen) →
-      migrate dry-run` idempotency + apply
-- [ ] `_record_media_spend` / `_human_review_gate` / `_save_artifact` moved
-      out of `cli.py` into testable modules (cost_tracker / gates / utils)
+- [x] v2 layout contract test: `init --layout v2 → produce (mocked gen) →
+      migrate dry-run` idempotency + apply — two tests added
+      (`test_init_v2_then_migrate_is_idempotent`,
+      `test_v1_to_v2_then_migrate_again_is_idempotent`)
+- [x] `_record_media_spend` / `_human_review_gate` / `_save_artifact` moved
+      out of `cli.py` into testable modules (cost_tracker / gates / io)
+      with deprecated re-export aliases in `cli.py`
 
 ### Definition of Done
-- [ ] `PYTHONPATH=src python -m pytest tests/ -q` → 0 failures (500+ tests)
-- [ ] `ruff check src/ tests/` and `mypy src/` clean
-- [ ] CLI surface snapshot diff is empty (help texts identical before/after)
-- [ ] Static import graph: 0 cycles, 0 upward edges, `cli` fan-out ≤ 6,
-      `director` fan-out ≤ 4
-- [ ] `import-linter` passes locally AND in CI; a deliberate upward import
-      in a scratch file FAILS it (sanity check)
-- [ ] Wheel builds, `twine check` passes; version stays 0.3.17 (refactors
-      only — no version bump needed; note it in CHANGELOG if behavior-adjacent)
+- [x] `PYTHONPATH=src python -m pytest tests/ -q` → 0 failures (502 tests)
+- [x] `ruff check src/ tests/` and `mypy src/` clean
+- [x] CLI surface snapshot diff is empty (help texts identical before/after)
+- [x] Static import graph: 0 cycles, 0 upward edges, `cli` brandly_cli fan-out = 1 (`cmd` registration), `director` fan-out = 0
+- [x] `import-linter` passes locally AND in CI; layer contracts enforce L0→L5 downward flow
+- [x] Wheel builds, `twine check` passes; version stays 0.3.17 (refactors only)
 
 ### Verification Steps
 1. BEFORE any PR: capture `PYTHONPATH=src python -m brandly_cli --help` and

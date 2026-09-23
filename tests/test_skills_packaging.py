@@ -55,7 +55,7 @@ def test_find_skills_directory_checks_the_installed_package(
     # No project-local ./skills and no user-level dirs exist (home is faked).
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
-    monkeypatch.setattr(utils, "__package_dir__", pkg_dir)
+    monkeypatch.setattr("brandly_cli.io.__package_dir__", pkg_dir)
 
     found = utils.find_skills_directory(root=tmp_path)
     assert found == pkg_dir / "skills"
@@ -70,7 +70,7 @@ def test_find_skills_directory_prefers_project_local(
     local = tmp_path / "local-project" / "skills"
     (local / "local").mkdir(parents=True)
     monkeypatch.chdir(tmp_path / "local-project")
-    monkeypatch.setattr(utils, "__package_dir__", pkg_dir)
+    monkeypatch.setattr("brandly_cli.io.__package_dir__", pkg_dir)
 
     assert utils.find_skills_directory(root=None) == (tmp_path / "local-project" / "skills").resolve()
 
@@ -86,7 +86,7 @@ def test_load_sheet_reference_from_package(
     (skill / "references" / "vehicle-types.md").write_text(
         "# Vehicle types\n", encoding="utf-8"
     )
-    monkeypatch.setattr(utils, "__package_dir__", pkg_dir)
+    monkeypatch.setattr("brandly_cli.io.__package_dir__", pkg_dir)
 
     data = utils.load_sheet_reference("brandly-vehicle-sheet", root=tmp_path)
     assert data is not None

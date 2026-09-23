@@ -33,16 +33,14 @@ from brandly_cli.ark_client import (
 )
 from brandly_cli.audio_client import generate_music, generate_tts
 from brandly_cli.cli import (
-    STORYBOARD_INSTRUCTION,
     _check_budget,
     _check_phase_artifacts,
-    _generate_shot,
     _get_root,
     _print_json,
     _print_project_summary,
-    _run_produce_runner,
     console,
 )
+from brandly_cli.cmd.generation import _generate_shot, _run_produce_runner
 from brandly_cli.constants import (
     DEFAULT_AGNES_VIDEO_MODEL,
     PHASE_ORDER,
@@ -1660,6 +1658,15 @@ class Director:
             "phase_statuses": {p: phases.get(p, {}).get("status", "pending") for p in PHASE_ORDER},
         }
 
+
+
+
+# Keyframe instruction for storyboard shots (moved out of cli.py — P2-8).
+STORYBOARD_INSTRUCTION = (
+    "[KEYFRAME] Render a single still frame capturing this exact moment — "
+    "composition, lighting, and character placement exactly as directed. "
+    "This frame is a storyboard keyframe for pre-visualizing the shot."
+)
 
 
 def register(cli) -> None:

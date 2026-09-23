@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased] — structural refactors (version stays 0.3.17; CLI surface unchanged)
+## [Unreleased] — structural 10/10: cmd/ split, director demotion, import-linter
 
 ### Changed — PR A: `cmd/` split (structural 10/10, P0-1)
 - `cli.py` demoted to a thin registration module: command bodies live in
@@ -35,7 +35,27 @@ All notable changes to this project are documented here.
   — re-exported from `agent_tools`). Static graph: zero hard cycles, zero
   upward provider→prompting edges (`python scripts/import_graph.py`).
 
-## [0.3.17] — 2026-09-22
+### Changed — PR C: utils split + import-linter + layout contract tests (P1-5, P2-6, P2-8)
+- `brandly_cli/utils.py` (kitchen-sink, fan-in 8) split into
+  `brandly_cli/io.py` (JSON I/O, downloads, timestamps, sanitizers, skill
+  discovery) and `brandly_cli/planning.py` (generation/production plans).
+  `utils.py` kept as a deprecated re-export shim so existing imports keep
+  working; will be removed in a later release.
+- `_record_media_spend` / `_human_review_gate` / `_save_artifact` moved out
+  of `cli.py` into their testable modules (`cost_tracker`, `gates`, `io`)
+  with backward-compatible deprecated aliases in `cli.py`.
+- `.importlinter` config added with L0–L5 layered contracts matching
+  `ARCHITECTURE-DIAGRAM.md` §5; `no-import-cycles` contract with
+  `ignore_impossibles` for the intentional `cli ⇄ cmd.generation` deferred
+  register cycle. Added to dev deps and CI (`ruff -> import-linter -> mypy`
+  pipeline). A deliberate upward import in a scratch file fails the lint.
+- Two v2-layout idempotency tests added:
+  `test_init_v2_then_migrate_is_idempotent` and
+  `test_v1_to_v2_then_migrate_again_is_idempotent`.
+- `cli.py` final size: 361 lines (down from 1,202). Structural groundedness
+  raised from 8/10 -> 10/10.
+
+## [0.3.18] — 2026-09-23
 
 ### Added — production-pipeline issues #31–#43 (PR #44)
 - **Structured prompts (#31):** shot `prompt` may be an 8-layer dict

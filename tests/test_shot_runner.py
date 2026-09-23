@@ -584,7 +584,7 @@ class TestProduceRunnerRouting:
         )
         captured: dict[str, Any] = {}
         with (
-            patch("brandly_cli.cli._generate_shot",
+            patch("brandly_cli.cmd.generation._generate_shot",
                   side_effect=self._capture_generate(captured)),
         ):
             result = runner.invoke(
@@ -626,7 +626,7 @@ class TestProduceRunnerRouting:
         )
         captured: dict[str, Any] = {}
         with (
-            patch("brandly_cli.cli._generate_shot",
+            patch("brandly_cli.cmd.generation._generate_shot",
                   side_effect=self._capture_generate(captured)),
             patch("brandly_cli.shot_runner.time.sleep"),
         ):
@@ -663,7 +663,7 @@ class TestProduceRunnerRouting:
             (clips / f"videos_{shot['name']}.mp4").write_bytes(b"x")
             return True
 
-        with patch("brandly_cli.cli._generate_shot", side_effect=fake_generate):
+        with patch("brandly_cli.cmd.generation._generate_shot", side_effect=fake_generate):
             result = runner.invoke(
                 cli, ["produce", pid, "--shots", str(shots), "--interval", "0"]
             )
@@ -772,7 +772,7 @@ class TestVideoClipNaming:
                     }
                 ),
             ),
-            patch("brandly_cli.cli.download_file", fake_download),
+            patch("brandly_cli.io.download_file", fake_download),
         )
 
     def test_scene_and_shot_flags_name_the_saved_clip(

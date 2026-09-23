@@ -111,6 +111,15 @@ python -m build
 - **PyPI Publishing**: `.github/workflows/release.yml` publishes on release via OIDC trusted publishing
 - **Pre-commit hooks**: `.pre-commit-config.yaml` with ruff + pytest
 
+### Release checklist
+
+1. Bump **both** `pyproject.toml` `version` and `src/brandly_cli/__about__.py` `__version__` to the same value (CI fails on drift).
+2. Update `CHANGELOG.md`.
+3. Tag `vX.Y.Z` (must match that version) and publish a GitHub Release — workflow fails on tag/version mismatch.
+4. Workflow hard-verifies `https://pypi.org/pypi/brandly-cli/X.Y.Z/json` lists the files (retries ~3 min).
+
+**After publish:** `pip install brandly-cli==X.Y.Z` works as soon as step 4 passes. The project landing page / project-level JSON (`info.version`) is CDN-cached (`max-age=900`) and may still show the previous version for **15–60 minutes**. That lag is not a failed release — confirm via the version URL above or `pip index versions brandly-cli`. Do not re-tag or re-bump for cache lag alone.
+
 ## Architecture
 
 ### Core Modules

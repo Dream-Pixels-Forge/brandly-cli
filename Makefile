@@ -8,7 +8,7 @@ MYPY     := $(PYTHON) -m mypy
 ROOT     ?= .
 
 .PHONY: help install dev test cov lint lint-fix check-syntax type-check \
-        build clean pre-commit ci e2e upgrade sync
+        build clean pre-commit ci e2e upgrade sync version-check
 
 ## Show this help
 help:
@@ -57,8 +57,12 @@ build: ## build
 	$(PYTHON) -m build
 	$(PYTHON) -m twine check dist/*
 
+## Fail if pyproject.toml and __about__.py versions differ
+version-check: ## version-check
+	$(PYTHON) -c "import pathlib,re,sys; py=re.search(r'^version\\s*=\\s*\"([^\"]+)\"', pathlib.Path('pyproject.toml').read_text(), re.M); ab=re.search(r'^__version__\\s*=\\s*\"([^\"]+)\"', pathlib.Path('src/brandly_cli/__about__.py').read_text(), re.M); sys.exit('version drift: pyproject=%s __about__=%s' % (py.group(1), ab.group(1)) if not py or not ab or py.group(1)!=ab.group(1) else 'version sync OK: %s' % py.group(1))"
+
 ## Run all quality gates (lint + type-check + test + build)
-ci: lint type-check test build ## ci
+ci: version-check lint type-check test build ## ci
 	@echo "All quality gates passed."
 
 ## End-to-end CLI smoke test

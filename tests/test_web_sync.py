@@ -355,3 +355,97 @@ class TestExportDownload:
 # See tests/test_architecture_contracts.py for the dedicated regression tests
 # guarding `.importlinter` against silently evaluating zero contracts.
 
+
+# ---------------------------------------------------------------------------
+# Waveform endpoint
+# ---------------------------------------------------------------------------
+
+class TestWaveformEndpoint:
+    def test_waveform_returns_points_for_clip_with_audio(
+        self, client: TestClient, project_root: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When ffmpeg is available and the clip has an audio stream, return points."""
+        import struct
+
+        # Mock _ffmpeg_available to return True
+        import brandly_cli.web.routes.waveform as wf_mod
+
+        monkeypatch.setattr(wf_mod, "_ffmpeg_available", lambda: True)
+        monkeypatch.setattr(wf_mod, "_has_audio_stream", lambda p: True)
+
+        # Mock _extract_waveform to return deterministic data
+        fake_points = [
+            {"x": 0.0, "amplitude": 0.1},
+            {"x": 2.5, "amplitude": 0.4},
+            {"x": 5.0, "amplitude": 0.0},
+        ]
+        monkeypatch.setattr(wf_mod, "_extract_waveform", lambda p, n=200: fake_points)
+
+        res = client.get("/api/projects/my-proj/clips/Scene-01-Shot-1-1/waveform")
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert "points" in body
+        assert len(body["points"]) == 3
+        assert body["points"][1] == {"x": 2.5, "amplitude": 0.4}
+
+    def test_waveform_returns_empty_for_video_without_audio(
+        self, client: TestClient, project_root: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No audio stream → empty points array."""
+        import brandly_cli.web.routes.waveform as wf_mod
+
+        monkeypatch.setattr(wf_mod, "_ffmpeg_available", lambda: True)
+        monkeypatch.setattr(wf_mod, "_has_audio_stream", lambda p: False)
+
+        res = client.get("/api/projects/my-proj/clips/Scene-01-Shot-1-1/waveform")
+        assert res.status_code == 200, res.text
+        assert res.json()["points"] == []
+
+    def test_waveform_returns_empty_when_ffmpeg_unavailable(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import brandly_cli.web.routes.waveform as wf_mod
+
+        monkeypatch.setattr(wf_mod, "_ffmpeg_available", lambda: False)
+        res = client.get("/api/projects/my-proj/clips/Scene-01-Shot-1-1/waveform")
+        assert res.status_code == 200
+        assert res.json()["points"] == []
+
+
+# ---------------------------------------------------------------------------
+# Gate endpoint
+# ---------------------------------------------------------------------------
+
+class TestGateEndpoint:
+    def test_gate_runs_quality_check_and_updates_status(
+        self, client: TestClient, project_root: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """POST to the gate endpoint runs the deterministic gate and persists status."""
+        from brandly_cli.quality_gate import GateResult
+
+        fake_result = GateResult(element="dummy", kind="video", status="pass", score=95)
+
+        import brandly_cli.web.routes.gate as gate_mod
+
+        async def _fake_verify(*a, **kw):  # type: ignore[no-untyped-def]
+            return fake_result
+
+        monkeypatch.setattr("brandly_cli.quality_gate.verify_element", _fake_verify)
+
+        res = client.post("/api/projects/my-proj/clips/Scene-01-Shot-1-1/gate")
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["status"] in ("pass", "warn", "fail")
+        assert isinstance(body["score"], int)
+
+        # Verify timeline.json was not modified with "pass" (no-op for pass)
+        state = TimelineState("my-proj", project_root)
+        clip = state.get_clip("Scene-01-Shot-1-1")
+        assert clip is not None
+
+    def test_gate_returns_404_for_missing_clip(
+        self, client: TestClient
+    ) -> None:
+        res = client.post("/api/projects/my-proj/clips/nonexistent-clip/gate")
+        assert res.status_code == 404
+

@@ -35,6 +35,27 @@ jobs:
           pip install -e ".[dev,web]" build twine types-PyYAML
           pip install import-linter
 
+      - name: Version sync check
+        run: |
+          python - <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          pyproject = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+          about = pathlib.Path("src/brandly_cli/__about__.py").read_text(encoding="utf-8")
+          m_py = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.M)
+          m_ab = re.search(r'^__version__\s*=\s*"([^"]+)"', about, re.M)
+          if not m_py or not m_ab:
+              sys.exit("::error::Could not read version from pyproject.toml / __about__.py")
+          if m_py.group(1) != m_ab.group(1):
+              sys.exit(
+                  f"::error::Version drift: pyproject={m_py.group(1)} "
+                  f"__about__={m_ab.group(1)}. Update both before release."
+              )
+          print(f"Version sync OK: {m_py.group(1)}")
+          PY
+
       - name: Lint
         run: ruff check src/ tests/
 

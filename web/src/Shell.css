@@ -1,0 +1,66 @@
+/* ========================================================================
+   Brandly Studio — Shell Layout
+   ======================================================================== */
+
+.shell-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--md-surface);
+  color: var(--md-on-surface);
+}
+
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3.5rem;
+  background: var(--md-surface-container-low);
+  border-bottom: 1px solid var(--md-surface-container-highest);
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  gap: 1rem;
+  z-index: 100;
+  user-select: none;
+}
+
+.sidebar {
+  position: fixed;
+  top: 3.5rem;
+  left: 0;
+  bottom: 0;
+  width: 16rem;
+  background: var(--md-surface-container-lowest);
+  border-right: 1px solid var(--md-surface-container-high);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 90;
+}
+
+.main {
+  margin-top: 3.5rem;
+  margin-left: 16rem;
+  flex: 1;
+  height: calc(100vh - 3.5rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--md-surface);
+  padding: 1rem;
+}
+
+/* Panel transition helper */
+.panel-enter {
+  opacity: 0;
+  transform: translateY(4px);
+}
+.panel-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 200ms ease, transform 200ms ease;
+}

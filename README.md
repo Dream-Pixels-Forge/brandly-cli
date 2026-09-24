@@ -196,6 +196,53 @@ brandly image --prompt "product on marble surface" \
 brandly image --prompt "hero shot" --output ./out/hero.png --json
 ```
 
+#### Machine-readable results and explicit outputs (#73)
+
+`--output <path>` is the contract for "put the artifact exactly here": the
+provider payload is downloaded/decoded and validated (full decode + format,
+width and height probe) before an atomic move, so a failed or truncated
+download never leaves a partial or non-image file at the requested path.
+
+`--json` makes the command script-safe: stdout carries exactly one JSON
+document and nothing else — callers no longer parse human-readable output to
+recover a provider URL.
+
+```bash
+brandly image --prompt "hero shot" --output ./out/hero.png --json
+```
+
+```json
+{
+  "status": "success",
+  "task_id": "provider-task-handle",
+  "provider_url": "https://... (credential query params redacted)",
+  "path": "out/hero.png",
+  "format": "png",
+  "width": 1024,
+  "height": 1024,
+  "model": "image-model-id",
+  "generated_at": "2026-09-24T00:00:00Z",
+  "job_id": "job-id (recover with brandly job-poll)"
+}
+```
+
+Failures exit non-zero with a structured error instead:
+
+```json
+{
+  "status": "error",
+  "error_code": "provider_error | no_image | image_download_failed",
+  "error_message": "...",
+  "task_id": null,
+  "job_id": "job-id"
+}
+```
+
+Branch on `error_code`, then recover the durable result for that `job_id` with
+`brandly job-poll` (#74) instead of re-submitting. Success detection is
+payload-driven: URL-only and base64-only provider responses both succeed; only
+a response carrying neither payload is reported as `no_image`.
+
 
 ### 4. 3D Spatial References (Optional)
 

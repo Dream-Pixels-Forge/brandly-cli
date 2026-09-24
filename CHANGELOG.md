@@ -18,6 +18,24 @@ All notable changes to this project are documented here.
 
 ## [0.3.25] — 2026-09-24
 
+### Added — #73: structured `--json` results + explicit `--output` writes
+- `brandly image --output <path>` writes the artifact to exactly the requested
+  destination: the provider payload is downloaded/decoded and validated
+  (full-decode, format probe) before the file is moved into place, so a
+  truncated or non-image response never leaves a partial file at that path.
+- `brandly image --json` emits **only** one machine-readable JSON document on
+  stdout (rich console output is suppressed for the whole run): success is
+  `{status, task_id, provider_url, path, format, width, height, model,
+  generated_at, job_id}`; failures exit non-zero with
+  `{status: "error", error_code, error_message, task_id, job_id}` where
+  `error_code` is one of `provider_error`, `no_image`, `image_download_failed`.
+- Provider success detection is payload-driven: URL-only and base64-only
+  responses both succeed; only a response carrying neither is reported as
+  `no_image`.
+- The prior fragile behaviour — a generated URL being reported as "Provider
+  returned no image URL" — is covered by regression tests
+  (`tests/test_issue_73.py`), together with output placement.
+
 ### Added — #74: durable image job records + `job-poll`
 - `brandly image` now persists a job record to `ROOT/.brandly/jobs/<job-id>.json`
   **before** the provider call (`job_id`, status, prompt/model/size/seed,

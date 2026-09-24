@@ -53,12 +53,14 @@
 - [x] Deep audit of the agentic system → `dev-notes/AUDIT-AGENTIC-PIPELINE.md` (F1–F9)
 - [x] Goal program (6 goals, ordered) → `dev-notes/GOAL-AGENTIC-PIPELINE.md`
 - [x] Housekeeping: removed phantom `.brandly/untitled` + `.brandly/undefined` (21 files)
-- [ ] **G1** Agent-native tool surface
+- [x] **G1** Agent-native tool surface — COMPLETE (3 PRs)
   - [x] PR 1: `agent_surface.py` dispatch layer + `brandly tools --json` manifest
         (TDD: 21 tests written RED first — verified failing on `ImportError` — then GREEN)
-  - [ ] PR 2: `brandly mcp serve` (stdio JSON-RPC: initialize / tools/list / tools/call)
-  - [ ] PR 3: `brandly init` emits `AGENTS.md`; `brandly sync` raw keys behind
-        `--legacy-provider-keys`; README "Driving brandly from an AI tool"
+  - [x] PR 2: `brandly mcp serve` (stdio JSON-RPC: initialize / tools/list / tools/call;
+        18 tests, real handshake smoke-tested)
+  - [x] PR 3: `brandly init` emits `AGENTS.md` (create-only); `brandly sync` raw keys
+        behind `--legacy-provider-keys`; README "Driving brandly from an AI tool"
+        (9 tests)
 - [ ] **G2** Real director orchestration (`run --execute`, produce-backed phases, stub removal)
 - [ ] **G3** Explicit scene model + scene completeness gate
 - [ ] **G4** Ratio crop moved to assembly/export

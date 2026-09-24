@@ -260,11 +260,28 @@ def detect_tools() -> dict[str, bool]:
     return {name: path.exists() for name, path in TOOLS.items()}
 
 
-def sync_keys(tools: list[str] | None = None, include_dotenv: bool = True) -> list[str]:
+def sync_keys(
+    tools: list[str] | None = None,
+    include_dotenv: bool = True,
+    *,
+    legacy_provider_keys: bool = False,
+) -> list[str]:
     """Sync AGNES_API_KEY and MINIMAX_API_KEY into detected tool configs.
+
+    Since the agent-native surface landed (Goal 1), writing raw provider keys into
+    AI-tool configs is **opt-in** (audit F2: handing agents direct provider access
+    made them bypass the pipeline). By default nothing secret is written; callers
+    are pointed at ``brandly mcp serve`` / ``brandly tools --json`` instead.
 
     Returns a list of human-readable messages describing what was updated.
     """
+    if not legacy_provider_keys:
+        return [
+            "Provider keys NOT written (safe default). Drive AI tools through "
+            "`brandly mcp serve` or `brandly tools --json` instead. To restore the "
+            "old behaviour run: brandly sync --legacy-provider-keys"
+        ]
+
     agnes_key = os.getenv(AGNES_ENV_KEY)
     minimax_key = os.getenv(MINIMAX_ENV_KEY)
 

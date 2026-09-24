@@ -33,14 +33,27 @@ from brandly_cli.utils import (
     "--tools", default=None, help="Comma-separated tool names to sync (default: all detected)"
 )
 @click.option("--dry-run", is_flag=True, help="Show what would be synced without writing")
+@click.option(
+    "--legacy-provider-keys",
+    "legacy_provider_keys",
+    is_flag=True,
+    default=False,
+    help="Write AGNES/MINIMAX API keys into AI-tool config files (opt-in; "
+    "AI tools should use `brandly mcp serve` instead)",
+)
 @click.pass_context
-def sync(ctx: click.Context, tools: str | None, dry_run: bool) -> None:
-    """Auto-detect AI-tool configs and write Brandly API keys into them.
+def sync(
+    ctx: click.Context, tools: str | None, dry_run: bool, legacy_provider_keys: bool
+) -> None:
+    """Auto-detect AI-tool configs; write Brandly API keys ONLY on explicit opt-in.
 
-    Reads AGNES_API_KEY and MINIMAX_API_KEY from the current environment,
-    then writes them into the configuration files of supported AI tools
-    so they can use Agnes AI (image/video) and MiniMax (audio) directly.
+    Default (safe): nothing secret is written — AI tools should connect through
+    `brandly mcp serve` / `brandly tools --json`, which keeps the pipeline
+    (naming, references, retries, gates, cost tracking) in charge.
 
+    \b
+    With --legacy-provider-keys: reads AGNES_API_KEY and MINIMAX_API_KEY from the
+    environment and writes them into supported AI-tool config files.
     Supported tools: qwen, claude, gemini, codex, pi, opencode
     """
 
@@ -81,7 +94,11 @@ def sync(ctx: click.Context, tools: str | None, dry_run: bool) -> None:
     if dry_run:
         console.print("[yellow]Dry-run mode — no files will be written.[/yellow]")
 
-    messages = sync_keys(tools=selected, include_dotenv=not dry_run)
+    messages = sync_keys(
+        tools=selected,
+        include_dotenv=not dry_run,
+        legacy_provider_keys=legacy_provider_keys,
+    )
     if messages:
         console.print(Panel("\n".join(messages), title="Sync Result"))
     else:

@@ -2,9 +2,11 @@
 Moved from cli.py (structural split, no behavioral change).
 Shared helpers and state still live in ``brandly_cli.cli``.
 """
+
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import sys
@@ -87,8 +89,7 @@ from brandly_cli.video_prompts import (
     "--ratio",
     default="16:9",
     help=(
-        "Aspect ratio (16:9 default; multi-view grid for object/character, "
-        "full-frame for location)"
+        "Aspect ratio (16:9 default; multi-view grid for object/character, full-frame for location)"
     ),
 )
 @click.option(
@@ -183,9 +184,7 @@ def reference(
 
         root = _get_root(ctx)
         category = layout.image_category_for_subject(subject_type)
-        target_dir = layout.media_dir(
-            layout.project_dir(root, project_id), "images", category
-        )
+        target_dir = layout.media_dir(layout.project_dir(root, project_id), "images", category)
         target_dir.mkdir(parents=True, exist_ok=True)
         stem = sanitize_filename(src.stem) or "plate"
         dest = target_dir / f"reference_{subject_type}_{stem}{src.suffix or '.png'}"
@@ -237,9 +236,7 @@ def reference(
             "reference", f"the imported {subject_type} reference for '{subject}'"
         )
         if note:
-            _write_review_note(
-                root, project_id, "reference", note, extra=f"subject: {subject}"
-            )
+            _write_review_note(root, project_id, "reference", note, extra=f"subject: {subject}")
         if not approved:
             console.print(
                 "[red]✗ Imported reference rejected at the human gate — the "
@@ -325,8 +322,7 @@ def reference(
             docs_dir = layout.docs_dir(layout.project_dir(root, project_id), "tmp")
             docs_dir.mkdir(parents=True, exist_ok=True)
             fail_doc = (
-                docs_dir
-                / f"reference_fail_{now_iso().replace(':', '-').replace('.', '_')}.md"
+                docs_dir / f"reference_fail_{now_iso().replace(':', '-').replace('.', '_')}.md"
             )
             fail_doc.write_text(
                 f"# Reference Generation Failed\n\n"
@@ -349,9 +345,7 @@ def reference(
 
     url = result.get("url") or ""
     if not url:
-        console.print(
-            "[yellow]Reference generated (base64 returned) — no URL to save[/yellow]"
-        )
+        console.print("[yellow]Reference generated (base64 returned) — no URL to save[/yellow]")
         sys.exit(1)
 
     from brandly_cli.utils import write_generation_doc
@@ -428,9 +422,7 @@ def reference(
             "reference", f"the {subject_type} reference for '{subject}'"
         )
         if note:
-            _write_review_note(
-                root, project_id, "reference", note, extra=f"subject: {subject}"
-            )
+            _write_review_note(root, project_id, "reference", note, extra=f"subject: {subject}")
         if not approved:
             console.print(
                 "[red]✗ Reference rejected at the human gate — adjust the prompt "
@@ -468,6 +460,29 @@ def reference(
         console.print("[yellow]⚠ Could not save reference artifact[/yellow]")
         sys.exit(1)
 
+
+def _probe_image(path: Path) -> tuple[str | None, int | None, int | None]:
+    """Best-effort image format + dimensions; Nones when unreadable (issue #73)."""
+    try:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            im.load()
+            return im.format or "unknown", im.size[0], im.size[1]
+    except Exception:
+        return None, None, None
+
+
+def _print_machine_json(obj: Any) -> None:
+    """Emit machine-readable JSON on stdout, verbatim (no rich wrapping).
+
+    Rich console output wraps long lines, which corrupts JSON for machine
+    consumers — issue #73 requires stdout to parse as exactly one JSON
+    document.
+    """
+    print(json.dumps(obj, indent=2, ensure_ascii=False))
+
+
 @click.command()
 @click.option("--project-id", default=None, help="Optional project UUID")
 @click.option("--prompt", "-p", required=True, help="Image generation prompt")
@@ -484,6 +499,22 @@ def reference(
     type=click.Choice(STYLE_PRESET_OPTIONS),
     help="Style preset to avoid AI slop",
 )
+@click.option(
+    "--output",
+    "output",
+    default=None,
+    type=click.Path(),
+    help="Explicit destination file for the generated image. The image is "
+    "downloaded atomically, validated as a supported image format, and "
+    "written to exactly this path (issue #73).",
+)
+@click.option(
+    "--json",
+    "json_out",
+    is_flag=True,
+    help="Emit only a machine-readable JSON result (success object or "
+    "structured error) instead of human-readable console output (issue #73).",
+)
 @click.pass_context
 def image(
     ctx: click.Context,
@@ -493,8 +524,18 @@ def image(
     size: str,
     ratio: str,
     style_preset: str | None,
+    output: str | None,
+    json_out: bool,
 ) -> None:
     """Generate an image via Agnes AI."""
+    # Issue #73: in --json mode, suppress rich console output entirely
+    # (including client-level progress/warning prints) so stdout carries
+    # only the machine-readable result object. Restored right before the
+    # JSON emission (which itself goes through the rich console).
+    quiet_original = console.quiet
+    if json_out:
+        console.quiet = True
+
     enhanced = apply_style_preset(prompt, style_preset, media="still") if style_preset else prompt
 
     # Try to load sheet reference for better prompting if project has context
@@ -552,6 +593,17 @@ def image(
     try:
         result = asyncio.run(generate_image(enhanced, model=model, size=size, ratio=ratio))
     except Exception as e:
+        if json_out:
+            console.quiet = quiet_original
+            _print_machine_json(
+                {
+                    "status": "error",
+                    "error_code": "provider_error",
+                    "error_message": str(e),
+                    "task_id": None,
+                }
+            )
+            sys.exit(1)
         console.print(f"[red]Error generating image: {e}[/red]")
         if project_id:
             # Update plan to show failure
@@ -580,13 +632,80 @@ def image(
         sys.exit(1)
 
     url = result.get("url") or ""
-    if url:
+    b64 = result.get("b64_json") or ""
+    task_id = result.get("task_id")
+    saved: Path | None = None
+    fmt: str | None = None
+    width: int | None = None
+    height: int | None = None
+
+    if output:
+        # Issue #73: explicit output path — atomic download + full-decode
+        # validation. A partial file is never left at the requested path.
+        from brandly_cli.io import ImageFetchError, fetch_image_atomic
+
+        if not url and not b64:
+            payload_error = "Provider returned no image payload (no URL, no base64)."
+            if json_out:
+                console.quiet = quiet_original
+                _print_machine_json(
+                    {
+                        "status": "error",
+                        "error_code": "no_image",
+                        "error_message": payload_error,
+                        "task_id": task_id,
+                    }
+                )
+            else:
+                console.print(f"[red]✗ {payload_error}[/red]")
+            sys.exit(1)
+
+        dest = Path(output).expanduser()
+        try:
+            info = fetch_image_atomic(url or None, dest, b64_json=b64 or None)
+        except ImageFetchError as e:
+            if json_out:
+                console.quiet = quiet_original
+                _print_machine_json(
+                    {
+                        "status": "error",
+                        "error_code": "image_download_failed",
+                        "error_message": str(e),
+                        "task_id": task_id,
+                    }
+                )
+            else:
+                console.print(f"[red]✗ {e}[/red]")
+            sys.exit(1)
+        saved = Path(info["path"])
+        fmt = info["format"]
+        width = info["width"]
+        height = info["height"]
+        if not json_out:
+            console.print(f"[green]✓ Image written to: {saved}[/green]")
+        if project_id:
+            from brandly_cli.utils import write_generation_doc
+
+            write_generation_doc(
+                project_id,
+                "image",
+                saved,
+                root=root,
+                prompt=enhanced,
+                model=model,
+                style=style_preset,
+                metadata={"size": size, "ratio": ratio, "source_url": url or None},
+                source="brandly image",
+                plan_file=plan_file_ref,
+            )
+    elif url:
         console.print(f"[green]✓ Image generated:[/green] {url}")
         # Always save to disk
         pid = project_id or "untitled"
         root = _get_root(ctx)
         saved = _save_artifact(url, pid, "images", root=root, prompt_hint=prompt)
         if saved:
+            fmt, width, height = _probe_image(saved)
             console.print(f"  Saved → {saved}")
             # Write generation document
             from brandly_cli.utils import write_generation_doc
@@ -645,7 +764,26 @@ def image(
         # Auto-record credit spend so budget gates can fire.
         _record_media_spend(root, project_id, "image", model)
 
-    _print_json(result)
+    # Issue #73: machine-readable terminal state (reached only on success —
+    # all error paths above exit with their own structured/text error).
+    if json_out:
+        console.quiet = quiet_original
+        _print_machine_json(
+            {
+                "status": "success",
+                "task_id": task_id,
+                "provider_url": url or None,
+                "path": str(saved) if saved is not None else None,
+                "format": fmt,
+                "width": width,
+                "height": height,
+                "model": model,
+                "generated_at": result.get("generated_at"),
+            }
+        )
+    else:
+        _print_json(result)
+
 
 @click.command()
 @click.argument("project_id")
@@ -673,8 +811,12 @@ def image(
 )
 @click.option("--duration", "-d", default=10, help="Duration in seconds (default: 10)")
 @click.option("--aspect-ratio", default="16:9", help="Aspect ratio")
-@click.option("--first-frame", default=None, help="Start frame image URL or local file path (keyframe mode)")
-@click.option("--last-frame", default=None, help="End frame image URL or local file path (keyframe mode)")
+@click.option(
+    "--first-frame", default=None, help="Start frame image URL or local file path (keyframe mode)"
+)
+@click.option(
+    "--last-frame", default=None, help="End frame image URL or local file path (keyframe mode)"
+)
 @click.option(
     "--reference-images",
     "-r",
@@ -877,11 +1019,7 @@ def video(
                 "enforce, --allow-referenceless to silence this warning.[/dim]"
             )
     elif reference is not None:
-        ref_name = (
-            Path(ref_paths[0]).name
-            if ref_paths
-            else reference.get("source_url", "")[:50]
-        )
+        ref_name = Path(ref_paths[0]).name if ref_paths else reference.get("source_url", "")[:50]
         console.print(
             f"[green]✓ Primary reference:[/green] "
             f"{reference.get('subject_type', 'unknown')} ({ref_name})"
@@ -896,9 +1034,7 @@ def video(
 
     # Parse reference audio URLs
     auds = (
-        [u.strip() for u in reference_audios.split(",") if u.strip()]
-        if reference_audios
-        else None
+        [u.strip() for u in reference_audios.split(",") if u.strip()] if reference_audios else None
     )
 
     # Enhance prompt with style and character consistency
@@ -1156,18 +1292,12 @@ def video(
     # (only when an artifact was actually downloaded and saved).
     _media_local = locals().get("saved")
     _media_local = (
-        _media_local
-        if isinstance(_media_local, Path) and _media_local.exists()
-        else None
+        _media_local if isinstance(_media_local, Path) and _media_local.exists() else None
     )
     if _media_local:
-        approved, note = _human_review_gate(
-            "video", f"video {video_id} ({_media_local.name})"
-        )
+        approved, note = _human_review_gate("video", f"video {video_id} ({_media_local.name})")
         if note:
-            _write_review_note(
-                root, project_id, "video", note, extra=f"video_id: {video_id}"
-            )
+            _write_review_note(root, project_id, "video", note, extra=f"video_id: {video_id}")
         if not approved:
             console.print(
                 "[red]✗ Video rejected at the human gate — regenerate with an "
@@ -1215,14 +1345,20 @@ def video(
             import threading
 
             from brandly_cli.web import start_server
+
             def _open_ui():
                 import time
+
                 time.sleep(1)  # give server a moment to start
                 start_server(str(root), port=8765, open_browser=True)
+
             t = threading.Thread(target=_open_ui, daemon=True)
             t.start()
         except ImportError:
-            console.print("[yellow]Web UI not available — install with: pip install brandly-cli[web][/yellow]")
+            console.print(
+                "[yellow]Web UI not available — install with: pip install brandly-cli[web][/yellow]"
+            )
+
 
 @click.command()
 @click.option("--subject", "-s", required=True, help="Main subject (person, product, or object)")
@@ -1285,6 +1421,7 @@ def prompt(
     console.print(result)
     console.print("\n[dim]Tip: Use this prompt with 'brandly video' or copy it directly.[/dim]")
 
+
 @click.command()
 @click.option("--project-id", default=None, help="Optional project UUID")
 @click.option("--prompt", "-p", required=True, help="Music description prompt")
@@ -1322,6 +1459,7 @@ def music(
             console.print(f"  Saved → {saved}")
     _print_json(result)
 
+
 @click.command()
 @click.option("--project-id", default=None, help="Optional project UUID")
 @click.argument("text")
@@ -1333,21 +1471,33 @@ def music(
 )
 @click.option("--speed", default=1.0, help="Speech speed (0.5–2.0)")
 @click.option("--vol", default=1.0, help="Volume (0.1-2.0)")
-@click.option("--pitch", default=0, type=click.IntRange(-12, 12),
-              help="Pitch shift in semitones (-12 to 12)")
-@click.option("--emotion", default=None,
-              help="Emotion tag: happy, sad, angry, fearful, neutral")
+@click.option(
+    "--pitch", default=0, type=click.IntRange(-12, 12), help="Pitch shift in semitones (-12 to 12)"
+)
+@click.option("--emotion", default=None, help="Emotion tag: happy, sad, angry, fearful, neutral")
 @click.pass_context
 def tts(
-    ctx: click.Context, project_id: str | None, text: str, model: str, voice_id: str,
-    speed: float, vol: float, pitch: int, emotion: str | None,
+    ctx: click.Context,
+    project_id: str | None,
+    text: str,
+    model: str,
+    voice_id: str,
+    speed: float,
+    vol: float,
+    pitch: int,
+    emotion: str | None,
 ) -> None:
     """Generate voiceover via MiniMax TTS."""
     console.print(f"[dim]Generating TTS ({model}, voice={voice_id})...[/dim]")
     result = asyncio.run(
         generate_tts(
-            text, model=model, voice_id=voice_id, speed=speed,
-            vol=vol, pitch=pitch, emotion=emotion,
+            text,
+            model=model,
+            voice_id=voice_id,
+            speed=speed,
+            vol=vol,
+            pitch=pitch,
+            emotion=emotion,
         )
     )
     url = result.get("url") or ""
@@ -1368,6 +1518,7 @@ def tts(
             console.print(f"  Saved → {saved}")
     _print_json(result)
 
+
 @click.command(name="voices")
 @click.pass_context
 def voices_cmd(ctx: click.Context) -> None:
@@ -1384,14 +1535,13 @@ def voices_cmd(ctx: click.Context) -> None:
     else:
         console.print("[dim]No voices found or API not configured.[/dim]")
 
+
 @click.command()
 @click.pass_context
 def director(ctx: click.Context) -> None:
     """Show the Director prompt for AI tools."""
     prompt = get_director_prompt()
     console.print(Panel(Markdown(prompt), title="Brandly Director Mode"))
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -1496,15 +1646,11 @@ def _generate_shot(
             # Issue #51: when the shot declares 2+ co-appearing characters,
             # hand their names to the gate so it can flag cross-character
             # identity bleed (the dominant face painted onto every figure).
-            expected_characters=tuple(
-                _expected_character_names(shot) or ()
-            ),
+            expected_characters=tuple(_expected_character_names(shot) or ()),
         )
     except SystemExit as exc:
         return exc.code in (0, None)
     return True
-
-
 
 
 def _run_produce_runner(
@@ -1541,9 +1687,7 @@ def _run_produce_runner(
     # to ~5-6s regardless of the requested duration, so shots longer than
     # one segment burn full credits for a clamped result. --split-long-shots
     # slices them instead of letting the model silently clamp them.
-    over = [
-        s for s in shots if s.duration > shot_runner.SPLIT_SEGMENT_DURATION
-    ]
+    over = [s for s in shots if s.duration > shot_runner.SPLIT_SEGMENT_DURATION]
     if over:
         console.print(
             f"[yellow]⚠ {len(over)} shot(s) exceed {shot_runner.SPLIT_SEGMENT_DURATION}s and "
@@ -1559,9 +1703,7 @@ def _run_produce_runner(
     if split_long_shots:
         shots = shot_runner.split_long_shots(shots)
         if over:
-            console.print(
-                f"[green]✓ Split over-long shots → {len(shots)} total shots.[/green]"
-            )
+            console.print(f"[green]✓ Split over-long shots → {len(shots)} total shots.[/green]")
 
     # Issue #49: under --split-long-shots, a --only targeting a pre-split
     # parent ID (e.g. "shot04_silas") must expand to its split parts
@@ -1590,8 +1732,7 @@ def _run_produce_runner(
         )
         if result is not None:
             console.print(
-                f"[dim]project.json synced: status={status} "
-                f"shot_count={len(shots)}[/dim]"
+                f"[dim]project.json synced: status={status} shot_count={len(shots)}[/dim]"
             )
 
     _sync_project("in_progress")

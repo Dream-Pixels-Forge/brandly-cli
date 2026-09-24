@@ -349,6 +349,58 @@ def _ffprobe_available() -> bool:
         return False
 
 
+def _print_scene_report(report: dict[str, Any]) -> None:
+    """Human-readable scene completeness (+ quality) matrix (Goal 3).
+
+    Accepts either a single-scene report (``gate --scene``) or the full
+    matrix (``scenes status`` / ``gate --all-scenes``).
+    """
+    entries = report.get("scenes") or [report]
+    table = Table(title=f"Scene completeness — {report.get('project_id', '')}")
+    table.add_column("Scene", style="cyan")
+    table.add_column("#", justify="right")
+    table.add_column("Act")
+    table.add_column("Clips", justify="right")
+    table.add_column("Missing", justify="right")
+    table.add_column("Stale", justify="right")
+    table.add_column("Verdict")
+    for entry in entries:
+        table.add_row(
+            entry.get("id", "?"),
+            str(entry.get("scene", "")),
+            entry.get("act") or "—",
+            f"{entry.get('present', 0)}/{entry.get('expected', 0)}",
+            str(len(entry.get("missing", []))),
+            str(len(entry.get("stale", []))),
+            entry.get("verdict", "?"),
+        )
+    console.print(table)
+    for entry in entries:
+        for item in entry.get("missing", []):
+            console.print(f"  [red]✗ missing[/red] {item['id']} — {item['clip']}")
+        for item in entry.get("stale", []):
+            console.print(
+                f"  [red]✗ stale[/red] {item['id']} — {', '.join(item['files'])}"
+            )
+        quality = entry.get("quality")
+        if quality:
+            if quality.get("skipped"):
+                console.print("  [dim]quality: skipped (--no-quality)[/dim]")
+            else:
+                for failure in quality.get("failures", []):
+                    console.print(
+                        f"  [red]✗ quality[/red] {failure['id']} — "
+                        f"{failure['clip']}: {failure['status']}"
+                    )
+                console.print(
+                    f"  [dim]quality: {quality.get('checked', 0)} checked, "
+                    f"{len(quality.get('failures', []))} flagged[/dim]"
+                )
+    verdict = report.get("verdict", "fail")
+    color = {"pass": "green", "warn": "yellow", "fail": "red"}.get(verdict, "red")
+    console.print(f"[{color}]Scene gate: {verdict.upper()}[/{color}]")
+
+
 if __name__ == "__main__":
     main()
 

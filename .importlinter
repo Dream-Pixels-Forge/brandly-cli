@@ -18,7 +18,7 @@ name = Layered brandly_cli (L0 -> L5)
 type = layers
 layers =
     brandly_cli.cli : brandly_cli.cmd : brandly_cli.agent_tools : brandly_cli.agent_surface : brandly_cli.mcp_server
-    brandly_cli.shot_runner : brandly_cli.quality_gate : brandly_cli.migrate : brandly_cli.edit : brandly_cli.beat_sync : brandly_cli.dubbing : brandly_cli.captions : brandly_cli.thumbnails : brandly_cli.sync : brandly_cli.export_platforms : brandly_cli.gates : brandly_cli.web
+    brandly_cli.shot_runner : brandly_cli.scenes : brandly_cli.quality_gate : brandly_cli.migrate : brandly_cli.edit : brandly_cli.beat_sync : brandly_cli.dubbing : brandly_cli.captions : brandly_cli.thumbnails : brandly_cli.sync : brandly_cli.export_platforms : brandly_cli.gates : brandly_cli.web
     brandly_cli.cinematic_enhancer : brandly_cli.analyzer : brandly_cli.autodirector : brandly_cli.reference_prompts
     brandly_cli.agnes_client : brandly_cli.minimax_client : brandly_cli.ark_client : brandly_cli.audio_client : brandly_cli.image_convert : brandly_cli.job_polling
     brandly_cli.project_manager : brandly_cli.cost_tracker : brandly_cli.memory : brandly_cli.issue_tracker : brandly_cli.sharing : brandly_cli.webhook : brandly_cli.templates : brandly_cli.trends

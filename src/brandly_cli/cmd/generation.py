@@ -14,8 +14,6 @@ from pathlib import Path
 from typing import Any
 
 import click
-from rich.markdown import Markdown
-from rich.panel import Panel
 from rich.table import Table
 
 from brandly_cli import layout, shot_runner
@@ -42,7 +40,6 @@ from brandly_cli.cli import (
 from brandly_cli.constants import (
     STYLE_PRESET_OPTIONS,
 )
-from brandly_cli.director import get_director_prompt
 from brandly_cli.project_manager import ProjectManager
 from brandly_cli.style_presets import apply_style_preset
 from brandly_cli.utils import (
@@ -1774,14 +1771,6 @@ def voices_cmd(ctx: click.Context) -> None:
         console.print("[dim]No voices found or API not configured.[/dim]")
 
 
-@click.command()
-@click.pass_context
-def director(ctx: click.Context) -> None:
-    """Show the Director prompt for AI tools."""
-    prompt = get_director_prompt()
-    console.print(Panel(Markdown(prompt), title="Brandly Director Mode"))
-
-
 # ---------------------------------------------------------------------------
 # Produce-runner helpers (moved out of cli.py — P2-8; sibling of the `video`
 # command so _generate_shot can ctx.invoke it without a cli -> cmd.generation edge)
@@ -2063,4 +2052,3 @@ def register(cli) -> None:
     cli.add_command(music)
     cli.add_command(tts)
     cli.add_command(voices_cmd)
-    cli.add_command(director)

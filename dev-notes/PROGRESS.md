@@ -81,8 +81,16 @@
         providers/ffmpeg/gate/exports. Suite 716 → 725 passed; ruff/mypy clean;
         lint-imports KEPT; CI green on #88. Stub parametrization trimmed to
         `concept` (the only remaining honest stub).
-  - [ ] PR D: `autodirector.auto_direct` removal/delegation; `brandly director`
-        prints the orchestrator plan
+  - [x] PR D: `autodirector.auto_direct` removed (fabricated stub, audit
+        F3/F4) with a regression test pinning the deletion; `brandly
+        director` moved to `cmd/production.py` and now prints the Director
+        prompt plus the live orchestrator plan — `director_plan()` is the
+        data-only source (phases, per-phase status, current step, exact
+        next command: `brandly init` before a project exists,
+        `brandly run <id> --execute --yes` from any incomplete state;
+        `None` when the pipeline is complete). 10 new TDD tests
+        (`tests/test_director_plan.py`); suite 725 → 733 passed;
+        ruff/mypy clean; lint-imports KEPT (L1→L0 director-prompt import).
 - [x] **G3** Explicit scene model + scene completeness gate (audit F6/F7) — COMPLETE
   - [x] `scenes.py`: `scenes.json` manifest (`docs/plan/`) written by `produce`
         BEFORE generation; project-unique scene ids (S01…) preserve act+number;

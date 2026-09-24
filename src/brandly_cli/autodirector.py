@@ -1,9 +1,11 @@
-"""Auto-direct: script-to-video pipeline automation."""
+"""Auto-direct: script parsing and prompt-generation utilities.
+
+The old ``auto_direct`` pipeline stub was deleted in G2 PR D (audit F3/F4) —
+the real pipeline is ``brandly run --execute`` (``Director.run_pipeline`` in
+``cmd/production.py``).  The utilities below are pure, tested helpers.
+"""
 
 from __future__ import annotations
-
-from pathlib import Path
-from typing import Any
 
 # ---------------------------------------------------------------------------
 # Script parsing
@@ -38,61 +40,6 @@ def parse_script(script: str) -> list[dict[str, str]]:
             "full": scene_text,
         })
     return scenes
-
-
-# ---------------------------------------------------------------------------
-# Auto-direct pipeline
-# ---------------------------------------------------------------------------
-
-async def auto_direct(
-    project_id: str,
-    script: str,
-    *,
-    style: str = "cinematic",
-    shots_per_scene: int = 3,
-    root: Path | None = None,
-) -> dict[str, Any]:
-    """Generate a complete video from a script description.
-
-    Pipeline:
-        1. Parse script into scenes
-        2. Generate prompts for each scene
-        3. Create video segments (stub)
-        4. Stitch segments together
-        5. Add captions and export
-
-    Args:
-        project_id: Project identifier.
-        script: The script text.
-        style: Visual style preset.
-        shots_per_scene: Number of video shots per scene.
-        root: Optional project root.
-
-    Returns:
-        Dict with pipeline results.
-    """
-    # Parse script
-    scenes = parse_script(script)
-    if not scenes:
-        return {"error": "Empty or invalid script provided."}
-
-    # In a full implementation, this would:
-    # 1. Call video generation API for each scene
-    # 2. Generate audio/music
-    # 3. Stitch clips together
-    # 4. Add captions
-    # 5. Export final video
-
-    # For now, return the parsed structure as a demonstration
-    return {
-        "project_id": project_id,
-        "scenes": len(scenes),
-        "scenes_parsed": scenes,
-        "style": style,
-        "shots_per_scene": shots_per_scene,
-        "status": "script_parsed",
-        "output_path": None,
-    }
 
 
 # ---------------------------------------------------------------------------

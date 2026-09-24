@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import click
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
@@ -52,6 +53,7 @@ from brandly_cli.constants import (
     StylePreset,
 )
 from brandly_cli.cost_tracker import CostTracker
+from brandly_cli.director import get_director_prompt
 from brandly_cli.memory import UserPreferences
 from brandly_cli.project_manager import ProjectManager
 from brandly_cli.style_presets import apply_style_preset
@@ -307,6 +309,46 @@ def run(
 
     console.print(f"[green]Phase '{current}' started.[/green]")
     console.print(f"\nNext: approve with [bold]brandly approve {project_id} {current}[/bold]")
+
+@click.command(name="director")
+@click.argument("project_id", required=False, default=None)
+@click.pass_context
+def director(ctx: click.Context, project_id: str | None = None) -> None:
+    """Show the Director prompt and orchestrator plan for AI tools.
+
+    Prints the agent-facing prompt plus the live plan: pipeline phases,
+    per-phase status, current step, and the exact next command
+    (``brandly run <id> --execute --yes``).  With no project, the plan
+    is generic and the next command is ``brandly init``.
+    """
+    prompt = get_director_prompt()
+    console.print(Panel(Markdown(prompt), title="Brandly Director Mode"))
+
+    plan = director_plan(_get_root(ctx), project_id)
+    table = Table(title="Orchestrator plan")
+    table.add_column("Phase", style="cyan")
+    table.add_column("Status", style="white")
+    status_styles = {
+        "completed": "green",
+        "failed": "red",
+        "running": "yellow",
+        "in_progress": "yellow",
+    }
+    for phase in plan["phases"]:
+        status = plan["phases_status"][phase]
+        style = status_styles.get(status, "dim")
+        table.add_row(phase, f"[{style}]{status}[/{style}]")
+    console.print(table)
+
+    if plan["current"] is None:
+        if plan["next_command"] is None:
+            console.print("[green]Pipeline complete — nothing left to run.[/green]")
+        else:
+            console.print(f"Next command: [bold]{plan['next_command']}[/bold]")
+    else:
+        console.print(f"Current step: [bold]{plan['current']}[/bold]")
+        console.print(f"Next command: [bold]{plan['next_command']}[/bold]")
+
 
 @click.command()
 @click.argument("project_id")
@@ -1273,6 +1315,62 @@ def _scene_clip_paths(
             )
     return clips
 
+def director_plan(root: Path, project_id: str | None = None) -> dict[str, Any]:
+    """Data-only orchestrator plan for ``brandly director`` (G2 PR D).
+
+    Single source of truth: ``PHASE_ORDER`` (phase order), the project's
+    ``phases`` map (per-phase status) and ``current_phase`` (the resume
+    point ``Director.run_pipeline`` picks up).  No rich rendering here —
+    agents consume the dict; the command layer renders it.
+
+    ``next_command`` is the exact resume command: ``brandly init`` before a
+    project exists, ``None`` when the pipeline is complete, and
+    ``brandly run <id> --execute --yes`` from any incomplete state
+    (a failed or in-progress phase is retried on re-run).
+    """
+    plan: dict[str, Any] = {
+        "project_id": project_id,
+        "phases": list(PHASE_ORDER),
+        "phases_status": dict.fromkeys(PHASE_ORDER, "pending"),
+        "completed": [],
+        "current": None,
+        "next_command": "brandly init",
+    }
+    if project_id is None:
+        return plan
+    project = asyncio.run(ProjectManager(root).read(project_id))
+    if project is None:
+        return plan
+
+    statuses: dict[str, str] = {}
+    completed: list[str] = []
+    for phase in PHASE_ORDER:
+        entry = project.phases.get(phase)
+        if isinstance(entry, Mapping):
+            status = str(entry.get("status") or "pending")
+        else:
+            status = str(getattr(entry, "status", "pending") or "pending")
+        statuses[phase] = status
+        if status == "completed":
+            completed.append(phase)
+    plan["phases_status"] = statuses
+    plan["completed"] = completed
+
+    real_phases = PHASE_ORDER[1:-1]  # everything between init and done
+    current_phase = str(project.current_phase)
+    if current_phase not in PHASE_ORDER or current_phase == "done" or all(
+        statuses[p] == "completed" for p in real_phases
+    ):
+        # Complete (or untracked state): nothing left to resume.
+        plan["next_command"] = None
+        return plan
+
+    # "init" is a bookkeeping marker — the first real step is "trends".
+    plan["current"] = "trends" if current_phase == "init" else current_phase
+    plan["next_command"] = f"brandly run {project_id} --execute --yes"
+    return plan
+
+
 class DirectorConfig:
     """Configuration for the Director orchestrator."""
 
@@ -2010,6 +2108,7 @@ def register(cli) -> None:
     cli.add_command(status)
     cli.add_command(list_projects)
     cli.add_command(run)
+    cli.add_command(director)
     cli.add_command(approve)
     cli.add_command(estimate)
     cli.add_command(produce)

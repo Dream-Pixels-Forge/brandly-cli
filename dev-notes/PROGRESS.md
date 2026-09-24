@@ -61,7 +61,7 @@
   - [x] PR 3: `brandly init` emits `AGENTS.md` (create-only); `brandly sync` raw keys
         behind `--legacy-provider-keys`; README "Driving brandly from an AI tool"
         (9 tests)
-- [ ] **G2** Real director orchestration (`run --execute`, produce-backed phases, stub removal) — IN PROGRESS
+- [x] **G2** Real director orchestration (`run --execute`, produce-backed phases, stub removal) — COMPLETE (4 PRs)
   - [x] PR A: `brandly run <id> --execute [--until <phase>] [--yes]` drives
         `Director.run_pipeline` (resumable from `project.phases`); `run_phase`
         fails closed (worker error/exception → phase `failed`, `current_phase`

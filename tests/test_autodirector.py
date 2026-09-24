@@ -1,11 +1,21 @@
-"""Tests for autodirector module — script-to-video pipeline."""
+"""Tests for the surviving autodirector utilities (script parsing, prompts).
+
+G2 PR D (audit F3/F4): the fabricated ``auto_direct`` pipeline stub was
+DELETED — the real pipeline is ``brandly run --execute``
+(``Director.run_pipeline`` in ``cmd/production.py``).  The regression test
+below pins the removal so the stub cannot come back.
+"""
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
-
 from brandly_cli import autodirector
+
+
+class TestAutoDirectRemoval:
+    """The auto_direct stub is gone (G2 PR D)."""
+
+    def test_auto_direct_is_not_defined(self) -> None:
+        assert not hasattr(autodirector, "auto_direct")
 
 
 class TestScriptParsing:
@@ -43,30 +53,6 @@ class TestScriptParsing:
         assert len(scenes) == 2
         assert "First paragraph" in scenes[0]["full"]
         assert "Second paragraph" in scenes[1]["full"]
-
-
-class TestAutoDirect:
-    """Tests for auto_direct function."""
-
-    def test_autodirect_empty_script(self) -> None:
-        """Empty script returns error."""
-        result = asyncio.run(autodirector.auto_direct("test-1", ""))
-        assert "error" in result
-
-    def test_autodirect_valid_script(self, tmp_path: Path) -> None:
-        """Valid script returns parsed scenes."""
-        script = "Scene 1: Product reveal\n\nScene 2: Benefits\n\nScene 3: Call to action"
-        result = asyncio.run(autodirector.auto_direct("test-1", script))
-        assert "error" not in result
-        assert result["scenes"] == 3
-        assert result["style"] == "cinematic"
-
-    def test_autodirect_custom_style(self, tmp_path: Path) -> None:
-        """Custom style is passed through."""
-        result = asyncio.run(
-            autodirector.auto_direct("test-1", "Test script", style="ugc")
-        )
-        assert result["style"] == "ugc"
 
 
 class TestPromptGeneration:

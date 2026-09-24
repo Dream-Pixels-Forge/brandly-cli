@@ -2,7 +2,21 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased] — structural 10/10: cmd/ split, director demotion, import-linter
+## [0.3.24] — 2026-09-23
+
+### Added
+- Production studio navigation now loads projects on boot, exposes real functional panels, and includes persisted loading/error states.
+- Unified agent tooling for timeline inspection, clip updates/reordering, regeneration, project export, and gate verdicts.
+- Frontend CI quality gate covering zero-warning Oxlint, strict TypeScript, Vite production build, and committed-bundle freshness.
+- Warning-free dependency and GitHub Actions stack, including bounded Starlette compatibility and regression guards.
+
+### Fixed
+- Generated SPA bundles are deterministic across Windows and Linux line endings and platform EOF behavior.
+- React effect dependencies and pointer-event handling no longer emit Oxlint/React compiler warnings.
+- Quality-gate pixel inspection uses the current Pillow API without deprecation warnings.
+- Release publishing uses modern action majors and verifies the published package through PyPI's version endpoint.
+
+## [Unreleased]
 
 ### Changed — PR A: `cmd/` split (structural 10/10, P0-1)
 - `cli.py` demoted to a thin registration module: command bodies live in

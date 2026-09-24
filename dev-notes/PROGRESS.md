@@ -62,7 +62,15 @@
         behind `--legacy-provider-keys`; README "Driving brandly from an AI tool"
         (9 tests)
 - [ ] **G2** Real director orchestration (`run --execute`, produce-backed phases, stub removal)
-- [ ] **G3** Explicit scene model + scene completeness gate
+- [x] **G3** Explicit scene model + scene completeness gate (audit F6/F7) — COMPLETE
+  - [x] `scenes.py`: `scenes.json` manifest (`docs/plan/`) written by `produce`
+        BEFORE generation; project-unique scene ids (S01…) preserve act+number;
+        v2-aware roots (pre-production/ + production/); `status()` matrix;
+        `evaluate()`/`evaluate_all()` with injected quality runner (L0-pure)
+  - [x] `brandly scenes status [--json]`; `brandly gate --scene/--all-scenes
+        [--no-quality]` (exit 0/1/2 like the element gate)
+  - [x] TDD: 19 tests RED (ImportError) → GREEN; GateResult.status normalized
+        (lowercase); import-linter L0 extended
 - [ ] **G4** Ratio crop moved to assembly/export
 - [ ] **G5** Scope truth pass (`brandly capabilities --json`, honest README)
 - [ ] **G6** Publish path (decision-gated)

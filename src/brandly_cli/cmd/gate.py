@@ -5,6 +5,7 @@ Shared helpers and state still live in ``brandly_cli.cli``.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ from brandly_cli.cli import (
     _load_project_reference,
     _print_gate_report,
     _print_json,
+    _print_scene_report,
     _write_review_note,
     cli,
     console,
@@ -110,6 +112,27 @@ def validate(ctx: click.Context, project_id: str, video_path: str | None) -> Non
     type=click.Choice(["text", "json"]),
     default="text",
 )
+@click.option(
+    "--scene",
+    "scene_ref",
+    default=None,
+    help=(
+        "Scene mode: gate ONE scene by id (S01) or unique scene number "
+        "instead of an element (completeness + per-clip quality)."
+    ),
+)
+@click.option(
+    "--all-scenes",
+    "all_scenes",
+    is_flag=True,
+    help="Scene mode: gate every scene of the project manifest.",
+)
+@click.option(
+    "--no-quality",
+    "no_quality",
+    is_flag=True,
+    help="Scene mode: completeness only — skip the per-clip quality gate.",
+)
 @click.pass_context
 def gate(
     ctx: click.Context,
@@ -124,6 +147,9 @@ def gate(
     threshold: int | None,
     lenient: bool,
     output: str,
+    scene_ref: str | None,
+    all_scenes: bool,
+    no_quality: bool,
 ) -> None:
     """Verify a generated element before proceeding (anti-slop/drift gate).
 
@@ -142,9 +168,18 @@ def gate(
         console.print("[red]Invalid project ID format.[/red]")
         sys.exit(1)
 
-    from brandly_cli import quality_gate
-
     root = _get_root(ctx)
+
+    # Scene mode (Goal 3, audit F7): completeness from scenes.json + per-clip
+    # quality pre-checks. Independent of the element argument.
+    if scene_ref is not None or all_scenes:
+        if scene_ref is not None and all_scenes:
+            console.print("[red]Use --scene or --all-scenes, not both.[/red]")
+            sys.exit(1)
+        _run_scene_gate(root, project_id, scene_ref, all_scenes, no_quality, output)
+        return  # unreachable — the helper sys.exit()s
+
+    from brandly_cli import quality_gate
 
     # Resolve the element: explicit path, or auto-detect the newest media
     # artifact in the project.
@@ -243,6 +278,58 @@ def gate(
             exit_code = 1
 
     sys.exit(exit_code)
+
+
+def _run_scene_gate(
+    root: Path,
+    project_id: str,
+    scene_ref: str | None,
+    all_scenes: bool,
+    no_quality: bool,
+    output: str,
+) -> None:
+    """Scene completeness + quality gate (Goal 3, audit F7). Always sys.exit()s.
+
+    Completeness comes from the scene manifest (missing/stale takes); the
+    deterministic quality pre-checks run per present clip unless
+    ``--no-quality``. Exits 0 pass / 1 warn / 2 fail — the same contract as
+    the element gate.
+    """
+    from brandly_cli import quality_gate, scenes
+
+    gate_runner = None
+    if not no_quality:
+
+        def gate_runner(clip: Path) -> str:  # noqa: F811 — shadows the None above
+            result = asyncio.run(
+                quality_gate.verify_element(
+                    clip,
+                    use_ai=False,
+                    root=root,
+                    project_id=project_id,
+                    write_report=False,
+                )
+            )
+            return result.status
+
+    try:
+        if all_scenes:
+            report = scenes.evaluate_all(project_id, root=root, gate_runner=gate_runner)
+        else:
+            report = scenes.evaluate(
+                project_id, scene_ref or "", root=root, gate_runner=gate_runner
+            )
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if output == "json":
+        # Plain print: console.print would wrap/mangle long JSON lines.
+        print(json.dumps(report, indent=2))
+    else:
+        _print_scene_report(report)
+    sys.exit({"pass": 0, "warn": 1, "fail": 2}[report["verdict"]])
+
 
 @click.command()
 @click.argument("action", type=click.Choice(["view", "like", "dislike", "reset"]))

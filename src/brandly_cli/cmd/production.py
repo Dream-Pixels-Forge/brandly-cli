@@ -16,7 +16,7 @@ import click
 from rich.panel import Panel
 from rich.table import Table
 
-from brandly_cli import layout, shot_runner
+from brandly_cli import layout, scenes, shot_runner
 from brandly_cli.agnes_client import (
     create_video_task,
     generate_image,
@@ -38,6 +38,7 @@ from brandly_cli.cli import (
     _get_root,
     _print_json,
     _print_project_summary,
+    _print_scene_report,
     console,
 )
 from brandly_cli.cmd.generation import _generate_shot, _run_produce_runner
@@ -529,6 +530,11 @@ def produce(
     except ValueError as e:
         console.print(f"[red]Invalid shot list: {e}[/red]")
         sys.exit(1)
+
+    # Goal 3 (audit F6/F7): register the scene manifest BEFORE any generation
+    # begins — scenes.json is the source of truth for the scene gate
+    # (`brandly scenes status`, `brandly gate --scene/--all-scenes`).
+    scenes.write_scenes(project_id, shots, root=root)
 
     use_runner = (
         isinstance(shots, dict)
@@ -1687,6 +1693,37 @@ STORYBOARD_INSTRUCTION = (
 )
 
 
+@click.group(name="scenes")
+def scenes_group() -> None:
+    """Inspect the scene manifest (docs/plan/scenes.json) — Goal 3."""
+
+
+@scenes_group.command(name="status")
+@click.argument("project_id")
+@click.option("--json", "as_json", is_flag=True, help="Emit the raw matrix as JSON")
+@click.pass_context
+def scenes_status(ctx: click.Context, project_id: str, as_json: bool) -> None:
+    """Report the per-scene completeness matrix (expected/present/missing/stale)."""
+    if not is_valid_project_id(project_id):
+        console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(1)
+    root = _get_root(ctx)
+    try:
+        report = scenes.status(project_id, root=root)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        console.print(
+            "[dim]Run `brandly produce <project-id> --shots <file>` to create "
+            "the scene manifest.[/dim]"
+        )
+        sys.exit(1)
+    if as_json:
+        # Plain print: console.print would wrap/mangle long JSON lines.
+        print(json.dumps(report, indent=2))
+    else:
+        _print_scene_report(report)
+
+
 def register(cli) -> None:
     cli.add_command(init)
     cli.add_command(status)
@@ -1704,6 +1741,7 @@ def register(cli) -> None:
     cli.add_command(batch)
     cli.add_command(compare)
     cli.add_command(timeline)
+    cli.add_command(scenes_group)
 
 
 @click.command()

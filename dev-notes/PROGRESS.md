@@ -68,7 +68,7 @@
         frozen, pipeline stops, exit 1); fabricated stubs (`concept`/`asset`/
         `re_edit`/`publish`) report "not implemented" instead of fake success
         (TDD: 11 tests RED → GREEN; `tests/test_pipeline_orchestration.py`)
-  - [ ] PR B: `script` writes real `shots.json` (scene ids per G3); `asset`
+  - [x] PR B: `script` writes real `shots.json` (scene ids per G3); `asset`
         invokes the produce/shot_runner path
   - [ ] PR C: `re_edit` stitches; `validate` runs the G3 scene gate; `publish`
         calls export-platforms; E2E with mocked providers

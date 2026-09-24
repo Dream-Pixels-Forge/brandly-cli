@@ -18,6 +18,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed — #75: isolate generated image metadata to the selected project context
+- `brandly image` no longer falls back to an implicit `untitled` project when
+  no `--project-id` is given: the URL-autosave branch created a phantom
+  `pre-production/untitled/` + `.brandly/untitled/` tree under the running
+  home. Without a project context the command now reports that explicitly
+  (and points at `--output` / `--project-id`) and creates no project records.
+- External/isolated runs are now first-class: point the context root at an
+  isolated home (`ROOT` env or `brandly --root <path>`) and write artifacts
+  with `--output <path>`; metadata stays beneath the selected project only.
+  Documented in the README ("Running image generation externally").
+
 ### Changed — PR A: `cmd/` split (structural 10/10, P0-1)
 - `cli.py` demoted to a thin registration module: command bodies live in
   `brandly_cli/cmd/{production,generation,gate,post,providers,tools}.py`,

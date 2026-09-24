@@ -127,6 +127,37 @@ def tools(json_out: bool) -> None:
     console.print(table)
 
 
+@click.group()
+def mcp() -> None:
+    """Model Context Protocol server — let an AI tool drive brandly directly."""
+
+
+@mcp.command()
+@click.option(
+    "--root",
+    default=None,
+    help="Working directory (default: walk up from cwd looking for .brandly)",
+)
+def serve(root: str | None) -> None:
+    """Serve the brandly tool surface over stdio as JSON-RPC 2.0 (newline-delimited).
+
+    \b
+    Configure your AI tool with:
+      command: brandly
+      args:    ["mcp", "serve"]
+
+    Exposes exactly what `brandly tools --json` lists: the real pipeline
+    (produce, stitch, export-platforms, job-poll, image) plus read-only state.
+    \b
+    Examples:
+      brandly mcp serve
+      brandly mcp serve --root /path/to/brandly-home
+    """
+    from brandly_cli import mcp_server
+
+    mcp_server.serve_stdio(sys.stdin, sys.stdout, root=root)
+
+
 @click.command()
 def version() -> None:
     """Show version information."""
@@ -282,6 +313,7 @@ def _print_missing_assets_summary(root: Path, project_id: str, proj: Any) -> Non
 def register(cli) -> None:
     cli.add_command(sync)
     cli.add_command(tools)
+    cli.add_command(mcp)
     cli.add_command(version)
     cli.add_command(webhook)
     cli.add_command(share)

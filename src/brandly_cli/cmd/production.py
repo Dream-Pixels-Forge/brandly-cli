@@ -16,7 +16,7 @@ import click
 from rich.panel import Panel
 from rich.table import Table
 
-from brandly_cli import layout, scenes, shot_runner
+from brandly_cli import layout, scenes, shot_runner, stitch
 from brandly_cli.agnes_client import (
     create_video_task,
     generate_image,
@@ -1253,6 +1253,26 @@ def _director_shots_path(root: Path, project_id: str) -> Path:
     return layout.resolve_project_dir(root, project_id) / "shots.json"
 
 
+
+def _scene_clip_paths(
+    root: Path, project_id: str, manifest: dict[str, Any]
+) -> list[Path]:
+    """Ordered scene clip paths from the manifest (the re_edit stitch input).
+
+    Clips live under ``<videos root>/<folder>/<clip>`` exactly where
+    ``brandly produce`` writes them; folders default to ``scenes``.
+    """
+    videos_root = layout.resolve_media_root(root, project_id, "videos")
+    clips: list[Path] = []
+    for entry in manifest.get("scenes", []):
+        for shot in entry.get("shots", []):
+            clips.append(
+                videos_root
+                / str(shot.get("folder") or "scenes")
+                / str(shot["clip"])
+            )
+    return clips
+
 class DirectorConfig:
     """Configuration for the Director orchestrator."""
 
@@ -1724,41 +1744,140 @@ class Director:
             }
 
         if phase == "re_edit":
+            scene_manifest = scenes.load_scenes(proj.id, root=self.cfg.root)
+            if scene_manifest is None:
+                return {
+                    "error": (
+                        f"scene manifest not found: "
+                        f"{scenes.scenes_path(proj.id, root=self.cfg.root)} — run "
+                        "the asset phase first (`brandly run <id> --execute "
+                        "--until asset`) and re-run to resume"
+                    )
+                }
+            clips = _scene_clip_paths(Path(self.cfg.root), proj.id, scene_manifest)
+            missing = [c for c in clips if not (c.is_file() and c.stat().st_size > 0)]
+            if missing:
+                return {
+                    "error": (
+                        f"re_edit cannot stitch: {len(missing)} scene clip(s) "
+                        f"missing ({', '.join(str(c) for c in missing)}) — "
+                        "generate them with the asset phase "
+                        "(`brandly run <id> --execute --until asset`) and "
+                        "re-run to resume"
+                    )
+                }
+            if not clips:
+                return {
+                    "error": (
+                        "re_edit cannot stitch: the scene manifest lists no shots"
+                    )
+                }
+            videos_root = layout.resolve_media_root(
+                Path(self.cfg.root), proj.id, "videos"
+            )
+            output = videos_root / "final.mp4"
+            result = await stitch.stitch_videos(
+                clips, output, root=Path(self.cfg.root)
+            )
+            if "error" in result:
+                return {"error": f"stitch failed: {result['error']}"}
             return {
-                "error": (
-                    "re_edit phase is not implemented yet — assemble with "
-                    "`brandly stitch` and the post commands, then continue "
-                    "the pipeline"
-                )
+                "output": str(output),
+                "clips": len(clips),
+                "duration_seconds": result.get("duration_seconds", 0.0),
             }
 
         if phase == "validate":
             from brandly_cli import quality_gate
-            proj_dir = proj.__dict__.get("_dir") or Path(self.cfg.root) / ".brandly" / proj.id
-            videos = list((proj_dir / "videos").rglob("*.mp4"))
-            if videos:
-                gate_result = await quality_gate.verify_element(
-                    videos[-1],
-                    description=getattr(proj, "name", "video"),
-                    expect_matt_background=False,
-                    use_ai=True,
-                    root=Path(self.cfg.root),
-                    project_id=proj.id,
-                )
+
+            scene_manifest = scenes.load_scenes(proj.id, root=self.cfg.root)
+            if scene_manifest is None:
                 return {
-                    "score": gate_result.score if hasattr(gate_result, "score") else 75.0,
-                    "passed": gate_result.status != quality_gate.FAIL if hasattr(gate_result, "status") else True,
-                    "issues": [],
-                    "recommendations": ["Add subtitles for accessibility"],
+                    "error": (
+                        f"scene manifest not found: "
+                        f"{scenes.scenes_path(proj.id, root=self.cfg.root)} — run "
+                        "the asset phase first (`brandly run <id> --execute "
+                        "--until asset`) and re-run to resume"
+                    )
                 }
-            return {"score": 0, "passed": False, "issues": ["No video found to validate"], "recommendations": []}
+            root_path = Path(self.cfg.root)
+
+            def gate_runner(clip: Path) -> str:
+                # Deterministic pre-checks only (use_ai=False) — the same
+                # runner the ``brandly gate --all-scenes`` CLI uses. The
+                # pipeline is async, so the sync QualityRunner contract is
+                # served with a fresh event loop per clip.
+                return asyncio.run(
+                    quality_gate.verify_element(
+                        clip,
+                        use_ai=False,
+                        root=root_path,
+                        project_id=proj.id,
+                        write_report=False,
+                    )
+                ).status
+
+            # evaluate_all is sync and calls the gate runner inline, so run
+            # the whole gate off the event loop (mirrors the gate CLI).
+            report = await asyncio.to_thread(
+                lambda: scenes.evaluate_all(
+                    proj.id, root=root_path, gate_runner=gate_runner
+                )
+            )
+            if report["verdict"] != "pass":
+                bad = [s for s in report["scenes"] if s["verdict"] != "pass"]
+                detail = "; ".join(f"{s['id']}={s['verdict']}" for s in bad)
+                return {
+                    "error": (
+                        f"scene gate {report['verdict'].upper()} ({detail}) — "
+                        "fix the flagged scene(s) with "
+                        f"`brandly gate {proj.id} --all-scenes` and re-run to "
+                        "resume"
+                    )
+                }
+            return {
+                "verdict": report["verdict"],
+                "scenes": len(report["scenes"]),
+            }
 
         if phase == "publish":
-            return {
-                "error": (
-                    "publish phase is not implemented yet — export with "
-                    "`brandly export-platforms`, then continue the pipeline"
+            from brandly_cli import export_platforms
+
+            root_path = Path(self.cfg.root)
+            videos_root = layout.resolve_media_root(root_path, proj.id, "videos")
+            source = videos_root / "final.mp4"
+            if not source.is_file():
+                found = next(videos_root.rglob("*.mp4"), None) if videos_root.is_dir() else None
+                if found is None:
+                    return {
+                        "error": (
+                            f"no video to publish under {videos_root} — run the "
+                            "re_edit phase first so it stitches a final video "
+                            "(and the validate phase can pass), then re-run to "
+                            "resume"
+                        )
+                    }
+                source = found
+            out_dir = layout.resolve_project_dir(root_path, proj.id) / "export"
+            platforms = ("tiktok", "youtube_standard")
+            outputs: list[dict[str, Any]] = []
+            for platform in platforms:
+                result = await export_platforms.export_for_platform(
+                    source, platform, out_dir, root=root_path
                 )
+                if "error" in result:
+                    return {
+                        "error": (
+                            f"export to {platform} failed: {result['error']} — "
+                            "re-run the publish phase to resume (completed "
+                            "exports are kept)"
+                        )
+                    }
+                outputs.append({"platform": platform, "output_path": result["output_path"]})
+            return {
+                "source": str(source),
+                "platforms": [o["platform"] for o in outputs],
+                "outputs": [o["output_path"] for o in outputs],
             }
 
         if phase == "done":

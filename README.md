@@ -246,11 +246,31 @@ brandly share output.mp4
 
 | Command | Description |
 |---------|-------------|
-| `brandly image` | Generate an image via Agnes AI |
+| `brandly image` | Generate an image via Agnes AI (persists a durable job record; recover with `brandly job-poll`) |
 | `brandly video <id>` | Generate a video via Agnes AI (with 503 resilience) |
 | `brandly music` | Generate background music |
 | `brandly tts <text>` | Generate voiceover via TTS |
 | `brandly produce <id> --shots shots.json` | Multi-shot film: registers ALL shots on the production plan (source of truth), then generates **one shot at a time** with a 60 s wait (Agnes: 1 request/min). No batch/parallel mode; resumable |
+| `brandly job-poll <job-id>` | Poll a durable image-job record; `--output` writes the recovered artifact — never submits a new generation |
+
+### Durable image jobs and retry safety (#74)
+
+`brandly image` writes a job record to `ROOT/.brandly/jobs/<job-id>.json`
+before the provider call; terminal state (artifact URL/metadata or failure
+reason) is persisted on success/failure. If the process dies — crash,
+`--timeout` exceeded, client disconnect — the result is not lost:
+
+```bash
+brandly job-poll <job-id> --json                  # status / result_available / path
+brandly job-poll <job-id> --output ./recovered.png # write the recovered artifact
+```
+
+Polling only reads the durable record, so a disconnected client can never
+trigger a duplicate generation. `--max-age` (default 48 h) expires stale
+records. For new submissions, retry safety depends on the provider: ones that
+honour `X-Client-Request-Id` (Ark/Doubao) allow safe resume; providers
+without request-echo support are at-most-once — resubmission may bill again.
+
 
 Large local reference images are auto-converted to smaller webp/jpeg payloads
 before upload (disable with `BRANDLY_IMAGE_CONVERT=off`). Scope auto-injected

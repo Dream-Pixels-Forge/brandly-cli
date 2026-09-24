@@ -27,6 +27,7 @@ import json
 import subprocess
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from brandly_cli import agent_tools
@@ -252,6 +253,69 @@ def get_tool(name: str) -> dict[str, Any] | None:
 
 def tool_names() -> list[str]:
     return [entry["name"] for entry in tool_manifest()["tools"]]
+
+
+# ---------------------------------------------------------------------------
+# AGENTS.md onboarding (init) — teach agents the tool surface, not raw HTTP
+# ---------------------------------------------------------------------------
+
+
+def render_agents_md() -> str:
+    """Render the ``AGENTS.md`` that ``brandly init`` writes at the project root."""
+    lines: list[str] = [
+        "# Brandly — instructions for AI agents",
+        "",
+        "This project is produced by **brandly-cli**. Drive it through brandly's own",
+        "tools — do not call AI providers directly and do not hand-roll ffmpeg pipelines.",
+        "",
+        "## Discover the tool surface (do not guess)",
+        "",
+        "- `brandly tools --json` — full manifest: name, description, JSON-Schema",
+        "  parameters, read-only class, and the CLI command behind each tool.",
+        "- `brandly mcp serve` — MCP server over stdio (JSON-RPC 2.0). Config:",
+        "  `command: brandly`, `args: [\"mcp\", \"serve\"]`.",
+        "",
+        "## Read-only tools (safe to call without asking)",
+        "",
+    ]
+    for entry in tool_manifest()["tools"]:
+        if entry["read_only"]:
+            lines.append(f"- `{entry['name']}` — {entry['description']}")
+
+    lines += ["", "## Pipeline tools (write state or spend credits — confirm first)", ""]
+    for entry in tool_manifest()["tools"]:
+        if not entry["read_only"]:
+            back = f" → `brandly {entry['command']}`" if entry["command"] else ""
+            lines.append(f"- `{entry['name']}` — {entry['description']}{back}")
+
+    lines += [
+        "",
+        "## Rules",
+        "",
+        "1. Read the manifest before calling: `brandly tools --json`.",
+        "2. Keep provider credentials inside brandly; never copy secrets into scripts",
+        "   or tool config files.",
+        "3. Generate media with `produce` (scene naming, references, retries, production",
+        "   plan) — not with raw provider HTTP calls.",
+        "4. On a timeout, recover with `brandly job-poll <job-id>` — polling never",
+        "   resubmits a generation.",
+        "5. Assemble with `stitch`, then deliver with `export-platforms`.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def ensure_agents_md(root: Path | str) -> tuple[Path, bool]:
+    """Create ``<root>/AGENTS.md`` if absent. Never overwrite an existing file.
+
+    Returns ``(path, created)``.
+    """
+    path = Path(root) / "AGENTS.md"
+    if path.exists():
+        return path, False
+    path.write_text(render_agents_md(), encoding="utf-8")
+    return path, True
+
 
 
 # ---------------------------------------------------------------------------

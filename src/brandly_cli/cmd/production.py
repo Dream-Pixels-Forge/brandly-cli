@@ -130,6 +130,13 @@ def init(
     from brandly_cli import migrate as migrate_mod
 
     migrate_mod.ensure_v2_skeleton(root, pid)
+
+    # Agent onboarding (audit F1): point agents at the tool surface instead of
+    # letting them invent their own tools. Never overwrites a user's file.
+    from brandly_cli import agent_surface
+
+    agents_path, agents_created = agent_surface.ensure_agents_md(root)
+
     console.print(Panel(f"Project created! [green]{pid}[/green]", title="Brandly"))
     console.print(f"  Slug:      {slug}")
     console.print(f"  Name:      {name}")
@@ -137,6 +144,10 @@ def init(
     console.print(f"  Shots:     {shots}")
     console.print(f"  Budget:    {budget} credits")
     console.print(f"  Platforms: {proj.target_platforms}")
+    console.print(
+        f"  AGENTS.md: {'created' if agents_created else 'kept existing'} "
+        f"({agents_path.name} → brandly tools / brandly mcp serve)"
+    )
     console.print(f"\nNext: [bold]brandly run {pid}[/bold] to start the pipeline.")
 
 @click.command()

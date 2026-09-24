@@ -127,6 +127,29 @@ Available skills (see [skills/README.md](skills/README.md) for details):
 | `brandly-plant-sheet` | Plant/botanical reference sheets |
 | `brandly-3d-spatial` | Blender PlayBlast renderer — spatial reference frames for Agnes keyframe/reference video modes |
 
+### Driving brandly from an AI tool (agent-native surface)
+
+AI coding tools (opencode, Claude Code, Codex, pi, …) should drive brandly through
+its tool surface — never by inventing their own ffmpeg/provider calls:
+
+```bash
+brandly tools --json     # machine-readable manifest: name, description,
+                         # JSON-Schema params, read-only class, backing command
+brandly mcp serve        # MCP server over stdio (JSON-RPC 2.0)
+```
+
+MCP client config:
+
+```json
+{ "mcpServers": { "brandly": { "command": "brandly", "args": ["mcp", "serve"] } } }
+```
+
+`brandly init` writes an `AGENTS.md` at the project root (created only if absent —
+your file is never overwritten) instructing agents to use this surface.
+`brandly sync` no longer writes provider API keys into tool configs by default;
+pass `--legacy-provider-keys` only if you deliberately want raw provider access
+(which bypasses the pipeline).
+
 ### Configure API Keys
 
 ```bash

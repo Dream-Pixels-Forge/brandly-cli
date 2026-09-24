@@ -23,6 +23,7 @@ __package_dir__ = Path(__file__).resolve().parent
 
 _console = Console()  # used only for save_artifact warning output
 
+
 def generate_project_id() -> str:
     """Generate a human-readable project ID from slug + timestamp.
 
@@ -95,9 +96,28 @@ def is_valid_project_id(id_str: str) -> bool:
         return False
     # Reject reserved Windows device names (case-insensitive)
     reserved = {
-        "con", "prn", "aux", "nul",
-        "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
-        "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        "com1",
+        "com2",
+        "com3",
+        "com4",
+        "com5",
+        "com6",
+        "com7",
+        "com8",
+        "com9",
+        "lpt1",
+        "lpt2",
+        "lpt3",
+        "lpt4",
+        "lpt5",
+        "lpt6",
+        "lpt7",
+        "lpt8",
+        "lpt9",
     }
     if id_str.lower().split(".")[0] in reserved:
         return False
@@ -306,6 +326,7 @@ async def async_run_ffmpeg(cmd: list[str]) -> tuple[int | None, str]:
     _, stderr = await proc.communicate()
     return proc.returncode, stderr.decode()
 
+
 _now_iso = now_iso
 
 
@@ -353,3 +374,79 @@ def save_artifact(
     except Exception as e:
         _console.print(f"[yellow]⚠ Could not save artifact: {e}[/yellow]")
         return None
+
+
+class ImageFetchError(RuntimeError):
+    """Raised when an image cannot be fetched and validated into the requested path."""
+
+
+def fetch_image_atomic(
+    url: str | None,
+    dest_path: Path,
+    *,
+    b64_json: str | None = None,
+) -> dict[str, Any]:
+    """Atomically fetch, validate, and save a provider image to ``dest_path``.
+
+    Exactly one of ``url`` or ``b64_json`` must be provided:
+
+    - ``url``: download the payload (redirects followed).
+    - ``b64_json``: base64-decode the provider's inline payload.
+
+    The payload is written to a sibling ``<name>.part`` file, fully decoded
+    through PIL (rejecting truncated or non-image data), then atomically
+    renamed to ``dest_path``. On any failure the ``.part`` file is removed,
+    so a partial file never appears at the requested path (issue #73).
+
+    Returns ``{"path", "format", "width", "height"}`` on success and raises
+    :class:`ImageFetchError` on failure.
+    """
+    import base64
+    import io as _io
+
+    from PIL import Image
+
+    dest = Path(dest_path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(dest.name + ".part")
+
+    try:
+        if url:
+            import asyncio
+
+            import httpx
+
+            async def _dl(u: str) -> bytes:
+                async with httpx.AsyncClient(timeout=300) as client:
+                    resp = await client.get(u, follow_redirects=True)
+                    resp.raise_for_status()
+                    return resp.content
+
+            raw = asyncio.run(_dl(url))
+        elif b64_json:
+            try:
+                raw = base64.b64decode(b64_json)
+            except Exception as e:
+                raise ImageFetchError(f"invalid base64 payload: {e}") from e
+        else:
+            raise ImageFetchError("one of url or b64_json is required")
+
+        # Validate: full PIL decode — catches truncated, corrupt, or non-image
+        # payloads before anything is written to the requested path.
+        im = Image.open(_io.BytesIO(raw))
+        im.load()
+
+        tmp.write_bytes(raw)
+        tmp.replace(dest)
+        return {
+            "path": dest,
+            "format": im.format or "unknown",
+            "width": im.size[0],
+            "height": im.size[1],
+        }
+    except ImageFetchError:
+        tmp.unlink(missing_ok=True)
+        raise
+    except Exception as e:
+        tmp.unlink(missing_ok=True)
+        raise ImageFetchError(f"could not fetch/validate image into {dest.name}: {e}") from e

@@ -61,7 +61,19 @@
   - [x] PR 3: `brandly init` emits `AGENTS.md` (create-only); `brandly sync` raw keys
         behind `--legacy-provider-keys`; README "Driving brandly from an AI tool"
         (9 tests)
-- [ ] **G2** Real director orchestration (`run --execute`, produce-backed phases, stub removal)
+- [ ] **G2** Real director orchestration (`run --execute`, produce-backed phases, stub removal) — IN PROGRESS
+  - [x] PR A: `brandly run <id> --execute [--until <phase>] [--yes]` drives
+        `Director.run_pipeline` (resumable from `project.phases`); `run_phase`
+        fails closed (worker error/exception → phase `failed`, `current_phase`
+        frozen, pipeline stops, exit 1); fabricated stubs (`concept`/`asset`/
+        `re_edit`/`publish`) report "not implemented" instead of fake success
+        (TDD: 11 tests RED → GREEN; `tests/test_pipeline_orchestration.py`)
+  - [ ] PR B: `script` writes real `shots.json` (scene ids per G3); `asset`
+        invokes the produce/shot_runner path
+  - [ ] PR C: `re_edit` stitches; `validate` runs the G3 scene gate; `publish`
+        calls export-platforms; E2E with mocked providers
+  - [ ] PR D: `autodirector.auto_direct` removal/delegation; `brandly director`
+        prints the orchestrator plan
 - [x] **G3** Explicit scene model + scene completeness gate (audit F6/F7) — COMPLETE
   - [x] `scenes.py`: `scenes.json` manifest (`docs/plan/`) written by `produce`
         BEFORE generation; project-unique scene ids (S01…) preserve act+number;

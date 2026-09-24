@@ -219,9 +219,39 @@ def list_projects(ctx: click.Context) -> None:
 
 @click.command()
 @click.argument("project_id")
+@click.option(
+    "--execute",
+    is_flag=True,
+    help="Execute the pipeline for real via the Director orchestrator (resumable).",
+)
+@click.option(
+    "--until",
+    "until_phase",
+    type=click.Choice(PHASE_ORDER),
+    default=None,
+    help="With --execute: stop after this phase completes.",
+)
+@click.option(
+    "--yes",
+    is_flag=True,
+    help="With --execute: skip the confirmation prompt.",
+)
 @click.pass_context
-def run(ctx: click.Context, project_id: str) -> None:
-    """Run the next phase of the pipeline."""
+def run(
+    ctx: click.Context,
+    project_id: str,
+    execute: bool,
+    until_phase: str | None,
+    yes: bool,
+) -> None:
+    """Run the next phase of the pipeline.
+
+    Without ``--execute`` this only marks the current phase running (the
+    agent-driven workflow; approve with ``brandly approve``). With
+    ``--execute`` the Director orchestrator runs the real phase workers
+    from the current phase onward, resuming from ``project.phases`` and
+    failing closed on the first phase error.
+    """
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
         sys.exit(1)
@@ -239,6 +269,30 @@ def run(ctx: click.Context, project_id: str) -> None:
         return
 
     _check_budget(ctx, project_id)
+
+    if execute:
+        if not yes:
+            click.confirm(
+                f"Execute the pipeline from '{proj.current_phase}' to "
+                f"'{until_phase or 'done'}'? This runs real generation and "
+                "spends credits.",
+                abort=True,
+            )
+        director = Director(DirectorConfig(root))
+        result = asyncio.run(director.run_pipeline(project_id, until=until_phase))
+        if "error" in result:
+            console.print(
+                f"[red]✗ Phase '{result['failed_phase']}' failed: "
+                f"{result['error']}[/red]"
+            )
+            console.print(
+                "[dim]Fix the issue and re-run the same command to resume.[/dim]"
+            )
+            sys.exit(1)
+        console.print(
+            f"[green]✓ Pipeline executed: {' → '.join(result['phases_run'])}[/green]"
+        )
+        return
 
     current = proj.current_phase
     console.print(f"[bold]Running phase:[/bold] {current}")
@@ -1472,7 +1526,12 @@ class Director:
     # ------------------------------------------------------------------
 
     async def run_phase(self, project_id: str, phase: str) -> dict[str, Any]:
-        """Advance a single pipeline phase by dispatching real work."""
+        """Advance a single pipeline phase by dispatching real work.
+
+        Fails closed: a worker ``error`` payload or exception marks the
+        phase ``failed`` and leaves ``current_phase`` untouched, so a
+        re-run resumes at the failed phase.
+        """
         if phase not in PHASE_ORDER:
             raise ValueError(f"Invalid phase '{phase}'")
 
@@ -1486,27 +1545,43 @@ class Director:
 
         # Mark phase running
         phases = dict(getattr(proj, "phases", {}))
-        phases[phase] = {"status": "running", "started_at": _now_iso()}
+        started_at = _now_iso()
+        phases[phase] = {"status": "running", "started_at": started_at}
         await self.cfg.pm.update(project_id, {"phases": phases, "status": "running"})
 
-        # Dispatch to real phase worker (fall back to simulation only for
-        # phases that have no concrete implementation yet)
-        result = await self._run_phase_real(phase, proj)
+        # Dispatch to the real phase worker. A phase that cannot do its
+        # work truthfully reports an error instead of fabricating success.
+        try:
+            result = await self._run_phase_real(phase, proj)
+        except Exception as e:
+            result = {"error": f"{type(e).__name__}: {e}"}
+
+        phases = dict(getattr(proj, "phases", {}))
+        if "error" in result:
+            phases[phase] = {
+                "status": "failed",
+                "started_at": started_at,
+                "completed_at": _now_iso(),
+                "error": result["error"],
+            }
+            await self.cfg.pm.update(
+                project_id, {"phases": phases, "status": "failed"}
+            )
+            return {"phase": phase, "error": result["error"]}
 
         # Mark phase completed
-        phases = dict(getattr(proj, "phases", {}))
         phases[phase] = {
             "status": "completed",
-            "started_at": phases.get(phase, {}).get("started_at"),
+            "started_at": started_at,
             "completed_at": _now_iso(),
             "output": json.dumps(result),
         }
         idx = PHASE_ORDER.index(phase)
         next_phase = PHASE_ORDER[idx + 1] if idx < len(PHASE_ORDER) - 1 else "done"
-        await self.cfg.pm.update(
-            project_id,
-            {"phases": phases, "current_phase": next_phase},
-        )
+        updates: dict[str, Any] = {"phases": phases, "current_phase": next_phase}
+        if phase == "done":
+            updates["status"] = "completed"
+        await self.cfg.pm.update(project_id, updates)
 
         return {"phase": phase, "next_phase": next_phase, "result": result}
 
@@ -1532,11 +1607,11 @@ class Director:
 
         if phase == "concept":
             return {
-                "concepts": [
-                    {"id": 1, "name": "Hero reveal", "virality_score": 8.0},
-                    {"id": 2, "name": "Lifestyle integration", "virality_score": 7.2},
-                ],
-                "recommended": 1,
+                "error": (
+                    "concept phase is not implemented yet — derive the concept "
+                    "from the project brief with an agent, then continue the "
+                    "pipeline"
+                )
             }
 
         if phase == "script":
@@ -1555,26 +1630,13 @@ class Director:
             }
 
         if phase == "asset":
-            shots = getattr(proj, "shot_count", 3)
-            style = getattr(proj, "style", "cinematic")
-            name = getattr(proj, "name", "product")
-            generated: list[dict] = []
-            for i in range(shots):
-                prompt = f"{name} — shot {i+1}: dynamic product showcase"
-                task = await self.generate_video(
-                    proj.id, prompt,
-                    model="agnes-video-2.5-flash",
-                    mode="text",
-                    duration=5,
-                    aspect_ratio="16:9",
-                    style=style,
-                    wait=False,
-                )
-                generated.append(task)
             return {
-                "shots_generated": len(generated),
-                "tasks": generated,
-                "estimated_credits": round(base * 0.25),
+                "error": (
+                    "asset phase is not implemented yet — generate shots with "
+                    "`brandly produce <id> --shots <file>` (scene naming, "
+                    "identity anchors, retries, production-plan rows), then "
+                    "continue the pipeline"
+                )
             }
 
         if phase == "audio":
@@ -1585,7 +1647,13 @@ class Director:
             }
 
         if phase == "re_edit":
-            return {"message": "Review and refinement complete (stitch/captions not yet wired)"}
+            return {
+                "error": (
+                    "re_edit phase is not implemented yet — assemble with "
+                    "`brandly stitch` and the post commands, then continue "
+                    "the pipeline"
+                )
+            }
 
         if phase == "validate":
             from brandly_cli import quality_gate
@@ -1610,8 +1678,10 @@ class Director:
 
         if phase == "publish":
             return {
-                "message": "Export ready — run `brandly export <id>` to publish.",
-                "platforms": getattr(proj, "target_platforms", []),
+                "error": (
+                    "publish phase is not implemented yet — export with "
+                    "`brandly export-platforms`, then continue the pipeline"
+                )
             }
 
         if phase == "done":
@@ -1619,19 +1689,34 @@ class Director:
 
         return {"message": f"Phase {phase} completed"}
 
-    async def run_pipeline(self, project_id: str) -> dict[str, Any]:
-        """Run all remaining phases sequentially."""
+    async def run_pipeline(
+        self, project_id: str, *, until: str | None = None
+    ) -> dict[str, Any]:
+        """Run remaining phases sequentially, resuming from ``current_phase``.
+
+        Stops after ``until`` completes (inclusive), or at the first failed
+        phase — fail-closed: a failed phase never advances the pipeline.
+        """
+        if until is not None and until not in PHASE_ORDER:
+            raise ValueError(f"Invalid phase '{until}'")
         proj = await self.cfg.pm.read(project_id)
         if not proj:
             raise ValueError(f"Project not found: {project_id}")
 
         current_idx = PHASE_ORDER.index(str(proj.current_phase))  # type: ignore[arg-type]
+        stop_idx = PHASE_ORDER.index(until) if until else len(PHASE_ORDER) - 1  # type: ignore[arg-type]
         results = []
-        for phase in PHASE_ORDER[current_idx:]:
+        for phase in PHASE_ORDER[current_idx : stop_idx + 1]:
             r = await self.run_phase(project_id, phase)
             results.append(r)
-            if r.get("next_phase") == "done" or phase == "done":
-                break
+            if "error" in r:
+                return {
+                    "project_id": project_id,
+                    "phases_run": [x["phase"] for x in results],
+                    "failed_phase": phase,
+                    "error": r["error"],
+                    "results": results,
+                }
 
         return {
             "project_id": project_id,

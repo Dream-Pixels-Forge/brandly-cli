@@ -45,6 +45,26 @@
 - [x] Updated .gitignore with .pre-commit-cache/
 - [x] All verification gates passing (16/16)
 
+### Round 3/256 — Agent-native pipeline program (GOAL-AGENTIC-PIPELINE.md)
+
+**Current Phase:** Phase 3 (Engineer) — Goal 1 (agent-native tool surface) · **Status:** in-progress
+
+- [x] Loaded `pipeline-orchestrator` + `test-driven-development` skills
+- [x] Deep audit of the agentic system → `dev-notes/AUDIT-AGENTIC-PIPELINE.md` (F1–F9)
+- [x] Goal program (6 goals, ordered) → `dev-notes/GOAL-AGENTIC-PIPELINE.md`
+- [x] Housekeeping: removed phantom `.brandly/untitled` + `.brandly/undefined` (21 files)
+- [ ] **G1** Agent-native tool surface
+  - [x] PR 1: `agent_surface.py` dispatch layer + `brandly tools --json` manifest
+        (TDD: 21 tests written RED first — verified failing on `ImportError` — then GREEN)
+  - [ ] PR 2: `brandly mcp serve` (stdio JSON-RPC: initialize / tools/list / tools/call)
+  - [ ] PR 3: `brandly init` emits `AGENTS.md`; `brandly sync` raw keys behind
+        `--legacy-provider-keys`; README "Driving brandly from an AI tool"
+- [ ] **G2** Real director orchestration (`run --execute`, produce-backed phases, stub removal)
+- [ ] **G3** Explicit scene model + scene completeness gate
+- [ ] **G4** Ratio crop moved to assembly/export
+- [ ] **G5** Scope truth pass (`brandly capabilities --json`, honest README)
+- [ ] **G6** Publish path (decision-gated)
+
 ### Round 2/256 — Feature Implementation (Phase 3)
 - [x] Created dev-notes/IMPLEMENTATION.md with full feature plan
 - [x] Delegating subagents for Phase 3A features:

@@ -5,6 +5,7 @@ Shared helpers and state still live in ``brandly_cli.cli``.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 from pathlib import Path
@@ -85,6 +86,46 @@ def sync(ctx: click.Context, tools: str | None, dry_run: bool) -> None:
         console.print(Panel("\n".join(messages), title="Sync Result"))
     else:
         console.print("[dim]Nothing to sync.[/dim]")
+
+@click.command()
+@click.option(
+    "--json",
+    "json_out",
+    is_flag=True,
+    help="Emit the full tool manifest as machine-readable JSON (Goal 1)",
+)
+def tools(json_out: bool) -> None:
+    """List the agent-callable tool surface (manifest for AI tools / MCP clients).
+
+    \b
+    Examples:
+      brandly tools --json          # manifest for an AI tool to consume
+      brandly tools                 # human-readable list
+    """
+    from brandly_cli import agent_surface
+
+    manifest = agent_surface.tool_manifest()
+    if json_out:
+        # Printed raw (not through rich) so stdout parses as exactly one document.
+        print(json.dumps(manifest, indent=2, ensure_ascii=False))
+        return
+
+    table = Table(title=f"Brandly agent tools ({len(manifest['tools'])})")
+    table.add_column("Tool", style="cyan")
+    table.add_column("Kind", style="dim")
+    table.add_column("Access", style="white")
+    table.add_column("Command", style="dim")
+    table.add_column("Description", style="white")
+    for entry in manifest["tools"]:
+        table.add_row(
+            entry["name"],
+            entry["kind"],
+            "read-only" if entry["read_only"] else "write",
+            entry["command"] or "-",
+            entry["description"],
+        )
+    console.print(table)
+
 
 @click.command()
 def version() -> None:
@@ -240,6 +281,7 @@ def _print_missing_assets_summary(root: Path, project_id: str, proj: Any) -> Non
 
 def register(cli) -> None:
     cli.add_command(sync)
+    cli.add_command(tools)
     cli.add_command(version)
     cli.add_command(webhook)
     cli.add_command(share)

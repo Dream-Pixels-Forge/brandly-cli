@@ -70,8 +70,17 @@
         (TDD: 11 tests RED → GREEN; `tests/test_pipeline_orchestration.py`)
   - [x] PR B: `script` writes real `shots.json` (scene ids per G3); `asset`
         invokes the produce/shot_runner path
-  - [ ] PR C: `re_edit` stitches; `validate` runs the G3 scene gate; `publish`
-        calls export-platforms; E2E with mocked providers
+  - [x] PR C (PR #88, squash @ `10b75ea`): `re_edit` stitches the scene clips
+        via `stitch.stitch_videos` → `videos/final.mp4` (fail-closed on missing
+        manifest/clips); `validate` runs the G3 scene gate
+        (`scenes.evaluate_all` + deterministic `verify_element(use_ai=False)`
+        runner, off the event loop) and blocks advance on any non-pass verdict;
+        `publish` calls `export_platforms` (tiktok + youtube_standard →
+        `<project>/export/`, fail-closed on per-platform errors). +11 TDD tests,
+        incl. E2E `brandly run --execute` to `done` with mocked
+        providers/ffmpeg/gate/exports. Suite 716 → 725 passed; ruff/mypy clean;
+        lint-imports KEPT; CI green on #88. Stub parametrization trimmed to
+        `concept` (the only remaining honest stub).
   - [ ] PR D: `autodirector.auto_direct` removal/delegation; `brandly director`
         prints the orchestrator plan
 - [x] **G3** Explicit scene model + scene completeness gate (audit F6/F7) — COMPLETE

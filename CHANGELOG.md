@@ -16,7 +16,7 @@ All notable changes to this project are documented here.
 - Quality-gate pixel inspection uses the current Pillow API without deprecation warnings.
 - Release publishing uses modern action majors and verifies the published package through PyPI's version endpoint.
 
-## [Unreleased]
+## [0.3.25] — 2026-09-24
 
 ### Added — #74: durable image job records + `job-poll`
 - `brandly image` now persists a job record to `ROOT/.brandly/jobs/<job-id>.json`

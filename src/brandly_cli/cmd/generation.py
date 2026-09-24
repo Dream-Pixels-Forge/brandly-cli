@@ -700,31 +700,41 @@ def image(
             )
     elif url:
         console.print(f"[green]✓ Image generated:[/green] {url}")
-        # Always save to disk
-        pid = project_id or "untitled"
-        root = _get_root(ctx)
-        saved = _save_artifact(url, pid, "images", root=root, prompt_hint=prompt)
-        if saved:
-            fmt, width, height = _probe_image(saved)
-            console.print(f"  Saved → {saved}")
-            # Write generation document
-            from brandly_cli.utils import write_generation_doc
+        if project_id:
+            # Always save to disk, under the selected project context
+            saved = _save_artifact(url, project_id, "images", root=root, prompt_hint=prompt)
+            if saved:
+                fmt, width, height = _probe_image(saved)
+                console.print(f"  Saved → {saved}")
+                # Write generation document
+                from brandly_cli.utils import write_generation_doc
 
-            write_generation_doc(
-                pid,
-                "image",
-                saved,
-                root=root,
-                prompt=enhanced,
-                model=model,
-                style=style_preset,
-                metadata={"size": size, "ratio": ratio, "source_url": url},
-                source="brandly image",
-                plan_file=plan_file_ref,
-            )
-            console.print(f"  Doc → {saved.parent.parent / 'docs'}")
+                write_generation_doc(
+                    project_id,
+                    "image",
+                    saved,
+                    root=root,
+                    prompt=enhanced,
+                    model=model,
+                    style=style_preset,
+                    metadata={"size": size, "ratio": ratio, "source_url": url},
+                    source="brandly image",
+                    plan_file=plan_file_ref,
+                )
+                console.print(f"  Doc → {saved.parent.parent / 'docs'}")
+            else:
+                console.print("[yellow]⚠ Could not save artifact, but URL is available[/yellow]")
         else:
-            console.print("[yellow]⚠ Could not save artifact, but URL is available[/yellow]")
+            # Issue #75: no intentional project context. This branch used to
+            # fall back to an implicit "untitled" project and write media +
+            # generation docs under that phantom project dir. Instead, report
+            # the context explicitly and create nothing.
+            console.print(
+                "[dim]No --project-id was selected, so this image is not recorded "
+                "under any project (no metadata written). Use --output <path> to "
+                "save it externally, or --project-id <id> to record it under a "
+                "project.[/dim]"
+            )
     else:
         console.print("[yellow]Image generated (base64 returned)[/yellow]")
         if project_id:

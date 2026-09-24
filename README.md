@@ -175,6 +175,28 @@ brandly music --prompt "upbeat electronic" --duration 30
 brandly tts "Welcome to SuperWidget Pro"
 ```
 
+#### Running image generation externally (isolated context, #75)
+
+All project metadata (plans, generation docs, autosaved media) is written
+beneath the selected context root — never inferred. To keep an external
+pipeline's working tree clean:
+
+```bash
+# Isolated Brandly home (all .brandly/ state lands here, not in the repo):
+export ROOT=/tmp/brandly-home          # or: brandly --root /tmp/brandly-home ...
+
+# Write the artifact outside the tree, attach it to an explicit project:
+brandly image --prompt "product on marble surface" \
+  --output ./out/product.png \
+  --project-id superwidget
+
+# No project selected? Pass nothing and run externally — no project records
+# are created (the run reports this explicitly instead of falling back to an
+# implicit "untitled" project):
+brandly image --prompt "hero shot" --output ./out/hero.png --json
+```
+
+
 ### 4. 3D Spatial References (Optional)
 
 If Blender is installed, generate spatial reference frames for Agnes AI keyframe/reference modes:

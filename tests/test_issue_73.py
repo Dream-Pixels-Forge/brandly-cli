@@ -234,7 +234,6 @@ def test_truncated_png_leaves_no_partial_file(runner: CliRunner, tmp_path: Path)
 
 
 def test_text_mode_preserved_without_json_flag(runner: CliRunner, tmp_path: Path) -> None:
-    fake_saved = tmp_path / ".brandly" / "untitled" / "images" / "general" / "img.png"
     with (
         patch("brandly_cli.cmd.generation.generate_image") as gen,
         patch("brandly_cli.cmd.generation._save_artifact") as save,
@@ -246,12 +245,13 @@ def test_text_mode_preserved_without_json_flag(runner: CliRunner, tmp_path: Path
             "model": "m",
             "generated_at": "2026-01-01T00:00:00Z",
         }
-        save.return_value = fake_saved
         result = runner.invoke(cli, ["image", "-p", "x"])
 
     assert result.exit_code == 0, result.output
     assert "Image generated" in result.output
-    assert save.called
+    # Issue #75: without a project context there is no implicit "untitled"
+    # autosave — only an explicit --project-id records the image in a tree.
+    assert not save.called, "implicit autosave under an inferred project context"
 
 
 if __name__ == "__main__":

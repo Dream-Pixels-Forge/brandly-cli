@@ -586,6 +586,24 @@ def image(
         plan_file_ref = str(plan)
         console.print(f"[dim]Plan {'reused' if plan_reused else 'written'}: {plan}[/dim]")
 
+    # Issue #74: durable job record, created BEFORE the provider call so a
+    # crash or disconnect leaves a pollable handle (brandly job-poll).
+    from brandly_cli import jobs as _jobs
+
+    job = _jobs.create_image_job(
+        root,
+        prompt=prompt,
+        model=model,
+        size=size,
+        ratio=ratio,
+        style_preset=style_preset,
+        project_id=project_id,
+    )
+    if not json_out:
+        console.print(
+            f"[dim]Job: {job['job_id']} — recover later: brandly job-poll {job['job_id']}[/dim]"
+        )
+
     console.print(
         f"[dim]Generating image with model {model} ({style_preset or 'default'} style)...[/dim]"
     )
@@ -593,6 +611,9 @@ def image(
     try:
         result = asyncio.run(generate_image(enhanced, model=model, size=size, ratio=ratio))
     except Exception as e:
+        # Issue #74: record the failure durably — a record left "running"
+        # with no terminal state would look resumable forever.
+        _jobs.save_job({**job, "status": "failed", "error": str(e)})
         if json_out:
             console.quiet = quiet_original
             _print_machine_json(
@@ -601,6 +622,7 @@ def image(
                     "error_code": "provider_error",
                     "error_message": str(e),
                     "task_id": None,
+                    "job_id": job["job_id"],
                 }
             )
             sys.exit(1)
@@ -634,6 +656,10 @@ def image(
     url = result.get("url") or ""
     b64 = result.get("b64_json") or ""
     task_id = result.get("task_id")
+    # Issue #74: persist the provider-side task handle on the durable record.
+    if task_id:
+        job["provider_task_id"] = task_id
+        _jobs.save_job(job)
     saved: Path | None = None
     fmt: str | None = None
     width: int | None = None
@@ -646,6 +672,7 @@ def image(
 
         if not url and not b64:
             payload_error = "Provider returned no image payload (no URL, no base64)."
+            _jobs.save_job({**job, "status": "failed", "error": payload_error})
             if json_out:
                 console.quiet = quiet_original
                 _print_machine_json(
@@ -654,6 +681,7 @@ def image(
                         "error_code": "no_image",
                         "error_message": payload_error,
                         "task_id": task_id,
+                        "job_id": job["job_id"],
                     }
                 )
             else:
@@ -664,6 +692,14 @@ def image(
         try:
             info = fetch_image_atomic(url or None, dest, b64_json=b64 or None)
         except ImageFetchError as e:
+            _jobs.save_job(
+                {
+                    **job,
+                    "status": "failed",
+                    "error": str(e),
+                    "provider_url": _jobs.redact_credentials(url) if url else None,
+                }
+            )
             if json_out:
                 console.quiet = quiet_original
                 _print_machine_json(
@@ -672,6 +708,7 @@ def image(
                         "error_code": "image_download_failed",
                         "error_message": str(e),
                         "task_id": task_id,
+                        "job_id": job["job_id"],
                     }
                 )
             else:
@@ -681,6 +718,18 @@ def image(
         fmt = info["format"]
         width = info["width"]
         height = info["height"]
+        # Issue #74: durable terminal state with the recoverable result.
+        _jobs.save_job(
+            {
+                **job,
+                "status": "succeeded",
+                "provider_url": _jobs.redact_credentials(url) if url else None,
+                "path": str(saved),
+                "format": fmt,
+                "width": width,
+                "height": height,
+            }
+        )
         if not json_out:
             console.print(f"[green]✓ Image written to: {saved}[/green]")
         if project_id:
@@ -735,8 +784,45 @@ def image(
                 "save it externally, or --project-id <id> to record it under a "
                 "project.[/dim]"
             )
+        # Issue #74: durable terminal state (redacted URL + artifact path).
+        # The job store is root-level (ROOT/.brandly/jobs) — deliberately
+        # independent of any project context (#75).
+        _jobs.save_job(
+            {
+                **job,
+                "status": "succeeded",
+                "provider_url": _jobs.redact_credentials(url),
+                "path": str(saved) if saved else None,
+                "format": fmt,
+                "width": width,
+                "height": height,
+            }
+        )
     else:
         console.print("[yellow]Image generated (base64 returned)[/yellow]")
+        # Issue #74: capture the base64 payload into the durable job store
+        # so a later poll retrieves the result without resubmission.
+        if b64:
+            try:
+                info = _jobs.save_job_image(job, b64_json=b64)
+                _jobs.save_job(
+                    {
+                        **job,
+                        "status": "succeeded",
+                        "path": str(info["path"]),
+                        "format": info["format"],
+                        "width": info["width"],
+                        "height": info["height"],
+                    }
+                )
+                saved = Path(info["path"])
+                fmt, width, height = info["format"], info["width"], info["height"]
+                if not json_out:
+                    console.print(f"  Captured → {saved}")
+            except Exception as e:
+                _jobs.save_job(
+                    {**job, "status": "failed", "error": f"could not capture base64 result: {e}"}
+                )
         if project_id:
             from brandly_cli.utils import write_generation_doc
 
@@ -782,17 +868,159 @@ def image(
             {
                 "status": "success",
                 "task_id": task_id,
-                "provider_url": url or None,
+                "provider_url": _jobs.redact_credentials(url) if url else None,
                 "path": str(saved) if saved is not None else None,
                 "format": fmt,
                 "width": width,
                 "height": height,
                 "model": model,
                 "generated_at": result.get("generated_at"),
+                "job_id": job["job_id"],
             }
         )
     else:
         _print_json(result)
+
+
+@click.command(name="job-poll")
+@click.argument("job_id")
+@click.option(
+    "--output",
+    "output",
+    default=None,
+    type=click.Path(),
+    help="Copy the recovered result image to this path (validated + atomic)",
+)
+@click.option(
+    "--max-age",
+    "max_age",
+    default=86400,
+    show_default=True,
+    help="Seconds after which a still-running job is treated as expired",
+)
+@click.option(
+    "--json",
+    "json_out",
+    is_flag=True,
+    help="Emit only a machine-readable status object on stdout (issue #74)",
+)
+@click.pass_context
+def job_poll(
+    ctx: click.Context,
+    job_id: str,
+    output: str | None,
+    max_age: int,
+    json_out: bool,
+) -> None:
+    """Poll a durable image-generation job for its result (issue #74).
+
+    Reads the job record written at submission time and reports the
+    current state. Intermediate (still-running) states exit zero so a
+    caller can poll in a loop; terminal states — failed, expired, not
+    found, or result lost — exit non-zero. Polling NEVER submits a
+    generation request to a provider.
+
+    \b
+    Examples:
+      brandly job-poll <job-id> --json
+      brandly job-poll <job-id> --output ./recovered/plate.png
+    """
+    from brandly_cli import jobs as _jobs
+
+    root = _get_root(ctx)
+    quiet_original = console.quiet
+    if json_out:
+        console.quiet = True
+
+    record = _jobs.load_job(root, job_id)
+    if record is None:
+        if json_out:
+            console.quiet = quiet_original
+            _print_machine_json(
+                {
+                    "status": "error",
+                    "error_code": "job_not_found",
+                    "job_id": job_id,
+                    "result_available": False,
+                }
+            )
+        else:
+            console.print(f"[red]✗ No job record found for {job_id}[/red]")
+        sys.exit(1)
+
+    status = _jobs.resolve_status(record, max_age)
+    rec_path = record.get("path")
+    result_available = bool(
+        status == _jobs.STATUS_SUCCEEDED and rec_path and Path(rec_path).is_file()
+    )
+    body: dict[str, Any] = {
+        "status": status,
+        "job_id": record.get("job_id", job_id),
+        "result_available": result_available,
+        "path": rec_path,
+        "provider_url": record.get("provider_url"),
+        "format": record.get("format"),
+        "width": record.get("width"),
+        "height": record.get("height"),
+        "error": record.get("error"),
+    }
+
+    if status == _jobs.STATUS_SUCCEEDED and result_available and output:
+        import base64 as _base64
+
+        from brandly_cli.io import ImageFetchError, fetch_image_atomic
+
+        assert rec_path is not None  # result_available above proves it
+        dest = Path(output).expanduser()
+        try:
+            raw = Path(rec_path).read_bytes()
+            fetch_image_atomic(None, dest, b64_json=_base64.b64encode(raw).decode())
+            body["copied_to"] = str(dest)
+        except ImageFetchError as e:
+            if json_out:
+                console.quiet = quiet_original
+                _print_machine_json(
+                    {
+                        "status": "error",
+                        "error_code": "result_copy_failed",
+                        "error_message": str(e),
+                        "job_id": record.get("job_id", job_id),
+                        "result_available": True,
+                    }
+                )
+            else:
+                console.print(f"[red]✗ Could not copy recovered result: {e}[/red]")
+            sys.exit(1)
+
+    terminal = status in (_jobs.STATUS_FAILED, _jobs.STATUS_EXPIRED) or (
+        status == _jobs.STATUS_SUCCEEDED and not result_available
+    )
+
+    if json_out:
+        console.quiet = quiet_original
+        _print_machine_json(body)
+    else:
+        console.print(f"Job: {body['job_id']}")
+        console.print(f"  Status: {status}")
+        if result_available:
+            console.print(f"  Result: {rec_path}")
+            if body.get("copied_to"):
+                console.print(f"  Copied → {body['copied_to']}")
+        elif status == _jobs.STATUS_SUCCEEDED:
+            console.print("[yellow]⚠ Job succeeded but the result is no longer available[/yellow]")
+        elif status == _jobs.STATUS_FAILED:
+            console.print(f"[red]✗ Job failed: {record.get('error') or 'unknown error'}[/red]")
+        elif status == _jobs.STATUS_EXPIRED:
+            console.print(
+                f"[yellow]⚠ Job expired (still running after {max_age}s) — "
+                "re-invoke the generation command to start a fresh job.[/yellow]"
+            )
+        else:
+            console.print("[dim]Job still running — poll again later:[/dim]")
+            console.print(f"[dim]  brandly job-poll {body['job_id']}[/dim]")
+
+    if terminal:
+        sys.exit(1)
 
 
 @click.command()
@@ -1829,6 +2057,7 @@ def _run_produce_runner(
 def register(cli) -> None:
     cli.add_command(reference)
     cli.add_command(image)
+    cli.add_command(job_poll)
     cli.add_command(video)
     cli.add_command(prompt)
     cli.add_command(music)

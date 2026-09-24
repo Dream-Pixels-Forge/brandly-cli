@@ -18,6 +18,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added — #74: durable image job records + `job-poll`
+- `brandly image` now persists a job record to `ROOT/.brandly/jobs/<job-id>.json`
+  **before** the provider call (`job_id`, status, prompt/model/size/seed,
+  timestamps). Terminal state — artifact URL/metadata or failure reason — is
+  written on success and failure, so a crash, timeout, or client disconnect
+  no longer orphans the work.
+- New `brandly job-poll <job-id>` command recovers finished generations from
+  the durable record: `--output` writes the recovered artifact to disk,
+  `--max-age` (default 48 h) expires stale records, `--json` emits a
+  machine-readable body (`{status, job_id, result_available, path,
+  provider_url, ...}`). Polling **never** submits a generation request.
+- Credential-bearing URL query params (`api_key`, `token`, `secret`,
+  `awsaccesskeyid`, `signature`, …) are stripped from persisted records
+  (P1-1). The JSON machine output now includes `job_id` as the recovery
+  handle; text-mode output is unchanged.
+
 ### Fixed — #75: isolate generated image metadata to the selected project context
 - `brandly image` no longer falls back to an implicit `untitled` project when
   no `--project-id` is given: the URL-autosave branch created a phantom

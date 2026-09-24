@@ -72,6 +72,20 @@ def _tree(root: Path) -> set[str]:
     return entries
 
 
+def _tree_minus_job_store(tree: set[str]) -> set[str]:
+    """Drop the root-level durable job store (``.brandly/jobs``, #74).
+
+    The job store is deliberately home-level and exists regardless of any
+    project context, so #75's "no metadata" assertions must not treat it
+    as a project-metadata leak."""
+    kept = {e for e in tree if e != ".brandly/jobs" and not e.startswith(".brandly/jobs/")}
+    # The container itself is not metadata: drop it when its only content
+    # was the job store.
+    if ".brandly" in kept and not any(e.startswith(".brandly/") and e != ".brandly" for e in kept):
+        kept.discard(".brandly")
+    return kept
+
+
 def _fake_save_factory() -> tuple[patch, list[str]]:
     """Simulate save_artifact's filesystem effect: write a marker file under
     the exact media root the real function would use, so any implicit
@@ -129,9 +143,10 @@ def test_no_project_run_creates_no_project_records(runner: CliRunner, tmp_path: 
     assert result.exit_code == 0, result.output
     # No implicit autosave under an inferred project context.
     assert save_calls == [], f"implicit save with context: {save_calls}"
-    # The isolated home tree is identical to what it was before the run.
-    added = _tree(tmp_path) - before
-    assert not added, f"unexpected tree changes: {sorted(added)[:10]}"
+    # No project metadata: the only writes allowed are the root-level durable
+    # job store (#74) — everything else in the home must be untouched.
+    added = _tree_minus_job_store(_tree(tmp_path)) - before
+    assert not added, f"unexpected project-metadata changes: {sorted(added)[:10]}"
 
 
 def test_no_project_run_reports_context_explicitly(runner: CliRunner, tmp_path: Path) -> None:
@@ -214,7 +229,7 @@ def test_external_run_without_project_touches_nothing(runner: CliRunner, tmp_pat
 
     assert result.exit_code == 0, result.output
     assert dest.is_file()
-    added = _tree(tmp_path) - before
+    added = _tree_minus_job_store(_tree(tmp_path)) - before
     assert added == {"external", "external/plate.png"}, f"unexpected tree changes: {sorted(added)}"
 
 
@@ -248,6 +263,8 @@ def test_external_run_with_project_keeps_metadata_inside_project(
         parts = entry.split("/")
         if parts == ["external"] or parts == [".brandly"] or parts == ["pre-production"]:
             continue  # top-level container directories
+        if parts[:2] == [".brandly", "jobs"]:
+            continue  # root-level durable job store (#74), not project metadata
         if parts[0] == "external":
             assert entry == "external/plate.png", f"unexpected external write: {entry}"
         elif parts[0] in (".brandly", "pre-production"):

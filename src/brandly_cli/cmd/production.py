@@ -39,6 +39,7 @@ from brandly_cli.cli import (
     _print_json,
     _print_project_summary,
     _print_scene_report,
+    cli,
     console,
 )
 from brandly_cli.cmd.generation import _generate_shot, _run_produce_runner
@@ -1246,6 +1247,12 @@ def compare(ctx: click.Context, project_id: str, output: str) -> None:
 # Director orchestrator (moved from brandly_cli.director — caller layer that
 # owns the provider/state calls; director.py is now a pure prompt composer)
 # ---------------------------------------------------------------------------
+def _director_shots_path(root: Path, project_id: str) -> Path:
+    """Where the director's script phase writes the shot list the asset phase
+    consumes (mirrors the timeline editor's ``.brandly/<id>/shots.json``)."""
+    return layout.resolve_project_dir(root, project_id) / "shots.json"
+
+
 class DirectorConfig:
     """Configuration for the Director orchestrator."""
 
@@ -1615,28 +1622,98 @@ class Director:
             }
 
         if phase == "script":
-            from brandly_cli.video_prompts import build_video_prompt
-            result = build_video_prompt(
-                subject=proj.name or "product",
-                action="demonstrates key features",
-                environment="clean studio setting",
-                style=proj.style,
-                shots=proj.shot_count,
+            from brandly_cli.video_prompts import CAMERA_MOVES, build_single_shot_prompt
+
+            cameras = list(CAMERA_MOVES)
+            shot_duration = 5  # within Agnes' single-segment clamp window
+            shot_list: list[dict[str, Any]] = []
+            for i in range(1, proj.shot_count + 1):
+                shot_list.append(
+                    {
+                        "id": f"shot-{i}",
+                        "prompt": build_single_shot_prompt(
+                            subject=proj.name or "product",
+                            action="demonstrates key features",
+                            environment="clean studio setting",
+                            style=proj.style,
+                            camera=cameras[(i - 1) % len(cameras)],
+                            duration=shot_duration,
+                        ),
+                        "duration": shot_duration,
+                        "style": proj.style,
+                        # G3 scene-id inputs: one scene, ordered shots —
+                        # scenes.json derives S01… from these at produce time.
+                        "scene": 1,
+                        "shot": i,
+                    }
+                )
+            shots_path = _director_shots_path(self.cfg.root, proj.id)
+            shots_path.parent.mkdir(parents=True, exist_ok=True)
+            shots_path.write_text(
+                json.dumps(shot_list, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
             )
-            scenes: list[dict[str, Any]] = result.get("scenes", []) if isinstance(result, dict) else []
             return {
-                "scenes": scenes,
-                "duration": sum(s.get("duration", 3) for s in scenes) if scenes else 15,
+                "shots_path": str(shots_path),
+                "shots": len(shot_list),
+                "duration": len(shot_list) * shot_duration,
             }
 
         if phase == "asset":
-            return {
-                "error": (
-                    "asset phase is not implemented yet — generate shots with "
-                    "`brandly produce <id> --shots <file>` (scene naming, "
-                    "identity anchors, retries, production-plan rows), then "
-                    "continue the pipeline"
+            shots_path = _director_shots_path(self.cfg.root, proj.id)
+            if not shots_path.is_file():
+                return {
+                    "error": (
+                        f"shot list not found: {shots_path} — run the script "
+                        "phase first so it writes shots.json "
+                        "(`brandly run <id> --execute --until script`)"
+                    )
+                }
+            try:
+                shots_data = shot_runner.load_shots_file(shots_path)
+            except (ValueError, OSError) as e:
+                return {"error": f"invalid shot list {shots_path}: {e}"}
+
+            # Goal 3: register the scene manifest BEFORE any generation
+            # begins — scenes.json is the source of truth for the scene gate.
+            manifest = scenes.write_scenes(proj.id, shots_data, root=self.cfg.root)
+
+            # Drive the real produce runner (shot_runner): Scene-XX-Shot-X-Y
+            # naming, identity anchors, retries, production-plan rows, cost
+            # recording — never a private generation loop.
+            ctx = click.Context(cli, obj={"root": str(self.cfg.root)})
+            try:
+                _run_produce_runner(
+                    ctx,
+                    proj.id,
+                    shots_data,
+                    self.cfg.root,
+                    shot_runner.DEFAULT_INTERVAL,
+                    False,  # no_auto_refs
+                    None,  # character
+                    False,  # allow_referenceless
+                    600,  # max_wait
+                    (),  # only
+                    0,  # max_shots
+                    retries=0,
                 )
+                rc = 0
+            except SystemExit as exc:
+                code = exc.code
+                rc = code if isinstance(code, int) else (0 if code is None else 1)
+            if rc != 0:
+                return {
+                    "error": (
+                        f"asset generation stopped on a failed shot (runner "
+                        f"exit {rc}) — fix the shot and re-run to resume; "
+                        "completed shots are recorded in "
+                        "docs/tmp/produce_progress.txt"
+                    )
+                }
+            return {
+                "shots": sum(len(s["shots"]) for s in manifest["scenes"]),
+                "scenes": len(manifest["scenes"]),
+                "runner": "brandly produce (shot_runner)",
             }
 
         if phase == "audio":

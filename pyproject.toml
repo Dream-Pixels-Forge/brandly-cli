@@ -77,3 +77,12 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+filterwarnings = [
+    # Upstream-only warnings raised inside starlette/fastapi's TestClient
+    # (web extra) — not from brandly code. Scoped by message so any *new*
+    # warning, ours or theirs, still surfaces.
+    # NOTE: StarletteDeprecationWarning subclasses UserWarning, not
+    # DeprecationWarning, hence the two different categories below.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated.*:UserWarning",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated.*:DeprecationWarning",
+]

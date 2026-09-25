@@ -180,7 +180,35 @@ def _print_project_summary(proj: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-@click.group()
+class _LazyCommandGroup(click.Group):
+    """Root group that registers the ``cmd.*`` groups on first command lookup.
+
+    Registration is deliberately deferred instead of happening at import time:
+    every ``brandly_cli.cmd.<module>`` imports its shared helpers from this
+    module, so importing the ``cmd`` package here would close a cycle and make
+    ``import brandly_cli.cmd.<module>`` fail on a partially-initialized package.
+    Deferring keeps every import order working — ``brandly_cli.cli``,
+    ``brandly_cli.cmd.<module>``, ``python -m brandly_cli`` and
+    ``python -m brandly_cli.cli`` all behave identically.
+    """
+
+    def _ensure_registered(self) -> None:
+        if self.commands:
+            return
+        from brandly_cli.cmd import register
+
+        register(self)
+
+    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
+        self._ensure_registered()
+        return super().get_command(ctx, cmd_name)
+
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        self._ensure_registered()
+        return super().list_commands(ctx)
+
+
+@click.group(cls=_LazyCommandGroup)
 @click.option("--root", default=None, help="Working directory (default: cwd)")
 @click.version_option(version=__version__, prog_name="brandly")
 @click.pass_context
@@ -405,9 +433,6 @@ if __name__ == "__main__":
     main()
 
 
-# ---------------------------------------------------------------------------
-# Command groups (structural split — commands live in brandly_cli.cmd.*)
-# ---------------------------------------------------------------------------
-from brandly_cli.cmd import register  # noqa: E402
-
-register(cli)
+# NOTE: the command groups live in ``brandly_cli.cmd.*`` and are attached by
+# ``_LazyCommandGroup`` on first command lookup — see that class for why
+# registration is not performed at import time (cli ⇄ cmd import cycle).

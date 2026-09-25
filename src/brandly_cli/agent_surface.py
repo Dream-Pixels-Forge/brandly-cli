@@ -39,7 +39,7 @@ MANIFEST_VERSION = 1
 
 #: Handlers that only read state — safe for an agent to call unprompted.
 READ_ONLY_TOOLS = frozenset(
-    {"list_projects", "get_project", "list_jobs", "list_models", "get_timeline", "run_gate"}
+    {"list_projects", "get_project", "list_jobs", "list_models", "get_timeline", "run_gate", "plan"}
 )
 
 
@@ -74,6 +74,12 @@ def _build_produce(args: dict[str, Any]) -> list[str]:
     argv += _opt(args, "character", "--character")
     argv += _flag(args, "no_auto_refs", "--no-auto-refs")
     argv += _flag(args, "allow_referenceless", "--allow-referenceless")
+    return argv
+
+
+def _build_plan(args: dict[str, Any]) -> list[str]:
+    argv = ["plan", str(_require(args, "project_id"))]
+    argv += _flag(args, "json", "--json")
     return argv
 
 
@@ -204,6 +210,23 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["prompt"],
         },
     },
+    "plan": {
+        "command": "plan",
+        "builder": _build_plan,
+        "description": (
+            "Read the per-phase handoff contracts for a project (inputs, outputs, "
+            "gate, next command, cost estimate) — the dispatch source of truth "
+            "for orchestrator/subagent workflows. Read-only, writes nothing."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project id."},
+                "json": {"type": "boolean", "description": "Emit the machine-readable handoff document."},
+            },
+            "required": ["project_id"],
+        },
+    },
 }
 
 
@@ -234,7 +257,7 @@ def tool_manifest() -> dict[str, Any]:
                 "name": name,
                 "description": spec["description"],
                 "parameters": spec["parameters"],
-                "read_only": False,
+                "read_only": name in READ_ONLY_TOOLS,
                 "kind": "cli",
                 "command": spec["command"],
             }
@@ -409,7 +432,7 @@ def dispatch(
         return envelope
 
     envelope["kind"] = "cli"
-    envelope["read_only"] = False
+    envelope["read_only"] = name in READ_ONLY_TOOLS
     try:
         argv = build_command(name, call_args, root=root)
     except (KeyError, ValueError) as e:

@@ -180,6 +180,19 @@
       (quality 3.10/3.11/3.12 + web-quality).
 - Not in scope (separate program goals, tracked below): G4 ratio-crop
       placement, G5 scope-truth pass, G6 publish path.
+- Release: **v0.4.1** shipped 2026-09-25 — version bump (`pyproject` +
+      `__about__`) + CHANGELOG `[0.4.1]`, tag + GitHub release
+      (https://github.com/Dream-Pixels-Forge/brandly-cli/releases/tag/v0.4.1),
+      `release.yml` green, PyPI verified (`brandly-cli==0.4.1`, sdist + wheel),
+      CI green on `main` @ `9b702a3`.
+- Global Python env repaired (incident recorded): `pip install --upgrade` hit
+      WinError 32 — a live `brandly produce rebel` held `brandly.exe` — *after*
+      pip had already renamed the old package aside (`~randly_cli`), leaving the
+      global install half-removed. Repaired without touching the process:
+      extracted the official `brandly_cli-0.4.1-py3-none-any.whl` into
+      site-packages (byte-identical for pure wheels), removed pip's `~randly_cli*`
+      remnants, verified `pip show` → 0.4.1, cmd-first import, and global
+      `brandly --help`. The running produce (PID 25244) was never touched.
 
 ### Round 2/256 — Feature Implementation (Phase 3)
 - [x] Created dev-notes/IMPLEMENTATION.md with full feature plan

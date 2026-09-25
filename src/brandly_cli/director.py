@@ -113,6 +113,53 @@ When the user asks to **see information**, **view progress**, **check status**,
 - Explain what you're about to do before doing it
 - Always generate prompts with `brandly prompt` before running `brandly video`
 
+## Subagent Dispatch (Orchestrator-Workers)
+
+For large or multi-step work, dispatch **one phase-scoped worker subagent per
+phase** instead of doing everything in a single context. Every worker gets a
+five-item contract:
+
+1. **Scope** — exactly one phase (`trends`, `concept`, `script`, `asset`,
+   `audio`, `re_edit`, `validate`, `publish`); nothing else.
+2. **Inputs** — the files/parameters the phase reads (see the per-phase
+   contract table printed by `brandly director`, sourced from
+   `brandly plan <project_id> --json`).
+3. **Outputs** — the files the phase must write (same table; e.g. `shots.json`
+   for `script`, scene clips + `scenes.json` for `asset`).
+4. **Boundaries** — files/state the worker must NOT touch (other phases'
+   outputs, `.brandly/` bookkeeping outside its phase, provider credentials).
+5. **Verification** — the gate that screens the result (see "Verification"
+   below). A worker's output is accepted only when its gate passes.
+
+### Parallel vs serialized work
+
+- **Parallel (safe)**: cognition — prompt crafting (`brandly prompt`),
+  trend research, gate runs (`brandly gate --all-scenes`), status/timeline
+  reads, scene-script rewrites. Run as many of these workers concurrently
+  as the host tool allows: they read the shared `.brandly/` store but never
+  race (disk is the only shared state).
+- **Serialized (mandatory)**: execution — anything calling the generation
+  API. The provider allows roughly one request per minute and `produce`
+  enforces a 60-second shot-by-shot queue with resume-on-COMPLETED; never
+  fan out generation calls across workers. One writer, always.
+
+### Verification loop (screen, don't trust)
+
+1. Dispatch the phase worker with its five-item contract.
+2. Run the phase's gate yourself (the orchestrator holds the gates):
+   - `asset`/`validate`: `brandly gate <project_id> --all-scenes --json`
+     (exit 0 = pass, 1 = warn, 2 = fail).
+   - Other phases: `brandly status <project_id>` plus the artifact check in
+     the contract table.
+3. Non-pass → re-dispatch the same phase with the gate's failure report
+   (max 3 attempts).
+4. Cap reached or `publish` reached → escalate to the human via
+   `brandly approve <id> <phase>`. Subagents never advance `publish` alone.
+
+Authoritative per-phase contracts: `brandly plan <project_id> --json`
+(inputs, outputs, gate command, next command, cost estimate) — read it
+before every dispatch, never guess.
+
 **Start by greeting the user and asking for their product information.**
 """
 

@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased] — G4: ratio policy moved to assembly
+
+### Changed
+- **Aspect-ratio cropping no longer happens in production** (G4, audit F8).
+  Generated clips keep their source aspect; the ratio decision happens once,
+  in post-production assembly. The shot loop (`shot_runner`) no longer calls
+  `apply_aspect_ratio` — the function survives as the manual/post-processing
+  crop tool (still covered by `tests/test_issue_48.py`).
+- `brandly stitch` gained `--ratio <W:H>` and `--fit crop|pad` (default
+  crop): the single assembly-time ratio owner. Crop is a center-crop at
+  source scale; pad letterboxes/pillarboxes with black bars (no upscaling).
+- `brandly export-platforms` gained `--fit crop|pad` (default **crop**):
+  feed aspects are now center-cropped to the platform ratio instead of
+  letterboxed to standard resolution; `--fit pad` restores the old
+  letterbox behavior. Both paths reuse the same shared filter builders
+  in `stitch.py` (`ratio_crop_filter` / `ratio_pad_filter`), and a source
+  already within 2% of the target ratio is a no-op — the stitch→export
+  pipeline never double-crops.
+
+### Deprecated
+- `brandly produce --aspect-ratio` is a no-op alias kept for one release:
+  it prints a one-line migration notice pointing at
+  `stitch --ratio <r> --fit crop` / `export-platforms --fit`.
+  **Removal tracked:** delete the flag in the release after next.
+
 ## [0.4.1] — 2026-09-25
 
 ### Fixed

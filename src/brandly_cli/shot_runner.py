@@ -422,9 +422,6 @@ class RunnerConfig:
     """Called after each shot's terminal result as ``(shot, ok)`` — used to
     update production-plan rows and project.json (issues #36/#37). A hook
     exception is reported but never aborts the run."""
-    aspect_ratio: str | None = None
-    """Target aspect ratio (e.g. ``"2.39:1"``). When set, every freshly
-    generated clip is cropped to it after naming (issue #40)."""
 
     def move_shot_clips(self, shot: Shot, new_clips: Sequence[Path]) -> list[Path]:
         """After generating ``shot``, relocate its clips when the shot is a
@@ -553,6 +550,11 @@ def apply_aspect_ratio(
     strict: bool = False,
 ) -> bool:
     """Crop a generated clip to the target aspect ratio (issue #40, #48).
+
+    Post-production only (G4): the shot loop no longer calls this — production
+    keeps source aspect, and the ratio decision happens once in assembly
+    (``stitch``/``export_platforms``). Kept as the manual/post-processing
+    crop tool (and unit-tested in ``tests/test_issue_48.py``).
 
     ``target`` accepts ``"2.39:1"``, ``"16:9"`` or a bare ratio like
     ``"2.39"``. Source clips wider than the target are center-cropped
@@ -760,28 +762,10 @@ def run_shots(config: RunnerConfig) -> int:
                     f"{shot.id} OK exit={exit_code}" + (f" (retry {retries_used})" if retries_used else "")
                 )
                 # Deterministic Scene-XX-Shot-X-Y name, then any transition move.
-                moved = config.move_shot_clips(shot, name_clips(shot, new_clips, config.say))
-                if config.aspect_ratio:
-                    targets = moved or _shot_clips(config.scenes_dir, shot)
-                    crop_failed: list[str] = []
-                    for clip in targets:
-                        # Issue #48: strict=True documents that the caller
-                        # treats a crop failure as a surfaced error (the
-                        # ffmpeg stderr is shown, and the failed clips are
-                        # listed below so the user knows which ones are
-                        # still at the source aspect ratio).
-                        if not apply_aspect_ratio(
-                            clip, config.aspect_ratio, config.say, strict=True
-                        ):
-                            crop_failed.append(clip.name)
-                    if crop_failed:
-                        config.say(
-                            f"⚠ {shot.id}: {len(crop_failed)} clip(s) failed to "
-                            f"crop to {config.aspect_ratio} and remain at the "
-                            f"source aspect ratio: {', '.join(crop_failed)}. "
-                            f"Re-run the crop manually or fix the ffmpeg "
-                            f"build and re-run produce."
-                        )
+                config.move_shot_clips(shot, name_clips(shot, new_clips, config.say))
+                # G4: no production-time cropping — clips keep source aspect;
+                # the ratio decision happens once, in assembly
+                # (`stitch --ratio R --fit crop|pad` / `export-platforms`).
                 _fire_hook(config, shot, True)
                 break
             if attempt < max_attempts:

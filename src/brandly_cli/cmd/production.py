@@ -639,9 +639,11 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
     "aspect_ratio",
     default=None,
     help=(
-        "Crop every generated clip to this aspect ratio (e.g. 2.39:1) as a "
-        "post-processing step when the model cannot output it natively "
-        "(issue #40). Requires ffmpeg."
+        "DEPRECATED (G4): production no longer crops — generated clips keep "
+        "their source aspect. Pass the ratio to assembly instead: "
+        "`brandly stitch <clips> out.mp4 --ratio <r> --fit crop` or "
+        "`brandly export-platforms <project> --platforms <p> --fit crop`. "
+        "Kept as an alias for one release; prints a migration notice."
     ),
 )
 @click.option(
@@ -700,6 +702,16 @@ def produce(
     list), and a post-generation-step failure (quality gate crash)
     tolerates a downloaded clip.
     """
+    # G4: --aspect-ratio is deprecated (alias kept for one release).
+    # Production keeps source aspect; the crop now happens in assembly.
+    if aspect_ratio:
+        console.print(
+            f"[yellow]⚠ --aspect-ratio is deprecated: production keeps source "
+            f"aspect. Crop in assembly instead: "
+            f"`brandly stitch <clips> out.mp4 --ratio {aspect_ratio} --fit crop` "
+            f"or `brandly export-platforms <project> --platforms <p> --fit crop`.[/yellow]"
+        )
+
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
         sys.exit(1)
@@ -747,7 +759,6 @@ def produce(
             max_shots,
             retries=retries,
             split_long_shots=split_long_shots,
-            aspect_ratio=aspect_ratio,
             no_plan=no_plan,
         )
         return

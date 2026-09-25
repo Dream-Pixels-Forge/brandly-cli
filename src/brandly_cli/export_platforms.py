@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from brandly_cli.io import proc_output
+from brandly_cli.stitch import probe_video_dims, ratio_crop_filter
 
 # ---------------------------------------------------------------------------
 # Platform presets
@@ -125,6 +126,7 @@ async def export_for_platform(
     add_captions: bool = True,
     captions_text: str | None = None,
     root: Path | None = None,
+    fit: str = "crop",
 ) -> dict[str, Any]:
     """Export video optimized for a specific platform.
 
@@ -135,6 +137,9 @@ async def export_for_platform(
         add_captions: Whether to add text overlay captions.
         captions_text: Text to overlay (if any).
         root: Optional project root for relative paths.
+        fit: G4 ratio semantics — ``"crop"`` (default; center-crop to the
+            platform ratio at source scale, no bars) or ``"pad"`` (letterbox
+            to the platform's standard resolution with black bars).
 
     Returns:
         Dict with platform, output_path, duration_seconds, file_size_bytes, captions_added.
@@ -162,38 +167,37 @@ async def export_for_platform(
     source_duration = _get_duration(input_video)
     max_duration = preset["max_duration"]
 
-    # Build filter for aspect ratio (scale to target dimensions)
+    # G4 ratio policy: reuse the shared stitch filter builders — crop for
+    # feed aspects by default, pad (letterbox) only when explicitly requested.
     target_ratio = preset["ratio"]
+    if fit not in ("crop", "pad"):
+        return {"error": f"Unknown fit mode: {fit}. Choose from crop, pad."}
+
     filter_parts: list[str] = []
-
-    # Parse ratio to determine target dimensions
-    # Use standard resolutions for each ratio
-    ratio_to_dims: dict[str, tuple[int, int]] = {
-        "9:16": (1080, 1920),
-        "4:5": (1080, 1350),
-        "1:1": (1080, 1080),
-        "16:9": (1920, 1080),
-        "4:3": (1080, 810),
-    }
-
-    if ":" in target_ratio:
-        w_ratio, h_ratio = target_ratio.split(":")
-        # Use standard resolution based on ratio
-        dims = ratio_to_dims.get(target_ratio, (1920, 1080))
-        target_w, target_h = dims
+    if fit == "crop":
+        # Center-crop to the platform ratio at source scale. A no-op when the
+        # source already matches the ratio (the stitch -> export pipeline
+        # never double-crops).
+        src_dims = probe_video_dims(input_video)
+        if src_dims is None:
+            return {"error": f"Could not probe dimensions of {input_video}"}
+        crop_filter = ratio_crop_filter(src_dims[0], src_dims[1], target_ratio)
+        if crop_filter:
+            filter_parts.append(crop_filter)
     else:
-        target_w, target_h = 1080, 1920
-
-    # Scale to exact target dimensions (letterbox/pillarbox handled by simple scale)
-    scale_filter = f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease"
-    filter_parts.append(scale_filter)
-
-    # Pad to exact target dimensions with black bars
-    if target_w > target_h:
+        # pad: scale to the platform's standard resolution, black bars.
+        ratio_to_dims: dict[str, tuple[int, int]] = {
+            "9:16": (1080, 1920),
+            "4:5": (1080, 1350),
+            "1:1": (1080, 1080),
+            "16:9": (1920, 1080),
+            "4:3": (1080, 810),
+        }
+        target_w, target_h = ratio_to_dims.get(target_ratio, (1920, 1080))
+        scale_filter = f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease"
+        filter_parts.append(scale_filter)
         pad_filter = f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2"
-    else:
-        pad_filter = f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2"
-    filter_parts.append(pad_filter)
+        filter_parts.append(pad_filter)
 
     # Add text overlay if requested and text provided
     if add_captions and captions_text:
@@ -207,13 +211,14 @@ async def export_for_platform(
         )
         filter_parts.append(text_filter)
 
-    vf_filter = ",".join(filter_parts)
-
-    # Build FFmpeg command
+    # Build FFmpeg command (no -vf at all when there are no filters)
     cmd = [
         "ffmpeg", "-y",
         "-i", str(input_video),
-        "-vf", vf_filter,
+    ]
+    if filter_parts:
+        cmd += ["-vf", ",".join(filter_parts)]
+    cmd += [
         "-t", str(min(source_duration, max_duration)),
         "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "128k",
@@ -233,6 +238,7 @@ async def export_for_platform(
         "platform": platform,
         "output_path": str(output_path),
         "ratio": target_ratio,
+        "fit": fit,
         "duration_seconds": final_duration,
         "file_size_bytes": file_size,
         "captions_added": add_captions and bool(captions_text),

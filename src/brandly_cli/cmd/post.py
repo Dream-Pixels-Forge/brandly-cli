@@ -318,6 +318,11 @@ def probe(input: str, output: str) -> None:
     "--color-grade", default="cinematic",
     help="Color grade (cinematic, warm, cool, desaturated, none)",
 )
+@click.option("--ratio", default=None, help="Target aspect ratio (e.g. 2.39:1, 9:16) — G4 assembly-time crop/pad")
+@click.option(
+    "--fit", default="crop", type=click.Choice(["crop", "pad"]),
+    help="How to reach --ratio: crop (center-crop, default) or pad (letterbox with black bars)",
+)
 @click.option("--root", default=None, help="Working directory")
 def stitch(
     clips: tuple[str, ...],
@@ -325,6 +330,8 @@ def stitch(
     transition: str,
     transition_duration: float,
     color_grade: str,
+    ratio: str | None,
+    fit: str,
     root: str | None,
 ) -> None:
     """Stitch multiple video clips with transitions and color grading."""
@@ -339,6 +346,8 @@ def stitch(
             transition=transition,
             transition_duration=transition_duration,
             color_grade=color_grade,
+            ratio=ratio,
+            fit=fit,
         )
     )
     if "error" in result:
@@ -350,6 +359,8 @@ def stitch(
     )
     console.print(f"  Transitions: {', '.join(result['transitions_applied']) or 'none'}")
     console.print(f"  Color grade: {result['color_grade']}")
+    if ratio:
+        console.print(f"  Ratio: {ratio} (fit: {fit})")
 
 @click.command()
 @click.argument("project_id")
@@ -358,8 +369,12 @@ def stitch(
     help="Target platforms (tiktok, instagram_reel, youtube_standard, etc.)",
 )
 @click.option("--output", default=None, help="Output directory")
+@click.option(
+    "--fit", default="crop", type=click.Choice(["crop", "pad"]),
+    help="G4 ratio semantics: crop (default; center-crop to the platform ratio) or pad (letterbox to standard resolution)",
+)
 @click.option("--root", default=None, help="Working directory")
-def export_platforms(project_id, platforms, output, root):
+def export_platforms(project_id, platforms, output, fit, root):
     """Export project to platform-optimized formats."""
     from brandly_cli.export_platforms import export_for_platform
 
@@ -377,7 +392,9 @@ def export_platforms(project_id, platforms, output, root):
     out_dir = Path(output) if output else proj_dir / "export"
     for platform in platforms:
         console.print(f"Exporting for [bold]{platform}[/bold]...")
-        result = asyncio.run(export_for_platform(video_file, platform, out_dir, root=root))
+        result = asyncio.run(
+            export_for_platform(video_file, platform, out_dir, root=root, fit=fit)
+        )
         if "error" in result:
             console.print(f"[red]  Error: {result['error']}[/red]")
         else:

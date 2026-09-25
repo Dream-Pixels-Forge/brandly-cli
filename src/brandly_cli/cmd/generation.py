@@ -1895,7 +1895,6 @@ def _run_produce_runner(
     *,
     retries: int = 0,
     split_long_shots: bool = False,
-    aspect_ratio: str | None = None,
     no_plan: bool = False,
 ) -> None:
     """Progress-file runner path for ``brandly produce`` (see produce())."""
@@ -2036,7 +2035,6 @@ def _run_produce_runner(
         say=lambda msg: console.print(f"[dim]{msg}[/dim]"),
         retries=retries,
         on_shot_done=_on_shot_done,
-        aspect_ratio=aspect_ratio,
     )
     rc = shot_runner.run_shots(config)
     _sync_project("complete" if rc == 0 else "failed")

@@ -383,13 +383,21 @@ and adopt client-supplied plates with
 
 | Command | Description |
 |---------|-------------|
-| `brandly stitch <clips...>` | Multi-shot video assembly |
-| `brandly export <id> --platforms <p>` | Export for specific platforms |
+| `brandly stitch <clips...>` | Multi-shot video assembly (G4 ratio owner: `--ratio 2.39:1 --fit crop\|pad`) |
+| `brandly export <id> --platforms <p>` | Export for specific platforms (`--fit crop\|pad`) |
 | `brandly thumbnail <id>` | Generate thumbnails |
 | `brandly voice-match <video> --source <lang> --target <lang>` | Dub video |
 | `brandly beat-sync <video> <audio>` | Cut video to beats |
 | `brandly analyze <video>` | Predict performance metrics |
 | `brandly share <file>` | Upload for cloud sharing |
+
+#### Aspect-ratio responsibilities (G4)
+
+| Stage | Ratio behavior |
+|-------|----------------|
+| Production (`produce`, `video`) | Keeps source aspect — clips are never cropped. `produce --aspect-ratio` is a deprecated alias: it prints a migration notice and defers the crop to assembly |
+| Assembly (`stitch --ratio R --fit crop\|pad`) | The single ratio decision: center-crop at source scale, or letterbox/pillarbox with black bars |
+| Export (`export-platforms --fit crop\|pad`) | Reuses the assembly filters: crop for feed aspects by default, pad only on request; a source already at the target ratio is a no-op (no double-crop) |
 
 ### Intelligence
 

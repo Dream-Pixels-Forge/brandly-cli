@@ -418,6 +418,16 @@ scope.
   tree: `.brandly/untitled/` and `.brandly/undefined/` (21 stale files, git-ignored).
   `.brandly/` now contains only `passport-rush-taxi-chase`.
 - 2026-09-24 — Awaiting approval to start G1.
+- 2026-09-25 — G4 implemented on `feature/ratio-policy-assembly`: the shot loop no
+  longer calls `apply_aspect_ratio` (the function survives as the manual/post-
+  processing crop tool, still covered by `tests/test_issue_48.py`); `stitch`
+  gained `--ratio/--fit` with the single shared filter implementation
+  (`ratio_crop_filter` / `ratio_pad_filter` in `stitch.py`); `export-platforms`
+  gained `--fit` (crop default, pad on request) reusing the same builders, and
+  a source already within 2% of the target ratio is a no-op (no double-crop);
+  `produce --aspect-ratio` is now a deprecated no-op alias that prints a one-line
+  migration notice (removal tracked in CHANGELOG). 19 new tests in
+  `tests/test_ratio_policy.py`; full suite green.
 
 
 

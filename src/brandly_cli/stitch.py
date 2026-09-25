@@ -52,6 +52,96 @@ COLOR_GRADES: dict[str, str] = {
     "none": "",
 }
 
+# ---------------------------------------------------------------------------
+# G4: ratio policy — one shared crop/pad implementation.
+#
+# Production keeps source aspect; the aspect-ratio decision happens exactly
+# once, in post-production assembly/export. These builders are the single
+# owner of that decision, reused by `stitch_videos` and `export_platforms`.
+# ---------------------------------------------------------------------------
+
+FIT_MODES = ("crop", "pad")
+
+
+def parse_ratio(target: str) -> float:
+    """Parse ``"2.39:1"``, ``"16:9"``, or a bare ``"2.39"`` into a float.
+
+    Raises:
+        ValueError: unparseable or non-positive ratio.
+    """
+    if ":" in target:
+        w_s, h_s = target.split(":", 1)
+        ratio = float(w_s) / float(h_s)
+    else:
+        ratio = float(target)
+    if ratio <= 0:
+        raise ValueError(f"invalid aspect ratio: {target!r}")
+    return ratio
+
+
+def _even(n: float) -> int:
+    """Clamp to an even pixel count (>= 2) for ffmpeg filter values."""
+    n = int(n)
+    return max(n - (n % 2), 2)
+
+
+def probe_video_dims(path: Path) -> tuple[int, int] | None:
+    """Return ``(width, height)`` of the first video stream, or None."""
+    if not _ffprobe_available():
+        return None
+    cmd = [
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height", "-of", "csv=p=0", str(path),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, timeout=30)
+    if proc.returncode != 0:
+        return None
+    parts = (proc.stdout.decode(errors="replace") or "").strip().split(",")
+    if len(parts) < 2:
+        return None
+    try:
+        w, h = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    return (w, h) if w > 0 and h > 0 else None
+
+
+def ratio_crop_filter(w: int, h: int, target: str) -> str:
+    """Center-crop filter expression for a source of ``(w, h)`` to ``target``.
+
+    Returns ``""`` when the source is already within 2% of the target ratio —
+    a no-op so the stitch→export pipeline never double-crops.
+    """
+    ratio = parse_ratio(target)
+    src = w / h
+    if abs(src - ratio) / ratio < 0.02:
+        return ""
+    if src > ratio:
+        # Source wider than target -> crop width down to h * ratio.
+        return f"crop={_even(h * ratio)}:{h}"
+    # Source narrower than target -> crop height down to w / ratio.
+    return f"crop={w}:{_even(w / ratio)}"
+
+
+def ratio_pad_filter(w: int, h: int, target: str) -> str:
+    """scale+black-pad filter expression for ``(w, h)`` to ``target``.
+
+    Letterboxes/pillarboxes at source scale (no upscaling, no cropping).
+    Returns ``""`` when the source is already within 2% of the target ratio.
+    """
+    ratio = parse_ratio(target)
+    src = w / h
+    if abs(src - ratio) / ratio < 0.02:
+        return ""
+    if src > ratio:
+        tw, th = _even(h * ratio), h
+    else:
+        tw, th = w, _even(w / ratio)
+    return (
+        f"scale={tw}:{th}:force_original_aspect_ratio=decrease,"
+        f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2"
+    )
+
 
 def get_clip_duration(path: Path) -> float:
     """Return the duration of a clip in seconds using ffprobe."""
@@ -85,6 +175,8 @@ async def stitch_videos(
     transition_duration: float = 0.5,
     color_grade: str = "cinematic",
     root: Path | None = None,
+    ratio: str | None = None,
+    fit: str = "crop",
 ) -> dict[str, Any]:
     """Concatenate video clips with transitions and color grading.
 
@@ -95,6 +187,10 @@ async def stitch_videos(
         transition_duration: Duration of each transition in seconds.
         color_grade: One of cinematic | warm | cool | desaturated | none.
         root: Optional project root (used for resolving relative outputs).
+        ratio: G4 assembly-time aspect-ratio target (e.g. ``"2.39:1"``).
+            Cropping/letterboxing happens here — never in production.
+        fit: How to reach ``ratio`` — ``"crop"`` (center-crop, default) or
+            ``"pad"`` (letterbox/pillarbox with black bars).
 
     Returns:
         Dict with output metadata, or an ``{"error": ...}`` dict on failure.
@@ -114,16 +210,34 @@ async def stitch_videos(
         return {"error": f"Unknown transition: {transition}. Choose from {TRANSITIONS}."}
     if color_grade not in COLOR_GRADES:
         return {"error": f"Unknown color grade: {color_grade}. Choose from {list(COLOR_GRADES)}."}
+    if fit not in FIT_MODES:
+        return {"error": f"Unknown fit mode: {fit}. Choose from {list(FIT_MODES)}."}
+
+    # G4 ratio policy: the crop/pad is applied exactly once, here in assembly.
+    ratio_filters: list[str] = []
+    if ratio:
+        try:
+            parse_ratio(ratio)
+        except ValueError:
+            return {"error": f"Invalid ratio: {ratio!r} (use e.g. '2.39:1' or '9:16')"}
+        for c in clips:
+            dims = probe_video_dims(c)
+            if dims is None:
+                return {"error": f"Could not probe dimensions of {c}"}
+            builder = ratio_crop_filter if fit == "crop" else ratio_pad_filter
+            ratio_filters.append(builder(dims[0], dims[1], ratio))
 
     output.parent.mkdir(parents=True, exist_ok=True)
 
     # --- single clip: pass-through ------------------------------------------
     if len(clips) == 1:
         grade_filter = COLOR_GRADES.get(color_grade, "")
-        # grade_filter applied in cmd
+        ratio_filter = ratio_filters[0] if ratio_filters else ""
+        vf_parts = [f for f in (ratio_filter, grade_filter) if f]
+        # ratio filter first, then grade (the grade sees the final frame)
         cmd = [
             "ffmpeg", "-y", "-i", str(clips[0]),
-            "-vf", grade_filter if grade_filter else "null",
+            "-vf", ",".join(vf_parts) if vf_parts else "null",
             "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "128k",
             str(output),
@@ -167,13 +281,25 @@ async def stitch_videos(
     # stream plus the next clip, chaining virtual labels [v1], [v2], ...
     # Without the previous virtual label, xfade sees one input pad and
     # ffmpeg rejects the graph ("Filter not found") for any n > 2.
+    # G4: per-input ratio labels — xfade requires uniform dimensions, so the
+    # crop/pad filter is applied to every input before the transition chain.
+    in_labels = [
+        f"[r{i}]" if i < len(ratio_filters) and ratio_filters[i] else f"[{i}:v]"
+        for i in range(n)
+    ]
+    prep = ";".join(
+        f"[{i}:v]{ratio_filters[i]}[r{i}]"
+        for i in range(n)
+        if i < len(ratio_filters) and ratio_filters[i]
+    )
+
     vf_chain = ""
-    prev_v = "[0:v]"
+    prev_v = in_labels[0]
     for i in range(1, n):
         offset_val = offsets[i - 1]
         tail = f"[v{i}]" if i < n - 1 else "[vout]"
         vf_chain += (
-            f"{prev_v}[{i}:v]xfade=transition={transition}"
+            f"{prev_v}{in_labels[i]}xfade=transition={transition}"
             f":duration={transition_duration}"
             f":offset={offset_val}"
             f"{tail}"
@@ -203,6 +329,8 @@ async def stitch_videos(
             if i < n - 1:
                 af_chain += ";"
         filter_complex = f"{vf_chain};{af_chain}"
+        if prep:
+            filter_complex = f"{prep};{filter_complex}"
 
         cmd = [
             "ffmpeg", "-y",
@@ -218,6 +346,8 @@ async def stitch_videos(
     else:
         # Video-only path: no audio streams → no -map [aout] / -c:a
         filter_complex = vf_chain
+        if prep:
+            filter_complex = f"{prep};{filter_complex}"
         map_args = ["-map", "[final_v]" if grade_filter else "[vout]"]
         cmd = [
             "ffmpeg", "-y",

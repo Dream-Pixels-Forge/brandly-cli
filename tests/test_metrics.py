@@ -27,7 +27,6 @@ from brandly_cli import metrics as m
 from brandly_cli.analyzer import analyze_video
 from brandly_cli.cli import cli
 
-
 CSV = "date,views,likes,watch_time_seconds,ctr_pct\n"
 
 
@@ -36,7 +35,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Root with one project; returns the root (ROOT env shape, test_publish)."""
     monkeypatch.setenv("BRANDLY_CONFIG_DIR", str(tmp_path / "config"))
     proj_dir = tmp_path / ".brandly" / "test-proj"
-    proj_dir.mkdir(parents=True)
+    proj_dir.mkdir(parents=True, exist_ok=True)
     (proj_dir / "project.json").write_text('{"id": "test-proj", "name": "t"}')
     return tmp_path
 
@@ -46,7 +45,7 @@ class TestImport:
         csv = tmp_path / "stats.csv"
         csv.write_text(CSV + "2026-09-01,100,10,5000,4.5\n2026-09-02,200,20,9000,5.0\n")
         proj = tmp_path / ".brandly" / "p"
-        proj.mkdir(parents=True)
+        proj.mkdir(parents=True, exist_ok=True)
         written = m.import_metrics(csv, "youtube", proj)
         assert len(written) == 2
         snap = json.loads((proj / "metrics" / "youtube-2026-09-01.json").read_text())
@@ -56,11 +55,21 @@ class TestImport:
 
     def test_json_import(self, tmp_path: Path) -> None:
         src = tmp_path / "stats.json"
-        src.write_text(json.dumps([{"date": "2026-09-01", "views": 10,
-                                    "likes": 1, "watch_time_seconds": 60,
-                                    "ctr_pct": 2.0}]))
+        src.write_text(
+            json.dumps(
+                [
+                    {
+                        "date": "2026-09-01",
+                        "views": 10,
+                        "likes": 1,
+                        "watch_time_seconds": 60,
+                        "ctr_pct": 2.0,
+                    }
+                ]
+            )
+        )
         proj = tmp_path / ".brandly" / "p"
-        proj.mkdir(parents=True)
+        proj.mkdir(parents=True, exist_ok=True)
         written = m.import_metrics(src, "youtube", proj)
         assert len(written) == 1
         assert written[0].name == "youtube-2026-09-01.json"
@@ -69,21 +78,21 @@ class TestImport:
         csv = tmp_path / "s.csv"
         csv.write_text(CSV + "2026-09-01,10,1,60,1.0\n")
         proj = tmp_path / ".brandly" / "p"
-        proj.mkdir(parents=True)
+        proj.mkdir(parents=True, exist_ok=True)
         with pytest.raises(ValueError):
             m.import_metrics(csv, "tumblr", proj)
 
     def test_malformed_row_fail_closed(self, tmp_path: Path) -> None:
         for bad in (
-            "2026-09-01,-5,1,60,1.0\n",      # negative views
-            "2026-09-01,10,1,60,150.0\n",    # ctr_pct out of range
-            "09/01/2026,10,1,60,1.0\n",      # non-ISO date
-            "2026-09-01,ten,1,60,1.0\n",     # non-numeric
+            "2026-09-01,-5,1,60,1.0\n",  # negative views
+            "2026-09-01,10,1,60,150.0\n",  # ctr_pct out of range
+            "09/01/2026,10,1,60,1.0\n",  # non-ISO date
+            "2026-09-01,ten,1,60,1.0\n",  # non-numeric
         ):
             csv = tmp_path / "bad.csv"
             csv.write_text(CSV + bad)
             proj = tmp_path / ".brandly" / "p"
-            proj.mkdir(parents=True)
+            proj.mkdir(parents=True, exist_ok=True)
             with pytest.raises(ValueError):
                 m.import_metrics(csv, "youtube", proj)
 
@@ -102,7 +111,7 @@ class TestImport:
 class TestLatestIngest:
     def test_latest_by_date_wins(self, tmp_path: Path) -> None:
         proj = tmp_path / ".brandly" / "p"
-        proj.mkdir(parents=True)
+        proj.mkdir(parents=True, exist_ok=True)
         csv = tmp_path / "s.csv"
         csv.write_text(CSV + "2026-09-01,10,1,60,1.0\n2026-09-03,20,2,90,2.0\n")
         m.import_metrics(csv, "youtube", proj)
@@ -111,12 +120,12 @@ class TestLatestIngest:
 
     def test_latest_ingest_missing_is_none(self, tmp_path: Path) -> None:
         proj = tmp_path / ".brandly" / "p"
-        proj.mkdir(parents=True)
+        proj.mkdir(parents=True, exist_ok=True)
         assert m.latest_ingest(proj, "youtube") is None
 
     def test_latest_snapshot_payload(self, tmp_path: Path) -> None:
         proj = tmp_path / ".brandly" / "p"
-        proj.mkdir(parents=True)
+        proj.mkdir(parents=True, exist_ok=True)
         csv = tmp_path / "s.csv"
         csv.write_text(CSV + "2026-09-03,20,2,90,2.0\n")
         m.import_metrics(csv, "youtube", proj)
@@ -124,27 +133,45 @@ class TestLatestIngest:
         assert snap["date"] == "2026-09-03"
         assert snap["rows"][0]["ctr_pct"] == 2.0
 
+
 class TestMetricsCli:
     def test_import_command_writes_project_local(self, project: Path) -> None:
         src = project / "s.csv"
         src.write_text(CSV + "2026-09-01,10,1,60,1.0\n")
         runner = CliRunner(env={"ROOT": str(project)})
-        result = runner.invoke(cli, [
-            "metrics", "import", str(src), "--platform", "youtube",
-            "--project", "test-proj",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "metrics",
+                "import",
+                str(src),
+                "--platform",
+                "youtube",
+                "--project",
+                "test-proj",
+            ],
+        )
         assert result.exit_code == 0, result.output
-        assert (project / ".brandly" / "test-proj" / "metrics" /
-                "youtube-2026-09-01.json").is_file()
+        assert (
+            project / ".brandly" / "test-proj" / "metrics" / "youtube-2026-09-01.json"
+        ).is_file()
 
     def test_import_unknown_platform_exits_1(self, project: Path) -> None:
         src = project / "s.csv"
         src.write_text(CSV + "2026-09-01,10,1,60,1.0\n")
         runner = CliRunner(env={"ROOT": str(project)})
-        result = runner.invoke(cli, [
-            "metrics", "import", str(src), "--platform", "myspace",
-            "--project", "test-proj",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "metrics",
+                "import",
+                str(src),
+                "--platform",
+                "myspace",
+                "--project",
+                "test-proj",
+            ],
+        )
         assert result.exit_code != 0
 
     def test_show_lists_latest_per_platform(self, project: Path) -> None:
@@ -152,9 +179,16 @@ class TestMetricsCli:
         src.write_text(CSV + "2026-09-01,10,1,60,1.0\n2026-09-03,20,2,90,2.0\n")
         m.import_metrics(src, "youtube", project / ".brandly" / "test-proj")
         runner = CliRunner(env={"ROOT": str(project)})
-        result = runner.invoke(cli, [
-            "metrics", "show", "--project", "test-proj", "--json",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "metrics",
+                "show",
+                "--project",
+                "test-proj",
+                "--json",
+            ],
+        )
         assert result.exit_code == 0, result.output
         doc = json.loads(result.output)
         assert doc["youtube"]["date"] == "2026-09-03"
@@ -166,7 +200,7 @@ class TestAnalyzeSourceLabelling:
     @staticmethod
     def _ingest(root: Path, ctr: float = 6.0) -> None:
         proj = root / ".brandly" / "test-proj"
-        proj.mkdir(parents=True)
+        proj.mkdir(parents=True, exist_ok=True)
         src = root / "s.csv"
         src.write_text(CSV + f"2026-09-03,1000,50,45000,{ctr}\n")
         m.import_metrics(src, "youtube", proj)

@@ -45,10 +45,20 @@ def brand() -> None:
 @click.option("--logo", default="", help="Brand mark path (project-relative or absolute)")
 @click.option("--color", "colors", multiple=True, help="Hex colour, repeatable")
 @click.option("--claim", "claims", multiple=True, help="Allowed on-screen claim, repeatable")
-@click.option("--style", "style", default="cinematic", show_default=True,
-              type=click.Choice(STYLE_PRESET_OPTIONS))
-@click.option("--overlay-corner", "corner", default="bottom-right", show_default=True,
-              type=click.Choice(OVERLAY_CORNERS))
+@click.option(
+    "--style",
+    "style",
+    default="cinematic",
+    show_default=True,
+    type=click.Choice(STYLE_PRESET_OPTIONS),
+)
+@click.option(
+    "--overlay-corner",
+    "corner",
+    default="bottom-right",
+    show_default=True,
+    type=click.Choice(OVERLAY_CORNERS),
+)
 @click.option("--overlay-safe-zone", "safe_zone", default=0.1, show_default=True, type=float)
 @click.option("--overlay-opacity", "opacity", default=1.0, show_default=True, type=float)
 @click.option("--force", is_flag=True, help="Overwrite an existing brand.json")
@@ -74,8 +84,7 @@ def brand_init(
     existing = proj_dir / brand_kit.BRAND_FILE
     if existing.is_file() and not force:
         console.print(
-            f"[red]Brand kit already exists at {existing} — "
-            f"pass --force to overwrite.[/red]"
+            f"[red]Brand kit already exists at {existing} — pass --force to overwrite.[/red]"
         )
         sys.exit(1)
     raw = {
@@ -152,9 +161,7 @@ def brand_show(
         console.print(f"[red]malformed brand.json: {e}[/red]")
         sys.exit(1)
     if kit is None:
-        console.print(
-            f"[yellow]No brand kit for {project_id} — run `brandly brand init`.[/yellow]"
-        )
+        console.print(f"[yellow]No brand kit for {project_id} — run `brandly brand init`.[/yellow]")
         sys.exit(1)
     if json_out:
         print(json.dumps(kit.to_dict(), indent=2, ensure_ascii=False))
@@ -169,4 +176,3 @@ def brand_show(
 
 def register(cli) -> None:  # type: ignore[no-untyped-def]
     cli.add_command(brand)
-

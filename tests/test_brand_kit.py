@@ -22,7 +22,7 @@ from click.testing import CliRunner
 from brandly_cli import capabilities as caps_mod
 from brandly_cli.brand_kit import (
     BrandKit,
-    BrandLockConflict,
+    BrandLockConflictError,
     apply_brand_lock,
     brand_constraints,
     load_brand_kit,
@@ -110,7 +110,7 @@ class TestPromptLock:
         assert "Save 30% today" in suffix
 
     def test_conflicting_style_rejected(self) -> None:
-        with pytest.raises(BrandLockConflict):
+        with pytest.raises(BrandLockConflictError):
             apply_brand_lock("a hero shot", _kit(), style="documentary")
 
     def test_matching_style_appends_lock(self) -> None:
@@ -127,12 +127,22 @@ class TestPromptLock:
 class TestBrandCli:
     def test_init_writes_brand_json(self, project: Path) -> None:
         runner = CliRunner(env={"ROOT": str(project)})
-        result = runner.invoke(cli, [
-            "brand", "init", "test-proj",
-            "--color", "#123456", "--color", "#ABCDEF",
-            "--claim", "Save 30% today",
-            "--style", "cinematic",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "brand",
+                "init",
+                "test-proj",
+                "--color",
+                "#123456",
+                "--color",
+                "#ABCDEF",
+                "--claim",
+                "Save 30% today",
+                "--style",
+                "cinematic",
+            ],
+        )
         assert result.exit_code == 0, result.output
         kit = load_brand_kit(project / ".brandly" / "test-proj")
         assert kit is not None
@@ -145,11 +155,18 @@ class TestBrandCli:
         assert result.exit_code == 0, result.output
 
     def test_verify_fails_closed_on_bad_hex(self, project: Path) -> None:
-        (project / ".brandly" / "test-proj" / "brand.json").write_text(json.dumps({
-            "version": 1, "logo": "", "colors": ["oops"],
-            "claims": ["x"], "style_lock": "cinematic",
-            "overlay": {"corner": "bottom-right", "safe_zone": 0.1, "opacity": 1.0},
-        }))
+        (project / ".brandly" / "test-proj" / "brand.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "logo": "",
+                    "colors": ["oops"],
+                    "claims": ["x"],
+                    "style_lock": "cinematic",
+                    "overlay": {"corner": "bottom-right", "safe_zone": 0.1, "opacity": 1.0},
+                }
+            )
+        )
         runner = CliRunner(env={"ROOT": str(project)})
         result = runner.invoke(cli, ["brand", "verify", "test-proj"])
         assert result.exit_code != 0
@@ -172,4 +189,3 @@ class TestCapabilityRow:
         row = next(c for c in caps_mod.CAPABILITIES if c["id"] == "brand_kit")
         assert row["status"] == "partial"
         assert row.get("command") == "brand"
-

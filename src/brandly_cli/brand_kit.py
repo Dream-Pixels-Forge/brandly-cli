@@ -35,7 +35,7 @@ OVERLAY_CORNERS: tuple[str, ...] = (
 )
 
 
-class BrandLockConflict(ValueError):
+class BrandLockConflictError(ValueError):
     """A requested style conflicts with the kit's ``style_lock``."""
 
 
@@ -92,9 +92,7 @@ def parse_brand_kit(raw: dict[str, Any]) -> BrandKit:
         raise ValueError("brand kit needs at least one claim")
     style_lock = str(raw.get("style_lock", ""))
     if style_lock not in STYLE_PRESET_OPTIONS:
-        raise ValueError(
-            f"style_lock must be one of {STYLE_PRESET_OPTIONS}, got {style_lock!r}"
-        )
+        raise ValueError(f"style_lock must be one of {STYLE_PRESET_OPTIONS}, got {style_lock!r}")
     return BrandKit(
         colors=tuple(colors),
         claims=tuple(claims),
@@ -170,14 +168,12 @@ def apply_brand_lock(
 ) -> str:
     """Apply the pinned style preset, then append the brand lock.
 
-    Raises :class:`BrandLockConflict` when the requested style disagrees with
+    Raises :class:`BrandLockConflictError` when the requested style disagrees with
     ``kit.style_lock`` (DEV-G7-002 — fail closed, never blend styles).
     """
     if style is not None and style != "none" and style != kit.style_lock:
-        raise BrandLockConflict(
-            f"style {style!r} conflicts with brand kit style_lock "
-            f"{kit.style_lock!r}"
+        raise BrandLockConflictError(
+            f"style {style!r} conflicts with brand kit style_lock {kit.style_lock!r}"
         )
     out = apply_style_preset(prompt, kit.style_lock, media=media)
     return out + brand_constraints(kit)
-

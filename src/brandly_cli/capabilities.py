@@ -28,7 +28,14 @@ STATUSES: tuple[str, ...] = ("supported", "partial", "planned", "absent")
 #: Planning markers that make a banned phrase acceptable in the README
 #: (roadmap content is honest; aspirational claims are not).
 PLANNING_MARKERS: tuple[str, ...] = (
-    "planned", "gap", "absent", "roadmap", "not available", "g6", "f9", "issue",
+    "planned",
+    "gap",
+    "absent",
+    "roadmap",
+    "not available",
+    "g6",
+    "f9",
+    "issue",
 )
 
 CAPABILITIES: tuple[dict[str, Any], ...] = (
@@ -38,8 +45,7 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
         "persona": "filmmaker",
         "status": "supported",
         "command": "produce",
-        "note": "shot-by-shot generation with retries, resume, "
-        "canonical Scene-XX-Shot-X-Y naming",
+        "note": "shot-by-shot generation with retries, resume, canonical Scene-XX-Shot-X-Y naming",
         "banned_claims": (),
     },
     {
@@ -55,8 +61,7 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
         "persona": "filmmaker",
         "status": "supported",
         "command": "stitch",
-        "note": "stitch, captions, dubbing, beat-sync, thumbnails, "
-        "platform export",
+        "note": "stitch, captions, dubbing, beat-sync, thumbnails, platform export",
         "banned_claims": (),
     },
     {
@@ -65,8 +70,7 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
         "status": "supported",
         "command": "scenes",
         "finding": "F6",
-        "note": "explicit scene model (scenes.json manifest written at "
-        "produce time) — G3",
+        "note": "explicit scene model (scenes.json manifest written at produce time) — G3",
         "banned_claims": (),
     },
     {
@@ -75,8 +79,7 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
         "status": "supported",
         "command": "gate",
         "finding": "F7",
-        "note": "scene/shot completeness gate "
-        "(`brandly gate --scene/--all-scenes`) — G3",
+        "note": "scene/shot completeness gate (`brandly gate --scene/--all-scenes`) — G3",
         "banned_claims": (),
     },
     {
@@ -119,8 +122,7 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
         "persona": "creator",
         "status": "supported",
         "command": "status",
-        "note": "credit spend tracked per phase against the project budget; "
-        "budget gate",
+        "note": "credit spend tracked per phase against the project budget; budget gate",
         "banned_claims": (),
     },
     {
@@ -128,8 +130,7 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
         "persona": "creator",
         "status": "supported",
         "command": "image",
-        "note": "photoreal/cinematic/editorial/commercial/documentary "
-        "presets",
+        "note": "photoreal/cinematic/editorial/commercial/documentary presets",
         "banned_claims": (),
     },
     {
@@ -180,8 +181,7 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
         "status": "partial",
         "command": "analyze",
         "finding": "F9",
-        "note": "`brandly analyze` is a heuristic predictor; no real "
-        "platform-metrics ingest",
+        "note": "`brandly analyze` is a heuristic predictor; no real platform-metrics ingest",
         "banned_claims": ("ingests real metrics", "real performance data"),
     },
 )

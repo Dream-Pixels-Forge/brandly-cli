@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -324,7 +325,44 @@ async def async_run_ffmpeg(cmd: list[str]) -> tuple[int | None, str]:
         stderr=asyncio.subprocess.PIPE,
     )
     _, stderr = await proc.communicate()
-    return proc.returncode, stderr.decode()
+    return proc.returncode, proc_output(stderr)
+
+
+def proc_output(data: bytes | str | None) -> str:
+    """Coerce captured subprocess output to text without ever raising.
+
+    Bytes are decoded as UTF-8 with replacement: ffmpeg/ffprobe/Blender write
+    diagnostics (and file paths) in whatever bytes the platform gives them, and
+    a hard ``UnicodeDecodeError`` inside an *error* path would mask the real
+    tool error with a Python traceback.
+    """
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+    return data.decode("utf-8", "replace")
+
+
+def run_capture(
+    cmd: list[str], *, timeout: float | None = None, **kwargs: Any
+) -> subprocess.CompletedProcess[str]:
+    """Run a subprocess capturing stdout/stderr as UTF-8 text.
+
+    Never the locale codec: cp1252 on Windows cannot decode the UTF-8 output
+    (→, ✓, accented paths) and the decode error surfaced as a lost stream —
+    the same failure as the agent-surface runner bug.
+    ``timeout=None`` (the default) means no timeout. ``kwargs`` pass through
+    to :func:`subprocess.run` (e.g. ``creationflags``).
+    """
+    return subprocess.run(  # type: ignore[call-overload]
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+        **kwargs,
+    )
 
 
 _now_iso = now_iso

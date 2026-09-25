@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from brandly_cli.io import proc_output
+
 # ---------------------------------------------------------------------------
 # FFmpeg availability helpers (mirrors edit.py conventions)
 # ---------------------------------------------------------------------------
@@ -65,7 +67,7 @@ def get_clip_duration(path: Path) -> float:
     if proc.returncode != 0:
         return 0.0
     try:
-        data = json.loads(proc.stdout.decode())
+        data = json.loads(proc_output(proc.stdout))
         return float(data.get("format", {}).get("duration", 0.0))
     except (ValueError, TypeError):
         return 0.0
@@ -251,7 +253,7 @@ def _ffprobe_has_audio(path: Path) -> bool:
     proc = subprocess.run(cmd, capture_output=True, timeout=10)
     if proc.returncode != 0:
         return False
-    lines = proc.stdout.decode(errors="replace").strip().splitlines()
+    lines = proc_output(proc.stdout).strip().splitlines()
     return any("audio" in line for line in lines)
 
 
@@ -274,7 +276,7 @@ async def _run(cmd: list[str]) -> tuple[int | None, str]:
         stderr=asyncio.subprocess.PIPE,
     )
     _, stderr = await proc.communicate()
-    return proc.returncode, stderr.decode()
+    return proc.returncode, proc_output(stderr)
 
 
 def _result(

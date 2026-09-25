@@ -6,6 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from brandly_cli.io import proc_output
+
 # ---------------------------------------------------------------------------
 # Scoring functions
 # ---------------------------------------------------------------------------
@@ -156,7 +158,7 @@ async def analyze_video(
         ]
         result = subprocess.run(cmd, capture_output=True, timeout=30)
         if result.returncode == 0:
-            data = _json.loads(result.stdout.decode())
+            data = _json.loads(proc_output(result.stdout))
             fmt = data.get("format", {})
             duration = float(fmt.get("duration", 0.0))
 

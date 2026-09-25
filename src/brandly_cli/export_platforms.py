@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from brandly_cli.io import proc_output
+
 # ---------------------------------------------------------------------------
 # Platform presets
 # ---------------------------------------------------------------------------
@@ -88,7 +90,7 @@ async def _run_ffmpeg(cmd: list[str]) -> tuple[int | None, str]:
         stderr=asyncio.subprocess.PIPE,
     )
     _, stderr = await proc.communicate()
-    return proc.returncode, stderr.decode()
+    return proc.returncode, proc_output(stderr)
 
 
 def _get_duration(path: Path) -> float:
@@ -105,7 +107,7 @@ def _get_duration(path: Path) -> float:
     if result.returncode != 0:
         return 0.0
     try:
-        data = json.loads(result.stdout.decode())
+        data = json.loads(proc_output(result.stdout))
         return float(data.get("format", {}).get("duration", 0.0))
     except (ValueError, TypeError):
         return 0.0

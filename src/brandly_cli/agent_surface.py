@@ -24,13 +24,13 @@ that already exists.
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from brandly_cli import agent_tools
+from brandly_cli.io import run_capture
 
 # (exit_code, stdout, stderr)
 ToolRunner = Callable[[list[str]], tuple[int, str, str]]
@@ -390,14 +390,12 @@ def build_command(name: str, args: dict[str, Any], root: str | None = None) -> l
 def _subprocess_runner(argv: list[str]) -> tuple[int, str, str]:
     """Default runner: the tool surface is the CLI, so shell out to it.
 
-    Decoded as UTF-8 explicitly: the CLI emits non-ASCII glyphs (→, ✓, —) and
-    reconfigures its streams to UTF-8, which the platform locale codec (cp1252
-    on Windows) cannot decode — the decode error surfaced as a ``None`` stdout,
-    silently losing the tool result.
+    Decoded as UTF-8 explicitly (via :func:`run_capture`): the CLI emits
+    non-ASCII glyphs (→, ✓, —) and reconfigures its streams to UTF-8, which the
+    platform locale codec (cp1252 on Windows) cannot decode — the decode error
+    surfaced as a ``None`` stdout, silently losing the tool result.
     """
-    proc = subprocess.run(
-        argv, capture_output=True, text=True, encoding="utf-8", errors="replace"
-    )
+    proc = run_capture(argv)
     return proc.returncode, proc.stdout, proc.stderr
 
 

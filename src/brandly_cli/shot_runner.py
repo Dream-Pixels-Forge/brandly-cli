@@ -74,7 +74,6 @@ import json
 import math
 import os
 import shutil
-import subprocess
 import tempfile
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -82,6 +81,8 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from brandly_cli.io import run_capture
 
 REF_CATEGORIES = ("character", "location", "prop")
 _PLATE_SUFFIXES = (".opt.jpg", ".opt.png", ".jpg", ".jpeg", ".png")
@@ -584,12 +585,12 @@ def apply_aspect_ratio(
             say(f"--aspect-ratio skipped for {clip.name}: ffmpeg not available")
         return False
 
-    probe = subprocess.run(
+    probe = run_capture(
         [
             "ffprobe", "-v", "error", "-select_streams", "v:0",
             "-show_entries", "stream=width,height", "-of", "csv=p=0", str(clip),
         ],
-        capture_output=True, text=True, timeout=30,
+        timeout=30,
     )
     parts = (probe.stdout or "").split(",")
     if len(parts) < 2:
@@ -628,7 +629,7 @@ def apply_aspect_ratio(
         "ffmpeg", "-y", "-i", str(clip), "-vf", vfilter,
         "-c:v", "libx264", "-crf", "16", "-c:a", "aac", tmp_name,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    result = run_capture(cmd, timeout=600)
     if result.returncode != 0:
         Path(tmp_name).unlink(missing_ok=True)
         stderr_snippet = (result.stderr or "").strip()

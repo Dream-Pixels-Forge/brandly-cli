@@ -2,11 +2,11 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased] — G6 (PR 1/3): decision record + dry-run publish path
+## [0.5.0] — 2026-09-25
 
 ### Added
 - **Decision record DEV-G6-001** (`dev-notes/DECISION-G6-PUBLISH-PATH.md`):
-  publish path in scope for v0.4 — YouTube first, dry-run-first,
+  publish path in scope for v0.5 — YouTube first, dry-run-first,
   credential-gated; no scheduler service or UI.
 - `brandly publish <id> --platform youtube [--schedule ISO] [--dry-run]
   [--json]` — dry-run renders the exact request payload and never posts;
@@ -14,29 +14,19 @@ All notable changes to this project are documented here.
 - `brandly config set/get/list` — user-level credential store
   (`~/.brandly/credentials.json`); secrets never touch project files or
   `.env` (F2).
+- `brandly capabilities` — per-persona capability matrix (text + `--json`),
+  rendered from the single source list in `brandly_cli/capabilities.py`.
 
 ### Changed
 - Capability matrix: `publish_schedule` is now `partial` (dry-run
   implemented; live YouTube pending credentials; TikTok/IG adapters are
   G6 follow-up PRs).
-
-## [Unreleased] — G5: scope truth
-
-### Added
-- `brandly capabilities` — per-persona capability matrix (text + `--json`),
-  rendered from the single source list in `brandly_cli/capabilities.py`.
-
-### Changed
 - README "What is Brandly?" rewritten to the audited reality: what runs
   today vs what is planned (roadmap lines are marked as planned, not
   claimed), linked to the audit's gap register. The CI guard
   (`tests/test_capabilities.py`) fails when a README claim has no
   capability-list entry. Open F9 gaps filed as issues #97–#99
   (publish/schedule G6 decision-gated, brand kit, metrics ingest).
-
-## [Unreleased] — G4: ratio policy moved to assembly
-
-### Changed
 - **Aspect-ratio cropping no longer happens in production** (G4, audit F8).
   Generated clips keep their source aspect; the ratio decision happens once,
   in post-production assembly. The shot loop (`shot_runner`) no longer calls

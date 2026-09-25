@@ -242,3 +242,12 @@
 - [x] Created `dev-notes/GOAL-AGENTIC-ORCHESTRATION.md` (G7: orchestrator + subagent contract layer; PR E/F/G; ships v0.4.0)
 - [ ] NEXT: G7 PR E — TDD `phase_handoffs()` + `brandly plan --json` + agent_surface manifest entry
 
+### Round 7/256 — v0.5.0 release (G4 + G5 + G6 PR 1/3 shipped)
+
+- [x] Bumped 0.4.1 → 0.5.0 (`pyproject.toml` + `__about__.py`; release.yml tag-parity gate)
+- [x] CHANGELOG: three stacked `[Unreleased]` sections (G4, G5, G6) consolidated into `[0.5.0] — 2026-09-25`
+- [x] Local gate stack green: ruff + mypy + import-linter + full pytest suite; `python -m build` → clean sdist + wheel
+- [ ] Tag `v0.5.0` + GitHub release → `release.yml` (OIDC trusted publishing) → PyPI verify
+- [ ] v0.5.0 is the rollback point for G6 follow-ups: `pip install brandly-cli==0.5.0`
+- NEXT: G6 PR 2/3 (live YouTube upload, credential-gated) and PR 3/3 (TikTok/IG adapters); issues #98 (brand kit) and #99 (metrics ingest) remain open
+

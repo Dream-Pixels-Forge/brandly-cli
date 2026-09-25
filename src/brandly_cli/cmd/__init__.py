@@ -10,6 +10,7 @@ from __future__ import annotations
 import click
 
 from brandly_cli.cmd import (
+    capabilities,
     gate,
     generation,
     post,
@@ -21,5 +22,5 @@ from brandly_cli.cmd import (
 
 def register(cli: click.Group) -> None:
     """Attach every command group to the root ``cli`` group."""
-    for module in (production, generation, gate, post, providers, tools):
+    for module in (production, generation, gate, post, providers, tools, capabilities):
         module.register(cli)

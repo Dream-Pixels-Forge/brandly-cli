@@ -428,6 +428,14 @@ scope.
   `produce --aspect-ratio` is now a deprecated no-op alias that prints a one-line
   migration notice (removal tracked in CHANGELOG). 19 new tests in
   `tests/test_ratio_policy.py`; full suite green.
+- 2026-09-25 — G5 executed on `chore/scope-truth`: `brandly capabilities`
+  command + `brandly_cli/capabilities.py` single source of truth (per-persona
+  rows, machine-readable via `--json`); README "What is Brandly?" rewritten to
+  the audited reality (what runs today vs planned, linked to the audit);
+  `tests/test_capabilities.py` CI guard fails when a README claim has no
+  capability entry; open F9 gaps filed as issues #97 (publish/schedule, G6
+  decision-gated), #98 (brand kit), #99 (metrics ingest) and linked from the
+  audit's new gap register (scene gate noted as closed by G3 — no issue).
 
 
 

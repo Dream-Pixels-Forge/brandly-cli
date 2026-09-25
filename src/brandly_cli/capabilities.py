@@ -146,11 +146,14 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
         "id": "publish_schedule",
         "persona": "marketer",
-        "status": "absent",
+        "status": "partial",
+        "command": "publish",
         "finding": "F9",
-        "planned": "G6 (decision-gated)",
-        "note": "export-platforms only writes files; no publish/schedule to "
-        "TikTok/IG/YouTube",
+        "planned": "live YouTube upload (credentials) + TikTok/IG adapters (DEV-G6-001)",
+        "note": "`brandly publish <id> --platform youtube [--schedule ISO] "
+        "[--dry-run]` — dry-run renders the exact payload, never posts; live "
+        "posting requires a stored credential (decision DEV-G6-001). "
+        "TikTok/Instagram adapters are follow-ups",
         "banned_claims": (
             "publishes to",
             "publish to",

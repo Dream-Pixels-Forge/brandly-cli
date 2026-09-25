@@ -408,10 +408,18 @@ def record_cost(ctx: click.Context, project_id: str, phase: str, action: str, cr
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
 
-@click.command()
+@click.group(invoke_without_command=True, name="config")
 @click.pass_context
 def config(ctx: click.Context) -> None:
-    """Show current configuration (API keys status, root dir)."""
+    """Show current configuration and manage user-level credentials.
+
+    Without a subcommand this shows the configuration table (legacy
+    behavior); ``set``/``get``/``list`` manage publish credentials in the
+    user config dir (G6 DEV-G6-001 — never project files, never ``.env``).
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+
     root = _get_root(ctx)
 
     table = Table(title="Brandly Configuration")
@@ -426,6 +434,43 @@ def config(ctx: click.Context) -> None:
     table.add_row("MINIMAX_BASE_URL", os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1"))
     table.add_row("Version", __version__)
     console.print(table)
+
+
+@config.command(name="set")
+@click.argument("platform")
+@click.argument("secret")
+def config_set(platform: str, secret: str) -> None:
+    """Store a user-level credential (``brandly config set youtube <token>``).
+
+    The secret goes to the user config dir (``~/.brandly/credentials.json``),
+    never into project files or ``.env`` (F2).
+    """
+    from brandly_cli import config_store
+
+    config_store.set_credential(platform, secret)
+    console.print(
+        f"[green]✓[/green] Stored {platform} credential in "
+        f"{config_store._store_path()} (user-level; never written to project files)"
+    )
+
+
+@config.command(name="get")
+@click.argument("platform")
+def config_get(platform: str) -> None:
+    """Show whether a credential is stored (the secret value is never shown)."""
+    from brandly_cli import config_store
+
+    state = "stored" if config_store.has_credential(platform) else "not stored"
+    console.print(f"{platform}: {state}")
+
+
+@config.command(name="list")
+def config_list() -> None:
+    """List platforms with stored credentials."""
+    from brandly_cli import config_store
+
+    names = config_store.credential_names()
+    console.print(", ".join(names) if names else "[dim]No credentials stored.[/dim]")
 
 @click.command(name="report")
 @click.option(

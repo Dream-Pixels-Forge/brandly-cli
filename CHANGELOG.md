@@ -2,6 +2,51 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.26] — 2026-09-24
+
+### Added — G1: agent-native tool surface (#81, #83, #84)
+- `agent_surface.py` dispatch layer: one machine-readable tool manifest
+  (`brandly tools --json`) covering the real CLI — each tool has a JSON-Schema
+  parameter contract, a read-only classification, and its backing command.
+  `build_command()` is a pure call→argv mapping; `dispatch()` executes library
+  tools in-process and pipeline tools through an injectable subprocess runner,
+  returning a fail-safe envelope (errors reported, never raised).
+- `brandly mcp serve`: newline-delimited JSON-RPC 2.0 MCP server over stdio
+  (`initialize`, `ping`, `tools/list`, `tools/call`) exposing exactly that
+  manifest, so external agents and subagent frameworks attach brandly as a
+  tool provider instead of inventing their own ffmpeg/HTTP tools.
+- `brandly init` writes an `AGENTS.md` pointing agents at the tool surface
+  (create-only); `brandly sync` no longer writes raw provider API keys by
+  default — the old behaviour is opt-in behind `--legacy-provider-keys`.
+
+### Added — G2: real director orchestration (#86, #87, #88, #89)
+- `brandly run <id> --execute [--until <phase>] [--yes]` drives
+  `Director.run_pipeline` over the 10-phase pipeline; resumable from
+  `project.phases`; every phase is fail-closed (worker error → phase `failed`,
+  `current_phase` frozen, pipeline stops, exit 1). No fabricated success
+  paths remain.
+- Real phases: `script` writes `shots.json`; `asset` invokes the
+  produce/shot_runner path; `re_edit` stitches scene clips via
+  `stitch.stitch_videos` → `videos/final.mp4`; `validate` runs the G3 scene
+  gate (deterministic `verify_element` runner) and blocks advance on any
+  non-pass verdict; `publish` calls `export_platforms` (tiktok +
+  youtube_standard → `<project>/export/`).
+- The fabricated `auto_direct` pipeline stub is deleted (regression test
+  pins it). `brandly director` now prints the Director prompt plus the live
+  orchestrator plan; `director_plan()` is the data-only plan source for
+  agents (phases, per-phase status, current step, exact next command).
+
+### Added — G3: explicit scene model + completeness gate (#85)
+- `scenes.py`: `scenes.json` manifest written by `produce` BEFORE
+  generation; project-unique scene ids (S01…); `status()` matrix;
+  `evaluate()`/`evaluate_all()` with injected quality runner.
+- `brandly scenes status [--json]` and `brandly gate --scene/--all-scenes
+  [--no-quality]` (exit 0/1/2).
+
+### Quality
+- Full suite: 733 tests passing; ruff, mypy, and import-linter (L0/L1
+  layering) clean. CI green on every release PR.
+
 ## [0.3.24] — 2026-09-23
 
 ### Added

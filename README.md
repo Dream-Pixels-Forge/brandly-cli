@@ -44,7 +44,7 @@ via a CLI, an agent-callable tool surface, and an MCP server.
 
 - Publish/schedule to TikTok/IG/YouTube — planned, decision-gated (G6)
 - Brand kit — `brandly brand init/verify/show` + prompt-layer colour/claim lock (G7 PR 1); gate + export-layer lock planned
-- Performance-metrics ingest — `analyze` is a heuristic predictor; real ingest planned
+- Performance-metrics ingest — `brandly metrics import` + `analyze` source labelling (G8 PR 1); YouTube Analytics API planned
 - Campaign A/B at scale — `batch` exists; variant matrix + scoring loop planned
 
 Run `brandly capabilities` for the machine-readable matrix — the same list

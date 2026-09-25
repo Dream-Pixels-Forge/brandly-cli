@@ -14,6 +14,7 @@ from brandly_cli.cmd import (
     capabilities,
     gate,
     generation,
+    metrics,
     post,
     production,
     providers,
@@ -34,5 +35,6 @@ def register(cli: click.Group) -> None:
         capabilities,
         publish,
         brand,
+        metrics,
     ):
         module.register(cli)

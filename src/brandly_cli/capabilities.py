@@ -178,11 +178,14 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
         "id": "metrics_ingest",
         "persona": "marketer",
-        "status": "partial",
-        "command": "analyze",
+        "status": "supported",
+        "command": "metrics",
         "finding": "F9",
-        "note": "`brandly analyze` is a heuristic predictor; no real platform-metrics ingest",
-        "banned_claims": ("ingests real metrics", "real performance data"),
+        "note": (
+            "`brandly metrics import` (CSV/JSON, project-local snapshots) + "
+            "`analyze` ingested-vs-heuristic source labelling (G8 PR 1); "
+            "YouTube Analytics API next step planned (G8 PR 2)"
+        ),
     },
 )
 

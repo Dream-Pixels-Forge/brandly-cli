@@ -531,6 +531,8 @@ def analyze(video_path: str, script: str | None, style: str, root: str | None) -
         console.print(f"[red]Error: {result['error']}[/red]")
         sys.exit(1)
     console.print("[bold]Video Performance Analysis[/bold]")
+    console.print(f"  Source:        [bold]{result['source']}[/bold]"
+                  f" {'(ingested platform data)' if result['source'] == 'ingested' else '(heuristic prediction)'}")
     console.print(f"  Overall Score: [green]{result['overall_score']}[/green]/10")
     console.print(f"  Hook Strength:   {result['hook_strength']}/10")
     console.print(f"  Pacing Score:    {result['pacing_score']}/10")

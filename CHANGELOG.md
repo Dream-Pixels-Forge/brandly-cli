@@ -21,6 +21,25 @@ All notable changes to this project are documented here.
   G7 PR 2).
 - README roadmap line for brand kit synced to the partial reality.
 
+### Added (G8 PR 1 — metrics ingest, issue #99)
+- **Decision records DEV-G8-001/002/003 confirmed**: ingested metrics live
+  project-local (`.brandly/<project>/metrics/<platform>-<date>.json`),
+  never the user config store (DEV-G8-001); no network, no credentials in
+  this PR (YouTube Analytics API adapter is G8 PR 2).
+- `brandly metrics import <file> --platform youtube [--project <id>]` —
+  versioned CSV/JSON schema `{date, views, likes, watch_time_seconds,
+  ctr_pct}`; deterministic fail-closed validation (unknown platform,
+  malformed row, out-of-range value).
+- `brandly metrics show` — latest ingested snapshot per platform.
+- `brandly analyze` now prefers the latest ingest over heuristics and
+  always labels the source in its output (`ingested` vs `heuristic`,
+  G5 scope-truth rule); the CTR row blends the ingested `ctr_pct`.
+
+### Changed (G8 PR 1)
+- Capability matrix: `metrics_ingest` is now `supported` (import + analyze
+  blend shipped; YouTube Analytics API next step planned — G8 PR 2).
+- README metrics roadmap line synced.
+
 ## [0.5.0] — 2026-09-25
 
 ### Added

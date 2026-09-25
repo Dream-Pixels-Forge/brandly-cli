@@ -607,17 +607,17 @@ def apply_aspect_ratio(
     # / MSYS2 ffmpeg "Invalid argument" error). Compute concrete pixel
     # values in Python instead.
     if source_ratio > ratio:
-        # Source is wider than target -> crop height.
-        crop_w = w
-        crop_h = max(2 * int(ratio * 0.5), 2)
-        # Keep even dimensions (libx264 requires even width/height).
-        crop_h = crop_h - (crop_h % 2)
+        # Source wider than target -> crop width so w' = h * ratio.
+        crop_h = h
+        crop_w = max(2 * int(h * ratio / 2), 2)
+        crop_w = crop_w - (crop_w % 2)
         vfilter = f"crop={crop_w}:{crop_h}"
     else:
-        # Source is narrower than target -> crop width.
-        crop_h = h
-        crop_w = max(2 * int(ratio * h / 2), 2)
-        crop_w = crop_w - (crop_w % 2)
+        # Source narrower than target (e.g. 16:9 -> 2.39:1) -> crop height
+        # so h' = w / ratio. Cropping width here would overshoot the source.
+        crop_w = w
+        crop_h = max(2 * int(w / ratio / 2), 2)
+        crop_h = crop_h - (crop_h % 2)
         vfilter = f"crop={crop_w}:{crop_h}"
     fd, tmp_name = tempfile.mkstemp(suffix=".mp4", dir=str(clip.parent))
     os.close(fd)
@@ -668,7 +668,18 @@ def name_clips(
             target = clip.with_name(f"{stem}-{position}{clip.suffix}")
         if clip != target:
             target.parent.mkdir(parents=True, exist_ok=True)
-            clip.replace(target)
+            # Windows: gate/player/AV can briefly hold the fresh download.
+            last_err: OSError | None = None
+            for _attempt in range(8):
+                try:
+                    clip.replace(target)
+                    last_err = None
+                    break
+                except PermissionError as exc:
+                    last_err = exc
+                    time.sleep(0.5)
+            if last_err is not None:
+                raise last_err
             if say is not None:
                 say(f"{clip.name} -> {target.name}")
         renamed.append(target)

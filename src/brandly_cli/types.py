@@ -17,6 +17,7 @@ class PhaseResult(BaseModel):
     completed_at: str | None = None
     output: str | None = None
     error: str | None = None
+    attempts: int = 0
 
 
 class ProjectData(BaseModel):

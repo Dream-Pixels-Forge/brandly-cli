@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.4.1] — 2026-09-25
 
 ### Fixed
 - CLI entry points: `python -m brandly_cli.cli` executed `main()` before the

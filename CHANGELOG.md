@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added (G7 PR 1 — brand kit, issue #98)
+- **Decision records DEV-G7-001/002/003 confirmed**: project-level brand kit
+  (`.brandly/<project>/brand.json` — palette, claim allowlist, style lock,
+  logo + overlay spec). Never user-config or `.env` (F2).
+- `brandly brand init/verify/show` — init writes + validates the kit
+  (fail-closed on bad hex / unknown style / empty claims); verify exits 1 on
+  missing or malformed kits; show renders the kit (text or `--json`).
+- Prompt-layer brand lock (`brand_kit.apply_brand_lock`): appends palette,
+  claim allowlist, and third-party-mark ban to prompts; conflicting styles
+  raise `BrandLockConflict`.
+
+### Changed
+- Capability matrix: `brand_kit` is now `partial` (prompt-layer lock +
+  verify shipped; gate-layer claim check + export logo overlay planned —
+  G7 PR 2).
+- README roadmap line for brand kit synced to the partial reality.
+
 ## [0.5.0] — 2026-09-25
 
 ### Added

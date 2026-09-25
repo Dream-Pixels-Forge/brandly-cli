@@ -246,8 +246,8 @@
 
 - [x] Bumped 0.4.1 → 0.5.0 (`pyproject.toml` + `__about__.py`; release.yml tag-parity gate)
 - [x] CHANGELOG: three stacked `[Unreleased]` sections (G4, G5, G6) consolidated into `[0.5.0] — 2026-09-25`
-- [x] Local gate stack green: ruff + mypy + import-linter + full pytest suite; `python -m build` → clean sdist + wheel
-- [ ] Tag `v0.5.0` + GitHub release → `release.yml` (OIDC trusted publishing) → PyPI verify
-- [ ] v0.5.0 is the rollback point for G6 follow-ups: `pip install brandly-cli==0.5.0`
+- [x] Local gate stack green: ruff + mypy + import-linter + full pytest suite (806 passed); `python -m build` → clean sdist + wheel
+- [x] Tag `v0.5.0` + GitHub release published → `release.yml` (OIDC trusted publishing) green → PyPI verified: 2 files uploaded 2026-09-25T19:52Z, `pip install brandly-cli==0.5.0` smoke-tested in a fresh venv (`brandly --version` → 0.5.0, `capabilities` shows the `publish_schedule` row)
+- [x] v0.5.0 is the rollback point for G6 follow-ups: `pip install brandly-cli==0.5.0`
 - NEXT: G6 PR 2/3 (live YouTube upload, credential-gated) and PR 3/3 (TikTok/IG adapters); issues #98 (brand kit) and #99 (metrics ingest) remain open
 

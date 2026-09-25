@@ -62,20 +62,22 @@ eliminated at the tool level.
 
 ### PR E — Phase handoff contracts (data-only)
 
-- [ ] `phase_handoffs(root, project_id) -> dict` in `production.py`
-      (L0/L1 boundary respected): per phase
-      `{id, status, inputs[], outputs[], gate, next_command, est_cost}` —
-      everything derived from what is already on disk (`project.phases`,
-      `scenes.json`, `shots.json`, gate verdicts, `director_plan`). No new
-      state.
-- [ ] `brandly plan <id> [--json]` command printing the handoff table;
-      `--json` emits one machine-readable document (rich console suppressed,
-      per the #73 `--json` convention).
-- [ ] Enrich the `agent_surface` manifest with the `plan` tool entry
-      (read-only class).
-- TDD: ≥8 tests against the handoff contract (per-phase status matrix,
-  failed-phase routing, done-project → `next_command: None`, JSON shape
-  stability for external agents).
+- [x] `phase_handoffs(root, project_id) -> dict` in `cmd/production.py`
+      (cmd layer, next to `director_plan`; shares `PHASE_ORDER`,
+      `phase_costs()`, status/error derivation). Per phase:
+      `{id, status, error, inputs, outputs, gate{command,exit_codes},
+      next_command, est_cost}`; `current`/`next_command` mirror
+      `director_plan` exactly. Delivered in `feature/g7-pr-e-phase-handoffs`.
+- [x] `brandly plan <id> [--json]`: human table (Phase/Status/Gate/Est. cost)
+      + `--json` one-document output (rich suppressed, #73 convention).
+- [x] `agent_surface`: `plan` tool entry (`_build_plan`, CLI_TOOLS, manifest,
+      `READ_ONLY_TOOLS` + read-only propagation through `tool_manifest()` /
+      `dispatch()`); `brandly plan` is dispatchable via MCP and subprocess.
+- [x] `estimate` now routes its per-phase math through `phase_costs()`
+      (single formula, one home).
+- TDD: 13 tests in `tests/test_phase_handoffs.py` written RED first —
+      verified failing on `ImportError` (`phase_handoffs` missing) and on the
+      missing `plan` command (exit 2 / click usage error) — then GREEN.
 
 ### PR F — Subagent dispatch contracts (prompt layer)
 

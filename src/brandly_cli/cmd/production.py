@@ -310,6 +310,47 @@ def run(
     console.print(f"[green]Phase '{current}' started.[/green]")
     console.print(f"\nNext: approve with [bold]brandly approve {project_id} {current}[/bold]")
 
+@click.command()
+@click.argument("project_id")
+@click.option("--json", "as_json", is_flag=True, help="Emit the handoffs as one JSON document")
+@click.pass_context
+def plan(ctx: click.Context, project_id: str, as_json: bool) -> None:
+    """Show the per-phase handoff contracts for orchestrator/subagent dispatch.
+
+    Human-readable table by default; ``--json`` emits one machine-readable
+    document (``brandly plan <id> --json`` is the dispatch source of truth for
+    agents — rich console output is suppressed for the whole run).
+    """
+    if not is_valid_project_id(project_id):
+        console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(1)
+    root = _get_root(ctx)
+    payload = phase_handoffs(root, project_id)
+    if as_json:
+        # Plain print: console.print would wrap/mangle long JSON lines.
+        print(json.dumps(payload, indent=2))
+        return
+    table = Table(title="Phase handoffs (dispatch contracts)")
+    table.add_column("Phase", style="cyan")
+    table.add_column("Status", style="white")
+    table.add_column("Gate", style="dim")
+    table.add_column("Est. cost", justify="right")
+    for h in payload["handoffs"]:
+        status = h["status"]
+        style = {"completed": "green", "failed": "red", "running": "yellow"}.get(status, "dim")
+        table.add_row(h["id"], f"[{style}]{status}[/{style}]", h["gate"]["command"], str(h["est_cost"]))
+    console.print(table)
+    nxt = payload["next_command"]
+    if payload["current"] is None:
+        if nxt is None:
+            console.print("[green]Pipeline complete — nothing left to run.[/green]")
+        else:
+            console.print(f"Next command: [bold]{nxt}[/bold]")
+    else:
+        console.print(f"Current step: [bold]{payload['current']}[/bold]")
+        console.print(f"Next command: [bold]{nxt}[/bold]")
+
+
 @click.command(name="director")
 @click.argument("project_id", required=False, default=None)
 @click.pass_context
@@ -435,19 +476,9 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
     shot_cost = SHOT_COSTS.get(shots, 0)
     total_base = style_cost + shot_cost
     overhead = 60
-
-    phase_estimates = {
-        "init": 0,
-        "trends": 10,
-        "concept": round(total_base * 0.15),
-        "script": round(total_base * 0.20),
-        "asset": round(total_base * 0.25),
-        "audio": round(total_base * 0.15),
-        "re_edit": 20,
-        "validate": 10,
-        "publish": 5,
-    }
     total_estimate = total_base + overhead
+
+    phase_estimates = phase_costs(style, shots)
 
     console.print(f"\n[bold]Cost Estimate — {style} style, {shots} shots[/bold]\n")
     from rich.table import Table
@@ -1315,6 +1346,182 @@ def _scene_clip_paths(
             )
     return clips
 
+# ---------------------------------------------------------------------------
+# Phase handoffs (G7 PR E) — per-phase dispatch contracts for agents
+# ---------------------------------------------------------------------------
+
+#: Static dispatch contract per phase: what a phase reads, what it must
+#: produce, and which gate verifies it. Statuses, errors, and costs are
+#: filled in per-project by :func:`phase_handoffs`; this table never changes.
+PHASE_HANDOFF_SPECS: dict[str, dict[str, Any]] = {
+    "init": {
+        "inputs": ["product name", "product idea / brief"],
+        "outputs": [".brandly/<project>/project.json", "AGENTS.md (project root)"],
+        "gate": {
+            "command": "brandly status <project_id>",
+            "exit_codes": "0 = project exists",
+        },
+    },
+    "trends": {
+        "inputs": ["product brief (project.json)", "web research"],
+        "outputs": ["docs/plan/trends.md"],
+        "gate": {
+            "command": "brandly status <project_id>",
+            "exit_codes": "0 = phase recorded; docs/plan/trends.md non-empty",
+        },
+    },
+    "concept": {
+        "inputs": ["docs/plan/trends.md"],
+        "outputs": ["docs/plan/concept.md", "moodboard assets"],
+        "gate": {
+            "command": "brandly status <project_id>",
+            "exit_codes": "0 = phase recorded; concept artifact exists",
+        },
+    },
+    "script": {
+        "inputs": ["docs/plan/concept.md", "moodboard assets"],
+        "outputs": ["shots.json"],
+        "gate": {
+            "command": "brandly status <project_id>",
+            "exit_codes": "0 = phase recorded; shots.json written",
+        },
+    },
+    "asset": {
+        "inputs": ["shots.json", "reference images", "docs/plan/scenes.json"],
+        "outputs": ["docs/plan/scenes.json", "scene clip files in the media store"],
+        "gate": {
+            "command": "brandly gate <project_id> --all-scenes --json",
+            "exit_codes": "0 = pass, 1 = warn, 2 = fail",
+        },
+    },
+    "audio": {
+        "inputs": ["scenes.json", "shots.json"],
+        "outputs": ["audio assets (music, SFX, voiceover) in the media store"],
+        "gate": {
+            "command": "brandly status <project_id>",
+            "exit_codes": "0 = phase recorded; audio present (duration ~= scenes)",
+        },
+    },
+    "re_edit": {
+        "inputs": ["scene clips", "audio assets"],
+        "outputs": ["videos/final.mp4"],
+        "gate": {
+            "command": "brandly stitch <clips...> --output videos/final.mp4",
+            "exit_codes": "0 = stitched; clip count matches scenes.json",
+        },
+    },
+    "validate": {
+        "inputs": ["videos/final.mp4"],
+        "outputs": ["scene-gate verdicts (all must pass)"],
+        "gate": {
+            "command": "brandly gate <project_id> --all-scenes --json",
+            "exit_codes": "0 = pass (advance); 1/2 = re_edit, do not advance",
+        },
+    },
+    "publish": {
+        "inputs": ["videos/final.mp4", "gate verdicts", "brandly approve <id> <phase>"],
+        "outputs": ["<project>/export/ platform deliverables"],
+        "gate": {
+            "command": "brandly export-platforms <project_id>",
+            "exit_codes": "0 = deliverables written for every target platform",
+        },
+    },
+    "done": {
+        "inputs": ["all real-phase outputs (completed pipeline)"],
+        "outputs": ["pipeline complete"],
+        "gate": {"command": "None", "exit_codes": "terminal state — nothing to verify"},
+    },
+}
+
+
+def phase_costs(style: str, shot_count: int) -> dict[str, int]:
+    """Per-phase credit estimates — the ``estimate`` math, minus the console.
+
+    Shared by the ``brandly estimate`` command and :func:`phase_handoffs`
+    (single formula, one home). Unknown styles/shots fall back to the
+    ``cinematic``/5-shot defaults so an agent always gets a number.
+    """
+    cinematic_cost: int = STYLE_COSTS["cinematic"]
+    style_cost = STYLE_COSTS[style] if style in STYLE_COSTS else cinematic_cost
+    shot_cost = SHOT_COSTS.get(shot_count, SHOT_COSTS[5])
+    total_base = style_cost + shot_cost
+    return {
+        "init": 0,
+        "trends": 10,
+        "concept": round(total_base * 0.15),
+        "script": round(total_base * 0.20),
+        "asset": round(total_base * 0.25),
+        "audio": round(total_base * 0.15),
+        "re_edit": 20,
+        "validate": 10,
+        "publish": 5,
+    }
+
+
+def _phase_status(project: Any, phase: str) -> tuple[str, str | None]:
+    """Return ``(status, error)`` for one phase from ``project.phases``."""
+    entry = project.phases.get(phase)
+    if isinstance(entry, Mapping):
+        return str(entry.get("status") or "pending"), (
+            str(entry["error"]) if entry.get("error") else None
+        )
+    status = str(getattr(entry, "status", "pending") or "pending")
+    error = getattr(entry, "error", None)
+    return status, (str(error) if error else None)
+
+
+def phase_handoffs(root: Path, project_id: str) -> dict[str, Any]:
+    """Data-only per-phase dispatch contracts for orchestrating agents (G7 PR E).
+
+    Same sources as :func:`director_plan` — ``PHASE_ORDER`` for ordering, the
+    project's ``phases`` map for status/error, ``current_phase`` for the resume
+    point — plus :data:`PHASE_HANDOFF_SPECS` (inputs/outputs/gate) and
+    :func:`phase_costs` (per-phase ``est_cost`` from the project's
+    style/shot_count). Read-only: derives everything, writes nothing.
+
+    ``next_command`` mirrors ``director_plan`` exactly (``brandly init`` before
+    a project exists, ``None`` when complete, ``brandly run <id> --execute
+    --yes`` otherwise).
+    """
+    handoffs: list[dict[str, Any]] = [
+        {
+            "id": phase,
+            "status": "pending",
+            "error": None,
+            "inputs": list(PHASE_HANDOFF_SPECS[phase]["inputs"]),
+            "outputs": list(PHASE_HANDOFF_SPECS[phase]["outputs"]),
+            "gate": dict(PHASE_HANDOFF_SPECS[phase]["gate"]),
+            "next_command": f"brandly run {project_id} --execute --yes",
+            "est_cost": 0,
+        }
+        for phase in PHASE_ORDER
+    ]
+    result: dict[str, Any] = {
+        "project_id": project_id,
+        "current": None,
+        "next_command": "brandly init",
+        "handoffs": handoffs,
+    }
+    project = asyncio.run(ProjectManager(root).read(project_id))
+    if project is None:
+        return result
+
+    costs = phase_costs(str(project.style), int(project.shot_count or 5))
+    by_id = {h["id"]: h for h in handoffs}
+    for phase in PHASE_ORDER:
+        status, error = _phase_status(project, phase)
+        by_id[phase]["status"] = status
+        by_id[phase]["error"] = error
+        by_id[phase]["est_cost"] = costs.get(phase, 0)
+
+    plan = director_plan(root, project_id)
+    result["current"] = plan["current"]
+    result["next_command"] = plan["next_command"]
+    for h in handoffs:
+        h["next_command"] = f"brandly run {project_id} --execute --yes"
+    return result
+
+
 def director_plan(root: Path, project_id: str | None = None) -> dict[str, Any]:
     """Data-only orchestrator plan for ``brandly director`` (G2 PR D).
 
@@ -2109,6 +2316,7 @@ def register(cli) -> None:
     cli.add_command(list_projects)
     cli.add_command(run)
     cli.add_command(director)
+    cli.add_command(plan)
     cli.add_command(approve)
     cli.add_command(estimate)
     cli.add_command(produce)

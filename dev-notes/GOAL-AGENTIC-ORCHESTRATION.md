@@ -131,9 +131,12 @@ eliminated at the tool level.
       subagent workflow (single-truth pass). The broader G5/G6 scope-truth
       pass (capabilities `--json`, honest README matrix) stays tracked in
       PROGRESS as its own goals.
-- [ ] Ships as **v0.4.0** (new major capability). If anything regresses:
+- [x] Ships as **v0.4.0** (new major capability). If anything regresses:
       `git reset --hard v0.3.26` + `pip install brandly-cli==0.3.26` restores
-      the working release.
+      the working release. Released 2026-09-25 — tag `v0.4.0`, GitHub release
+      https://github.com/Dream-Pixels-Forge/brandly-cli/releases/tag/v0.4.0,
+      `release.yml` green, `brandly-cli==0.4.0` verified on PyPI (sdist +
+      wheel); CI green on `main` @ `104c9c8`.
 
 ## Out of scope (this goal)
 

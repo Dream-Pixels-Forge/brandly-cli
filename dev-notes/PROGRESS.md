@@ -140,7 +140,14 @@
       (release workflow gates tag == pyproject == `__about__`).
 - [x] Gates re-run before tagging: 764 passed; ruff/mypy/import-linter clean.
 - [x] Tag `v0.4.0` + GitHub release → `release.yml` publishes to PyPI
-      (OIDC trusted publishing, `skip-existing: true`).
+      (OIDC trusted publishing, `skip-existing: true`). Release:
+      https://github.com/Dream-Pixels-Forge/brandly-cli/releases/tag/v0.4.0 —
+      workflow success; PyPI endpoint verified (`brandly-cli==0.4.0`, 2 files:
+      sdist + wheel). CI (quality 3.10/3.11/3.12 + web-quality) green on `main`
+      before tagging.
+- [x] Pre-tag local verification: version parity (`pyproject == __about__`),
+      full suite 764 passed, and a live CLI smoke (`init` → `plan --json` with
+      10 phase handoffs → `director` prompt + dispatch table).
 - Rollback point for G7: `git reset --hard v0.3.26` +
       `pip install brandly-cli==0.3.26` restores the pre-G7 release.
 

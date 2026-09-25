@@ -117,14 +117,20 @@ eliminated at the tool level.
 
 ## Acceptance (goal level)
 
-- [ ] An orchestrator agent (MCP client or shell loop) can drive a
+- [x] An orchestrator agent (MCP client or shell loop) can drive a
       finished video end-to-end by: read `brandly plan --json` → dispatch
       phase subagents → screen each result with its gate → advance with
       `run --execute --until <phase>` — without inventing tools or state.
+      Evidence: `brandly plan --json` contracts (13 tests), MCP `plan`
+      dispatch (read-only tool), and the mocked-provider E2E
+      (`test_run_execute_completes_full_pipeline_to_done`) driving
+      `run --execute` to `done` with real gate + export calls.
 - [x] A gate failure produces a `retry_instruction` that a re-dispatched
       subagent can act on directly.
-- [ ] Full suite green; ruff/mypy/import-linter clean; README/G6 scope
-      matrix updated with the subagent workflow (single-truth pass, G5 rule).
+- [x] Full suite green; ruff/mypy/import-linter clean; README updated with the
+      subagent workflow (single-truth pass). The broader G5/G6 scope-truth
+      pass (capabilities `--json`, honest README matrix) stays tracked in
+      PROGRESS as its own goals.
 - [ ] Ships as **v0.4.0** (new major capability). If anything regresses:
       `git reset --hard v0.3.26` + `pip install brandly-cli==0.3.26` restores
       the working release.

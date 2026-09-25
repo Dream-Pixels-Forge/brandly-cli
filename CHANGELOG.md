@@ -2,6 +2,43 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.0] — 2026-09-25
+
+### Added — G7: orchestrator + subagent contract layer (#90, #91, #93)
+- `brandly plan <id> [--json]`: per-phase **dispatch contracts** for
+  orchestrating agents — for every phase, the `inputs[]` it reads, the
+  `outputs[]` it must produce, the deterministic `gate` that verifies it, the
+  `next_command`, and its `est_cost`. `phase_handoffs()` (cmd layer) is the
+  single data source; the command renders a table or one JSON document.
+  Registered as a read-only tool in the `agent_surface` manifest (MCP +
+  subprocess dispatchable), and `brandly estimate` now shares the same
+  per-phase cost math (`phase_costs()`).
+- Director prompt gained a **Subagent Dispatch** section: the 5-item
+  per-subagent contract (scope, inputs, outputs, boundaries, verification),
+  the parallel-cognition / serialized-execution rule, and the gate-screening
+  loop pointing at `brandly plan <id> --json`. `brandly director` prints a
+  compact dispatch table, and `brandly init`'s `AGENTS.md` points at the same
+  source of truth.
+- **Structured retry envelope + bounded re-dispatch**: a failed phase now
+  persists an `attempts` counter in `project.phases` (`PhaseResult.attempts`)
+  and returns a JSON-parseable `retry_instruction` (error/verdict, attempts vs
+  `MAX_PHASE_ATTEMPTS` = 3, exact re-run command, escalation command).
+  `brandly plan --json` surfaces `attempts` + `retry_instruction` on failed
+  phases; `brandly run --execute` prints `Retry attempt: N/3` plus the JSON
+  envelope. At the cap the phase stays `failed` and `next_command` becomes the
+  `brandly approve <id> <phase>` human escalation — no unbounded re-dispatch
+  (the state-only `run` path preserves the counter too).
+
+### Fixed
+- Shot runner: corrected the ratio-crop axis and made the Windows rename
+  retry-safe (#92).
+
+### Notes
+- Test suite: 733 → 764 passed (G7 added 31: contracts 13, dispatch 8,
+  retry envelope 7, crop/rename fix 3). ruff / mypy / import-linter clean.
+- README documents the orchestrator + subagent workflow (plan → dispatch →
+  screen → advance → retry/escalate).
+
 ## [0.3.26] — 2026-09-24
 
 ### Added — G1: agent-native tool surface (#81, #83, #84)

@@ -150,6 +150,37 @@ your file is never overwritten) instructing agents to use this surface.
 pass `--legacy-provider-keys` only if you deliberately want raw provider access
 (which bypasses the pipeline).
 
+#### Orchestrator + subagent workflow (G7)
+
+One orchestrating agent drives the pipeline by dispatching **phase-scoped
+subagents** — the contracts and gates are the only shared state:
+
+```bash
+brandly plan <project-id> --json        # 1. dispatch source of truth: per phase
+                                        #    inputs, outputs, gate, est_cost
+brandly run <project-id> --execute --until <phase> --yes   # 4. advance a phase
+brandly gate <project-id> --all-scenes  # 3. screen a worker result (deterministic)
+```
+
+1. **Read** `brandly plan <id> --json` — each phase carries `inputs[]`,
+   `outputs[]`, the deterministic `gate` that verifies it, `next_command`, and
+   `est_cost` (budget with `brandly estimate` before dispatching paid work).
+2. **Dispatch** one subagent per phase with that contract
+   (`brandly director` prints the same table for humans).
+3. **Screen** every worker result with its gate — never trust a subagent's
+   self-report; `verify_element`/`scenes` run deterministically (`use_ai=False`).
+4. **Advance** with `brandly run <id> --execute --until <phase>` — fail-closed:
+   a failed phase freezes `current_phase` and exits non-zero.
+
+On failure the run prints (and `plan --json` repeats) a structured
+`retry_instruction`: the failing error/verdict, the attempt counter
+(`attempts`/`max_attempts`), the exact re-run command, and — once the
+3-attempt cap is reached — `escalate: true` with the human escalation command
+(`brandly approve <id> <phase>`). Re-dispatch the worker with that reason; the
+cap keeps the loop bounded. Cognition can run in parallel, but provider
+generation stays single-writer (subagents never fan out paid generation calls
+and never publish).
+
 ### Configure API Keys
 
 ```bash

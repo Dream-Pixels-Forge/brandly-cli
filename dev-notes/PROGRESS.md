@@ -3,11 +3,11 @@
 ## Current State
 - Project: brandly-cli
 - Started: 2026-09-07
-- Version: 0.2.0 → 0.3.0 (in progress)
+- Version: 0.3.26 → 0.4.0 (G7 orchestrator + subagent contract layer complete)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (core features complete)
-- Test Count: 303 passed
-- Lint: 9 minor issues (non-blocking)
+- Test Count: 764 passed
+- Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
 - [x] Phase 0: Bootstrap (AUDIT.md + GOAL.md)
@@ -129,6 +129,20 @@
       preserves the counter (cap cannot be bypassed). 7 TDD tests
       (`tests/test_retry_envelope.py`) RED first (ImportError) → GREEN.
       Suite 728 → 764 passed; ruff/mypy clean; import-linter KEPT; CI green.
+
+### Round 5/256 — v0.4.0 release round (G7 shipped)
+
+- [x] README: orchestrator + subagent workflow section added to "Driving brandly
+      from an AI tool" (plan → dispatch → screen → advance → retry/escalate),
+      pointing at `brandly plan <id> --json` as the dispatch source of truth.
+- [x] CHANGELOG `[0.4.0]` entry (G7 PR E/F/G + shot-runner crop/rename fix).
+- [x] Version bump `pyproject.toml` + `src/brandly_cli/__about__.py` → `0.4.0`
+      (release workflow gates tag == pyproject == `__about__`).
+- [x] Gates re-run before tagging: 764 passed; ruff/mypy/import-linter clean.
+- [x] Tag `v0.4.0` + GitHub release → `release.yml` publishes to PyPI
+      (OIDC trusted publishing, `skip-existing: true`).
+- Rollback point for G7: `git reset --hard v0.3.26` +
+      `pip install brandly-cli==0.3.26` restores the pre-G7 release.
 
 ### Round 2/256 — Feature Implementation (Phase 3)
 - [x] Created dev-notes/IMPLEMENTATION.md with full feature plan

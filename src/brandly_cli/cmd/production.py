@@ -288,9 +288,27 @@ def run(
                 f"[red]✗ Phase '{result['failed_phase']}' failed: "
                 f"{result['error']}[/red]"
             )
-            console.print(
-                "[dim]Fix the issue and re-run the same command to resume.[/dim]"
-            )
+            instr = result.get("retry_instruction")
+            if instr:
+                console.print(
+                    f"[yellow]Retry attempt: {instr['attempts']}/{instr['max_attempts']}[/yellow]"
+                )
+                if instr.get("escalate"):
+                    console.print(
+                        f"[red]Retry cap reached — escalate to a human: "
+                        f"[bold]{instr['escalate_command']}[/bold][/red]"
+                    )
+                else:
+                    console.print(
+                        f"[dim]Fix the issue and re-run the same command to "
+                        f"resume ({instr['next_command']}).[/dim]"
+                    )
+                # Plain print so the envelope parses as exactly one JSON document.
+                print(json.dumps(instr, indent=2))
+            else:
+                console.print(
+                    "[dim]Fix the issue and re-run the same command to resume.[/dim]"
+                )
             sys.exit(1)
         console.print(
             f"[green]✓ Pipeline executed: {' → '.join(result['phases_run'])}[/green]"
@@ -302,9 +320,17 @@ def run(
     console.print(f"[dim]Agent: {PHASE_ORDER.index(str(current)) + 1}/{len(PHASE_ORDER)}[/dim]")  # type: ignore[arg-type]
 
     phases = getattr(proj, "phases", {})
+    existing = phases.get(current)
+    existing_dict = existing.model_dump() if isinstance(existing, PhaseResult) else (existing or {})
     if current not in phases:
         phases[current] = PhaseResult(status="pending")
-    phases[current] = PhaseResult(status="running", started_at=now_iso())
+    phases[current] = PhaseResult(
+        status="running",
+        started_at=now_iso(),
+        # Preserve the persisted retry counter (G7 PR G) — a mixed workflow
+        # must not be able to reset it and bypass the attempt cap.
+        attempts=int(existing_dict.get("attempts", 0) or 0),
+    )
     asyncio.run(pm.update(project_id, {"phases": phases, "status": "running"}))
 
     console.print(f"[green]Phase '{current}' started.[/green]")
@@ -1500,6 +1526,36 @@ def _phase_status(project: Any, phase: str) -> tuple[str, str | None]:
     return status, (str(error) if error else None)
 
 
+MAX_PHASE_ATTEMPTS = 3  # bounded re-dispatch: escalate to a human gate after this (G7 PR G)
+
+
+def retry_envelope(
+    project_id: str, phase: str, error: str | None, attempts: int
+) -> dict[str, Any]:
+    """Structured retry instruction for a failed phase (G7 PR G).
+
+    Data-only, JSON-parseable: an orchestrating agent consumes it to
+    re-dispatch a worker subagent with the reason for failure. ``escalate``
+    turns True once ``attempts`` reaches :data:`MAX_PHASE_ATTEMPTS` — the
+    agent must then stop re-dispatching and route to the human approval
+    gate instead (``next_command`` flips to ``escalate_command``).
+    """
+    capped = attempts >= MAX_PHASE_ATTEMPTS
+    escalate_command = f"brandly approve {project_id} {phase}"
+    return {
+        "project_id": project_id,
+        "phase": phase,
+        "error": error,
+        "attempts": attempts,
+        "max_attempts": MAX_PHASE_ATTEMPTS,
+        "escalate": capped,
+        "next_command": (
+            escalate_command if capped else f"brandly run {project_id} --execute --yes"
+        ),
+        "escalate_command": escalate_command,
+    }
+
+
 def phase_handoffs(root: Path, project_id: str) -> dict[str, Any]:
     """Data-only per-phase dispatch contracts for orchestrating agents (G7 PR E).
 
@@ -1543,6 +1599,18 @@ def phase_handoffs(root: Path, project_id: str) -> dict[str, Any]:
         by_id[phase]["status"] = status
         by_id[phase]["error"] = error
         by_id[phase]["est_cost"] = costs.get(phase, 0)
+        if status == "failed":
+            # G7 PR G: failed phases surface the retry counter and the
+            # structured retry_instruction envelope for bounded re-dispatch.
+            entry: Any = project.phases.get(phase)
+            if isinstance(entry, Mapping):
+                attempts = int(entry.get("attempts", 0) or 0)
+            else:
+                attempts = int(getattr(entry, "attempts", 0) or 0)
+            by_id[phase]["attempts"] = attempts
+            by_id[phase]["retry_instruction"] = retry_envelope(
+                project_id, phase, error, attempts
+            )
 
     plan = director_plan(root, project_id)
     result["current"] = plan["current"]
@@ -1905,10 +1973,17 @@ class Director:
         if proj.status == "paused":
             return {"error": "Project paused", "phase": phase}
 
-        # Mark phase running
+        # Mark phase running (preserve the persisted retry counter — G7 PR G)
         phases = dict(getattr(proj, "phases", {}))
+        prior = phases.get(phase)
+        prior_dict = prior.model_dump() if isinstance(prior, PhaseResult) else (prior or {})
+        attempts = int(prior_dict.get("attempts", 0) or 0)
         started_at = _now_iso()
-        phases[phase] = {"status": "running", "started_at": started_at}
+        phases[phase] = {
+            "status": "running",
+            "started_at": started_at,
+            "attempts": attempts,
+        }
         await self.cfg.pm.update(project_id, {"phases": phases, "status": "running"})
 
         # Dispatch to the real phase worker. A phase that cannot do its
@@ -1920,23 +1995,35 @@ class Director:
 
         phases = dict(getattr(proj, "phases", {}))
         if "error" in result:
+            # Bounded re-dispatch (G7 PR G): persist the retry counter on the
+            # phase and return a structured retry_instruction the orchestrating
+            # agent consumes to re-dispatch a worker with the failure reason.
+            attempts += 1
             phases[phase] = {
                 "status": "failed",
                 "started_at": started_at,
                 "completed_at": _now_iso(),
                 "error": result["error"],
+                "attempts": attempts,
             }
             await self.cfg.pm.update(
                 project_id, {"phases": phases, "status": "failed"}
             )
-            return {"phase": phase, "error": result["error"]}
+            envelope = retry_envelope(project_id, phase, result["error"], attempts)
+            return {
+                "phase": phase,
+                "error": result["error"],
+                "attempts": attempts,
+                "retry_instruction": envelope,
+            }
 
-        # Mark phase completed
+        # Mark phase completed (the retry counter is kept as an audit trail)
         phases[phase] = {
             "status": "completed",
             "started_at": started_at,
             "completed_at": _now_iso(),
             "output": json.dumps(result),
+            "attempts": attempts,
         }
         idx = PHASE_ORDER.index(phase)
         next_phase = PHASE_ORDER[idx + 1] if idx < len(PHASE_ORDER) - 1 else "done"
@@ -2246,6 +2333,7 @@ class Director:
                     "phases_run": [x["phase"] for x in results],
                     "failed_phase": phase,
                     "error": r["error"],
+                    "retry_instruction": r.get("retry_instruction"),
                     "results": results,
                 }
 

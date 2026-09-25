@@ -390,6 +390,36 @@ def director(ctx: click.Context, project_id: str | None = None) -> None:
         console.print(f"Current step: [bold]{plan['current']}[/bold]")
         console.print(f"Next command: [bold]{plan['next_command']}[/bold]")
 
+    _print_dispatch_table(project_id)
+
+
+def _print_dispatch_table(project_id: str | None) -> None:
+    """Print the subagent dispatch contracts (G7 PR F).
+
+    Compact, in-command render of :data:`PHASE_HANDOFF_SPECS` — the same
+    contracts ``brandly plan --json`` emits as data. Kept terse on purpose:
+    static strings only, no project reads, so this never fails on an
+    unknown project.
+    """
+    _ = project_id  # reserved: per-project est_cost rendering stays in `plan`.
+    table = Table(title="Subagent dispatch (orchestrator → phase workers)")
+    table.add_column("Phase", style="cyan")
+    table.add_column("Gives worker", style="white")
+    table.add_column("Must produce", style="white")
+    table.add_column("Verify with", style="dim")
+    for phase in PHASE_ORDER:
+        if phase in ("init", "done"):
+            continue
+        spec = PHASE_HANDOFF_SPECS[phase]
+        table.add_row(
+            phase,
+            "; ".join(spec["inputs"]),
+            "; ".join(spec["outputs"]),
+            spec["gate"]["command"],
+        )
+    console.print(table)
+    console.print("[dim]Dispatch source of truth: `brandly plan <project_id> --json`[/dim]")
+
 
 @click.command()
 @click.argument("project_id")

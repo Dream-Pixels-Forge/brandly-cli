@@ -142,3 +142,13 @@
 2. [x] Add pre-commit hooks (ruff + pytest)
 3. [x] Consider adding a Makefile for common dev tasks
 4. [x] Review whether SECURITY.md is needed (CLI has no auth beyond API keys)
+
+### Round 4/256 — v0.3.26 release + G7 agentic-orchestration kickoff
+
+- [x] Bumped version 0.3.25 → 0.3.26 (`__about__.py` + `pyproject.toml`, ci.yml parity check)
+- [x] CHANGELOG 0.3.26 entry: G1 tool surface, G2 real director orchestration, G3 scene model + gate
+- [x] Commit `a750d4e` pushed to main; tag `v0.3.26` pushed; GitHub release v0.3.26 published → `release.yml` → PyPI
+- [x] **v0.3.26 is the rollback point for G7**: `git reset --hard v0.3.26` / `pip install brandly-cli==0.3.26`
+- [x] Created `dev-notes/GOAL-AGENTIC-ORCHESTRATION.md` (G7: orchestrator + subagent contract layer; PR E/F/G; ships v0.4.0)
+- [ ] NEXT: G7 PR E — TDD `phase_handoffs()` + `brandly plan --json` + agent_surface manifest entry
+

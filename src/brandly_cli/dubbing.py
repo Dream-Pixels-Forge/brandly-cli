@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from brandly_cli.io import proc_output
 from brandly_cli.utils import async_run_ffmpeg
 
 # ---------------------------------------------------------------------------
@@ -88,7 +89,7 @@ def _get_duration(path: Path) -> float:
         proc = subprocess.run(cmd, capture_output=True, timeout=30)
         if proc.returncode != 0:
             return 0.0
-        data = json.loads(proc.stdout.decode())
+        data = json.loads(proc_output(proc.stdout))
         return float(data.get("format", {}).get("duration", 0.0))
     except (ValueError, TypeError, FileNotFoundError):
         return 0.0
@@ -128,7 +129,7 @@ async def _silent_tts_fallback(
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        return {"error": stderr.decode()[:200]}
+        return {"error": proc_output(stderr)[:200]}
     return {
         "voice_id": voice_id,
         "text_length": len(text),

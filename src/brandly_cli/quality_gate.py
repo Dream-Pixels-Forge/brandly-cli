@@ -29,6 +29,7 @@ from typing import Any
 
 from brandly_cli import layout
 from brandly_cli.constants import DEFAULT_AGNES_TEXT_MODEL
+from brandly_cli.io import proc_output
 
 PASS = "pass"
 WARN = "warn"
@@ -340,7 +341,7 @@ def _probe_video(path: Path) -> dict[str, Any] | None:
         )
         if proc.returncode != 0:
             return None
-        data = json.loads(proc.stdout.decode())
+        data = json.loads(proc_output(proc.stdout))
         for stream in data.get("streams", []):
             if stream.get("codec_type") == "video":
                 return {

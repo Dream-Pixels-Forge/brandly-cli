@@ -15,6 +15,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from brandly_cli.io import run_capture
+
 
 @dataclass
 class BlenderVersion:
@@ -56,10 +58,8 @@ RENDER_ENGINES: dict[int, str] = {
 def _run_blender_version(blender_path: Path) -> str | None:
     """Run blender --version and return output."""
     try:
-        result = subprocess.run(
+        result = run_capture(
             [str(blender_path), "--version"],
-            capture_output=True,
-            text=True,
             timeout=10,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
@@ -124,10 +124,8 @@ def detect_blender() -> BlenderVersion | None:
 
     # Try system PATH
     try:
-        result = subprocess.run(
+        result = run_capture(
             ["blender", "--version"],
-            capture_output=True,
-            text=True,
             timeout=10,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
@@ -137,10 +135,8 @@ def detect_blender() -> BlenderVersion | None:
                 major, minor, patch = parsed
                 render_engine = RENDER_ENGINES.get(major, "BLENDER_EEVEE")
                 # Find blender path from which
-                which_result = subprocess.run(
+                which_result = run_capture(
                     ["where", "blender"] if sys.platform == "win32" else ["which", "blender"],
-                    capture_output=True,
-                    text=True,
                     timeout=5,
                 )
                 path_str = which_result.stdout.strip().splitlines()[0] if which_result.stdout.strip() else "blender"
@@ -205,10 +201,8 @@ def run_blender_script(
         cmd.extend(args)
 
     try:
-        result = subprocess.run(
+        result = run_capture(
             cmd,
-            capture_output=True,
-            text=True,
             timeout=300,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )

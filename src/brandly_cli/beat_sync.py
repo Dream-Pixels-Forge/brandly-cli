@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from brandly_cli.io import proc_output, run_capture
+
 # ---------------------------------------------------------------------------
 # FFmpeg helpers
 # ---------------------------------------------------------------------------
@@ -50,7 +52,7 @@ def _get_duration(path: Path) -> float:
     if result.returncode != 0:
         return 0.0
     try:
-        data = json.loads(result.stdout.decode())
+        data = json.loads(proc_output(result.stdout))
         return float(data.get("format", {}).get("duration", 0.0))
     except (ValueError, TypeError):
         return 0.0
@@ -64,7 +66,7 @@ async def _run_ffmpeg(cmd: list[str]) -> tuple[int | None, str]:
         stderr=asyncio.subprocess.PIPE,
     )
     _, stderr = await proc.communicate()
-    return proc.returncode, stderr.decode()
+    return proc.returncode, proc_output(stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +89,7 @@ def detect_beats(audio_path: Path, threshold: float = 0.5) -> list[float]:
     ]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        result = run_capture(cmd, timeout=60)
         beats: list[float] = []
 
         # Parse output for start_time entries

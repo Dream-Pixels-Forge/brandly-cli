@@ -10,6 +10,8 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 
+from brandly_cli.io import proc_output
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -121,9 +123,9 @@ async def generate_thumbnails(
     ]
     stdout, stderr, rc = await _run_ffmpeg(probe_cmd)
     if rc != 0:
-        return {"error": f"ffprobe failed: {stderr.decode()[:200]}"}
+        return {"error": f"ffprobe failed: {proc_output(stderr)[:200]}"}
 
-    probe_data = json.loads(stdout.decode())
+    probe_data = json.loads(proc_output(stdout))
     duration = float(probe_data.get("format", {}).get("duration", 0))
     if duration <= 0:
         return {"error": "Could not determine video duration."}
@@ -163,7 +165,7 @@ async def generate_thumbnails(
             ]
             _, stderr, rc = await _run_ffmpeg(cmd)
             if rc != 0:
-                return {"error": f"FFmpeg extraction failed: {stderr.decode()[:200]}"}
+                return {"error": f"FFmpeg extraction failed: {proc_output(stderr)[:200]}"}
         if frame_path.exists():
             extracted.append(frame_path)
 

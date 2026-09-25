@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from brandly_cli.io import proc_output
+
 
 def _ffmpeg_available() -> bool:
     try:
@@ -57,8 +59,8 @@ async def get_video_info(input_path: str | Path) -> dict[str, Any]:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            return {"error": stderr.decode()[:200]}
-        data = json.loads(stdout.decode())
+            return {"error": proc_output(stderr)[:200]}
+        data = json.loads(proc_output(stdout))
         fmt = data.get("format", {})
         streams = data.get("streams", [])
         video_stream: dict[str, Any] = next(
@@ -125,7 +127,7 @@ async def trim_video(
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        return {"error": stderr.decode()[:500]}
+        return {"error": proc_output(stderr)[:500]}
     info = await get_video_info(out)
     info["action"] = "trim"
     return info
@@ -173,7 +175,7 @@ async def resize_video(
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        return {"error": stderr.decode()[:500]}
+        return {"error": proc_output(stderr)[:500]}
     info = await get_video_info(out)
     info["action"] = "resize"
     return info
@@ -232,7 +234,7 @@ async def concatenate_videos(
         )
         _, stderr = await proc.communicate()
         if proc.returncode != 0:
-            return {"error": stderr.decode()[:500]}
+            return {"error": proc_output(stderr)[:500]}
         info = await get_video_info(out)
         info["action"] = "concat"
         info["input_count"] = len(inputs)
@@ -271,7 +273,7 @@ async def extract_audio(
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        return {"error": stderr.decode()[:500]}
+        return {"error": proc_output(stderr)[:500]}
     size = out.stat().st_size if out.exists() else 0
     return {
         "action": "extract_audio",
@@ -348,7 +350,7 @@ Dialogue: 0,0:00:00.00,0:10:00.00,Default,{subtitle_text}
         )
         _, stderr = await proc.communicate()
         if proc.returncode != 0:
-            return {"error": stderr.decode()[:500]}
+            return {"error": proc_output(stderr)[:500]}
         info = await get_video_info(out)
         info["action"] = "subtitles"
         return info
@@ -398,7 +400,7 @@ async def change_speed(
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        return {"error": stderr.decode()[:500]}
+        return {"error": proc_output(stderr)[:500]}
     info = await get_video_info(out)
     info["action"] = "speed"
     info["speed"] = speed

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Request
 
+from brandly_cli.io import proc_output
 from brandly_cli.web import deps
 
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["waveform"])
@@ -34,7 +35,7 @@ def _has_audio_stream(media_path: Path) -> bool:
         result = subprocess.run(cmd, capture_output=True, timeout=10)
         if result.returncode != 0:
             return False
-        data = json.loads(result.stdout.decode())
+        data = json.loads(proc_output(result.stdout))
         streams = data.get("streams", [])
         return any(s.get("codec_type") == "audio" for s in streams)
     except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, KeyError):
@@ -53,7 +54,7 @@ def _extract_waveform(media_path: Path, num_points: int = 200) -> list[dict]:
         dur_result = subprocess.run(duration_cmd, capture_output=True, timeout=10)
         if dur_result.returncode != 0:
             return []
-        duration = float(json.loads(dur_result.stdout.decode()).get("format", {}).get("duration", 0))
+        duration = float(json.loads(proc_output(dur_result.stdout)).get("format", {}).get("duration", 0))
         if duration <= 0:
             return []
 

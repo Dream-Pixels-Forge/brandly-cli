@@ -104,6 +104,32 @@
 - [ ] **G5** Scope truth pass (`brandly capabilities --json`, honest README)
 - [ ] **G6** Publish path (decision-gated)
 
+### Round 4/256 — G7: agentic orchestration — orchestrator + subagent contract layer
+
+**Current Phase:** Phase 3 (Engineer) — Goal G7 (`dev-notes/GOAL-AGENTIC-ORCHESTRATION.md`)
+
+- [x] **PR E** (PR #90, squash @ `da62aff`): `phase_handoffs()` data-only dispatch
+      contracts (inputs/outputs/gate/est_cost per phase) + `brandly plan <id>
+      [--json]` + `agent_surface` `plan` tool (read-only, MCP-dispatchable);
+      `estimate` routed through `phase_costs()`. 13 TDD tests
+      (`tests/test_phase_handoffs.py`) RED first (ImportError) → GREEN.
+- [x] **PR F** (PR #91, squash @ `21d7578`): Director prompt "Subagent Dispatch"
+      section (5-item per-subagent contract, parallel-cognition /
+      serialized-execution rule, gate-screening loop); `brandly director`
+      dispatch table; `brandly init` AGENTS.md subagent note. 8 TDD tests
+      (`tests/test_subagent_dispatch.py`).
+- [x] **PR G** (PR #93, squash @ `55139a0`): structured retry envelope + bounded
+      phase re-dispatch — `run_phase` persists an `attempts` counter on the
+      phase (new `PhaseResult.attempts`), returns a JSON-parseable
+      `retry_instruction` (error, attempts/max_attempts, escalate, re-run +
+      `brandly approve` commands); cap 3 (`MAX_PHASE_ATTEMPTS`) → escalate;
+      `phase_handoffs` / `brandly plan --json` surface attempts + envelope on
+      failed phases; `brandly run --execute` failure output gains
+      `Retry attempt: N/3` + escalation + JSON block; state-only `run`
+      preserves the counter (cap cannot be bypassed). 7 TDD tests
+      (`tests/test_retry_envelope.py`) RED first (ImportError) → GREEN.
+      Suite 728 → 764 passed; ruff/mypy clean; import-linter KEPT; CI green.
+
 ### Round 2/256 — Feature Implementation (Phase 3)
 - [x] Created dev-notes/IMPLEMENTATION.md with full feature plan
 - [x] Delegating subagents for Phase 3A features:

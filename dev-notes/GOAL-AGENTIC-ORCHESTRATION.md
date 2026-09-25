@@ -97,16 +97,23 @@ eliminated at the tool level.
 
 ### PR G — Structured retry envelope + bounded re-dispatch
 
-- [ ] `run --execute --until <phase>` on gate failure prints a structured
+- [x] `run --execute --until <phase>` on gate failure prints a structured
       `retry_instruction` block: failing gate(s), verdict details, files to
       fix, exact re-run command — data-only, JSON-parseable (agent
       consumes it to re-dispatch a worker subagent with the reason for
-      failure).
-- [ ] Bounded loop: retry counter persisted in `project.phases`
-      (`attempts`), cap 3; on cap → phase stays `failed`, `next_command`
-      becomes the `brandly approve` escalation. No unbounded re-dispatch.
-- TDD: failing-gate → envelope shape test; cap-exceeded → escalation test;
-  success-after-retry → resume test (RED first, mirroring G2 PR C's pattern).
+      failure). Delivered in `feature/g7-pr-g-retry-envelope` (PR #93,
+      squash @ `55139a0`): `run_phase` persists the counter and returns the
+      envelope; `run_pipeline` carries it up; the `run` CLI prints
+      `Retry attempt: N/3` + the JSON envelope block.
+- [x] Bounded loop: retry counter persisted in `project.phases`
+      (`attempts`), cap 3 (`MAX_PHASE_ATTEMPTS`); on cap → phase stays
+      `failed`, `next_command` becomes the `brandly approve` escalation.
+      No unbounded re-dispatch. The state-only `run` path preserves the
+      counter too, so a mixed workflow cannot reset it and bypass the cap.
+- TDD: 7 tests in `tests/test_retry_envelope.py` — envelope shape,
+  cap-exceeded escalation, `plan --json` surfacing, CLI guidance,
+  success-after-retry → resume (attempts preserved), state-only
+  preservation (RED first, verified failing on `ImportError`).
 
 ## Acceptance (goal level)
 
@@ -114,7 +121,7 @@ eliminated at the tool level.
       finished video end-to-end by: read `brandly plan --json` → dispatch
       phase subagents → screen each result with its gate → advance with
       `run --execute --until <phase>` — without inventing tools or state.
-- [ ] A gate failure produces a `retry_instruction` that a re-dispatched
+- [x] A gate failure produces a `retry_instruction` that a re-dispatched
       subagent can act on directly.
 - [ ] Full suite green; ruff/mypy/import-linter clean; README/G6 scope
       matrix updated with the subagent workflow (single-truth pass, G5 rule).

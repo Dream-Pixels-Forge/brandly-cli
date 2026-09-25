@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Fixed
+- CLI entry points: `python -m brandly_cli.cli` executed `main()` before the
+  command groups were registered, so every command was missing
+  (`Error: No such command 'list'`) — this also broke `make e2e`. Registration
+  now happens lazily on first command lookup (`_LazyCommandGroup`).
+- Import order: importing any `brandly_cli.cmd.<module>` before
+  `brandly_cli.cli` raised `ImportError: cannot import name 'register' ...
+  (most likely due to a circular import)`. Every import order now works.
+- `agent_surface`'s subprocess runner decoded the CLI's stdout with the platform
+  locale codec, so UTF-8 tool output (`→`, `✓`, `—`) raised
+  `UnicodeDecodeError` on Windows and the tool result came back empty
+  (`stdout=None`). The output is decoded as UTF-8 with replacement now.
+- Test suite: the two upstream `starlette`/`anyio` `TestClient` deprecation
+  warnings are silenced with message-scoped `filterwarnings` filters, so the
+  suite is warning-free without hiding any new warning.
+
 ## [0.4.0] — 2026-09-25
 
 ### Added — G7: orchestrator + subagent contract layer (#90, #91, #93)

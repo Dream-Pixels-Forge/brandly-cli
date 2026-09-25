@@ -151,6 +151,36 @@
 - Rollback point for G7: `git reset --hard v0.3.26` +
       `pip install brandly-cli==0.3.26` restores the pre-G7 release.
 
+### Round 6/256 — Pre-existing defect fixes (CLI entry points + agent runner)
+
+**Branch:** `bug/cli-entrypoints-and-runner-encoding` → PR #94 (squash @ `071bb69`)
+
+- [x] **CLI module entry point** — `python -m brandly_cli.cli` ran `main()`
+      before the `cmd.*` groups were registered, so `--help` listed no commands
+      and every call failed with `No such command` (`make e2e` was broken).
+      Fix: `_LazyCommandGroup` attaches the groups on first command lookup and
+      the import-time `register(cli)` call is gone.
+- [x] **cli ⇄ cmd import cycle** — importing any `brandly_cli.cmd.<module>`
+      *first* raised `ImportError: cannot import name 'register' ... (most
+      likely due to a circular import)`; only `import brandly_cli.cli` first
+      worked (the suite passed by import-order luck). Fix: dropping the
+      import-time `cli → cmd` edge makes every import order valid.
+- [x] **Agent runner encoding** — `agent_surface._subprocess_runner` decoded the
+      CLI's UTF-8 output with the platform locale codec (cp1252 on Windows) →
+      `UnicodeDecodeError` with `stdout=None`, silently losing MCP tool
+      results. Fix: explicit `encoding="utf-8", errors="replace"`.
+- [x] **Suite warnings** — the 2 upstream starlette/anyio `TestClient`
+      warnings are silenced with message-scoped `filterwarnings` entries
+      (documented, incl. that `StarletteDeprecationWarning` subclasses
+      `UserWarning`); the suite is now warning-free.
+- TDD: `tests/test_cli_entrypoints.py` (5 subprocess-level tests) RED first —
+      verified failing on the two circular-import `ImportError`s, the
+      command-less `--help`, and the `None` stdout — then GREEN. Suite 764 →
+      769 passed, 0 warnings; ruff/mypy/import-linter clean; CI green on #94
+      (quality 3.10/3.11/3.12 + web-quality).
+- Not in scope (separate program goals, tracked below): G4 ratio-crop
+      placement, G5 scope-truth pass, G6 publish path.
+
 ### Round 2/256 — Feature Implementation (Phase 3)
 - [x] Created dev-notes/IMPLEMENTATION.md with full feature plan
 - [x] Delegating subagents for Phase 3A features:

@@ -165,11 +165,14 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
         "id": "brand_kit",
         "persona": "marketer",
-        "status": "absent",
+        "status": "partial",
+        "command": "brand",
         "finding": "F9",
-        "note": "no `brand` command; style presets only — logo/colour/claim "
-        "lock not enforced",
-        "banned_claims": ("brand kit", "brand-kit"),
+        "note": (
+            "`brandly brand init/verify/show` + prompt-layer palette/claim lock "
+            "(G7 PR 1); gate-layer claim check + export logo overlay planned (G7 PR 2)"
+        ),
+        "banned_claims": ("brand-kit enforcement", "enforces the brand kit"),
     },
     {
         "id": "metrics_ingest",

@@ -10,6 +10,7 @@ from __future__ import annotations
 import click
 
 from brandly_cli.cmd import (
+    brand,
     capabilities,
     gate,
     generation,
@@ -32,5 +33,6 @@ def register(cli: click.Group) -> None:
         tools,
         capabilities,
         publish,
+        brand,
     ):
         module.register(cli)

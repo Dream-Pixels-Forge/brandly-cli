@@ -43,7 +43,7 @@ via a CLI, an agent-callable tool surface, and an MCP server.
 **Not shipped yet (roadmap — tracked, not claimed):**
 
 - Publish/schedule to TikTok/IG/YouTube — planned, decision-gated (G6)
-- Brand-kit enforcement (logo/colour/claim lock) — planned gap
+- Brand kit — `brandly brand init/verify/show` + prompt-layer colour/claim lock (G7 PR 1); gate + export-layer lock planned
 - Performance-metrics ingest — `analyze` is a heuristic predictor; real ingest planned
 - Campaign A/B at scale — `batch` exists; variant matrix + scoring loop planned
 

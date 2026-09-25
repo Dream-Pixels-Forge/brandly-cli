@@ -43,13 +43,25 @@ Nothing below is inferred: every claim carries a `file:line` anchor.
 
 | Gap | Audit finding | GitHub issue | Capability matrix row |
 |-----|---------------|--------------|-----------------------|
-| Publish/schedule to TikTok/IG/YouTube | F9 | [#97](https://github.com/Dream-Pixels-Forge/brandly-cli/issues/97) | `publish_schedule` = absent (planned, G6 decision-gated) |
+| Publish/schedule to TikTok/IG/YouTube | F9 | [#97](https://github.com/Dream-Pixels-Forge/brandly-cli/issues/97) | `publish_schedule` = partial (G6 dry-run shipped) |
 | Brand-kit enforcement (logo/colour/claim lock) | F9 | [#98](https://github.com/Dream-Pixels-Forge/brandly-cli/issues/98) | `brand_kit` = absent |
 | Real performance-metrics ingest | F9 | [#99](https://github.com/Dream-Pixels-Forge/brandly-cli/issues/99) | `metrics_ingest` = partial (`analyze` heuristic-only) |
 | Campaign multi-variant A/B at scale | F9 | tracked in #97–#99 umbrella (partial: `batch` exists) | `campaign_ab` = partial |
 
 Note: the goal document's G5 deliverable listed "scene gate" as an open gap;
 G3 closed it before G5 ran, so no issue was filed for it.
+
+## G6 status (2026-09-25, PR 1/3 — issue #97 partial)
+
+G6's decision question ("publish to socials, dry-run-first, gated on
+credentials?") resolved **yes** — record `dev-notes/DECISION-G6-PUBLISH-DRYRUN.md`:
+YouTube first, dry-run is the default, TikTok/Instagram adapters are follow-ups
+(2/3, 3/3). PR 1/3 shipped: `brandly publish` (dry-run-first, fail-closed
+without credentials), `brandly config set/get/list` user-level credential
+store (F2 respected — no secrets in project files or `.env`), and the
+`publish_schedule` capability row moved absent → partial in
+`brandly_cli/capabilities.py` (single source of truth, read by
+`brandly capabilities` and guarded by `tests/test_capabilities.py`).
 
 ---
 

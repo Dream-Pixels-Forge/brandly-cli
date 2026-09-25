@@ -81,15 +81,19 @@ eliminated at the tool level.
 
 ### PR F — Subagent dispatch contracts (prompt layer)
 
-- [ ] Director prompt gains a **"Subagent Dispatch"** section in
-      `director.py` (pure prompt text, trivially testable): the 5-item
-      per-subagent contract (scope, input contract, output contract,
-      boundaries, verification) with the phase→contract table, and the
-      parallel/serialized rule (§Design rule 1).
-- [ ] `brandly init`'s `AGENTS.md` gets a short "subagent" note pointing at
-      `brandly plan --json` as the dispatch source of truth.
-- TDD: test that the prompt contains the dispatch section + the init
-  writer emits the note (string assertions only — no behaviour risk).
+- [x] Director prompt gained a **"Subagent Dispatch"** section in
+      `director.py` (pure prompt text): the 5-item per-subagent contract
+      (scope, inputs, outputs, boundaries, verification), the
+      parallel-cognition / serialized-execution rule (§Design rule 1),
+      and the gate-screening loop pointing at
+      `brandly plan <project_id> --json`. Delivered in
+      `feature/g7-pr-f-subagent-dispatch`.
+- [x] `brandly director` prints a compact dispatch table (Phase |
+      Gives worker | Must produce | Verify with) after the orchestrator
+      plan; `brandly init`'s `AGENTS.md` gets a short "subagent" note
+      pointing at `brandly plan --json` as the dispatch source of truth.
+- TDD: 8 tests in `tests/test_subagent_dispatch.py` — prompt section,
+  dispatch table, AGENTS.md note (string assertions, no behaviour risk).
 
 ### PR G — Structured retry envelope + bounded re-dispatch
 

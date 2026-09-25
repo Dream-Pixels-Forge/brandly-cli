@@ -1,4 +1,4 @@
-# Brandly CLI
+﻿# Brandly CLI
 
 <p align="center">
   <img src="assets/banner.png" alt="Brandly CLI Banner" width="100%">

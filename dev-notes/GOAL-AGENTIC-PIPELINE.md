@@ -436,6 +436,13 @@ scope.
   capability entry; open F9 gaps filed as issues #97 (publish/schedule, G6
   decision-gated), #98 (brand kit), #99 (metrics ingest) and linked from the
   audit's new gap register (scene gate noted as closed by G3 — no issue).
+- 2026-09-25 — G6 PR 1/3 on `feature/publish-dry-run`: decision record
+  DEV-G6-001 (yes, YouTube first, dry-run-first, credential-gated);
+  `brandly publish` over a small `Adapter` interface (pure payload builder +
+  live executor, fail-closed without credentials); `brandly config
+  set/get/list` user-level credential store (no secrets in project files or
+  `.env` — F2); capability row `publish_schedule` moved absent→partial.
+  Live-proof and TikTok/IG adapters remain G6 PRs 2–3.
 
 
 

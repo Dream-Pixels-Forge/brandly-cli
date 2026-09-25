@@ -16,11 +16,21 @@ from brandly_cli.cmd import (
     post,
     production,
     providers,
+    publish,
     tools,
 )
 
 
 def register(cli: click.Group) -> None:
     """Attach every command group to the root ``cli`` group."""
-    for module in (production, generation, gate, post, providers, tools, capabilities):
+    for module in (
+        production,
+        generation,
+        gate,
+        post,
+        providers,
+        tools,
+        capabilities,
+        publish,
+    ):
         module.register(cli)

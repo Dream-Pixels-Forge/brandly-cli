@@ -25,6 +25,32 @@
 
 Nothing below is inferred: every claim carries a `file:line` anchor.
 
+## Resolution status (G1–G5 closure notes, 2026-09-25)
+
+| # | Finding | Status |
+|---|---------|--------|
+| F1 | Agent tool surface unreachable | **Closed** — G1: `agent_surface` manifest + MCP server |
+| F2 | `sync` injects raw provider keys | **Closed** — `--legacy-provider-keys` opt-in only (v0.4.x) |
+| F3 | `brandly run` executes nothing | **Closed** — G2: `run --execute` drives real phases |
+| F4 | Phase workers are stubs | **Closed** — G2: real phase work (asset/validate/re_edit) |
+| F5 | README overclaims | **Closed** — G5: "What is Brandly?" rewritten to the audited reality; CI guard in `tests/test_capabilities.py` keeps claims in sync with `brandly_cli/capabilities.py` |
+| F6 | No explicit scene model | **Closed** — G3: `scenes.json` manifest + `brandly scenes` |
+| F7 | No scene completeness gate | **Closed** — G3: `brandly gate --scene/--all-scenes` |
+| F8 | Production-time cropping | **Closed** — G4 (PR #96): crop/pad only in assembly/export; `produce --aspect-ratio` deprecated |
+| F9 | Creator/marketer scope gaps | **Open — gap register below (G5)** |
+
+## G5 gap register (one issue per open gap)
+
+| Gap | Audit finding | GitHub issue | Capability matrix row |
+|-----|---------------|--------------|-----------------------|
+| Publish/schedule to TikTok/IG/YouTube | F9 | [#97](https://github.com/Dream-Pixels-Forge/brandly-cli/issues/97) | `publish_schedule` = absent (planned, G6 decision-gated) |
+| Brand-kit enforcement (logo/colour/claim lock) | F9 | [#98](https://github.com/Dream-Pixels-Forge/brandly-cli/issues/98) | `brand_kit` = absent |
+| Real performance-metrics ingest | F9 | [#99](https://github.com/Dream-Pixels-Forge/brandly-cli/issues/99) | `metrics_ingest` = partial (`analyze` heuristic-only) |
+| Campaign multi-variant A/B at scale | F9 | tracked in #97–#99 umbrella (partial: `batch` exists) | `campaign_ab` = partial |
+
+Note: the goal document's G5 deliverable listed "scene gate" as an open gap;
+G3 closed it before G5 ran, so no issue was filed for it.
+
 ---
 
 ## F1 — Agent tool surface never reaches external agents · CRITICAL

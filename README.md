@@ -9,7 +9,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/brandly-cli.svg)](https://pypi.org/project/brandly-cli/)
 [![Python >=3.10](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-461_passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
+[![Tests](https://img.shields.io/badge/tests-passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![Lint](https://img.shields.io/badge/lint-ruff_clean-brightgreen.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![CI](https://github.com/Dream-Pixels-Forge/brandly-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli/actions)
 [![GitHub stars](https://img.shields.io/github/stars/Dream-Pixels-Forge/brandly-cli?style=social)](https://github.com/Dream-Pixels-Forge/brandly-cli/stargazers)
@@ -18,18 +18,37 @@
 
 ## What is Brandly?
 
-Brandly is an **autonomous video production pipeline** that turns product ideas into platform-ready marketing videos. It provides:
+Brandly is an **AI media toolkit for product video**: image, video, and
+sound generation plus a real post-production pipeline. It adds these
+capabilities to any AI tool (OpenCode, Codex, Qwen Code, Claude Code, etc.)
+via a CLI, an agent-callable tool surface, and an MCP server.
+
+**What runs today** (audited 2026-09-25 — gaps tracked in the
+[gap register](dev-notes/AUDIT-AGENTIC-PIPELINE.md)):
 
 - **Image generation** via [Agnes AI](https://apihub.agnes-ai.com) (text-to-image, image-to-image)
 - **Video generation** via Agnes AI (text-to-video, keyframe-controlled, reference-based)
 - **Audio generation** via [MiniMax Audio](https://platform.minimaxi.com) (background music, TTS voiceover)
-- **3D Spatial Control** — Blender PlayBlast renderer for spatial reference frames (camera composition, depth, keyframes) feeding Agnes AI keyframe/reference modes
-- **Multi-agent pipeline** — automated workflow from idea → trends → concept → script → assets → audio → validate → publish
-- **Director orchestrator** — an autonomous agent that guides the entire production process
+- **3D Spatial Control** — Blender PlayBlast renderer for spatial reference frames feeding Agnes keyframe/reference modes
+- **Shot-by-shot production** — `brandly produce` registers every shot on the production plan, then generates one at a time (retries, resume, canonical `Scene-XX-Shot-X-Y` naming)
+- **Assembly & post** — `stitch` (transitions, color grade, G4 `--ratio/--fit`), `captions`, `voice-match` dubbing, `beat-sync`, `thumbnail`, `export-platforms`
+- **Scene model + gate** — explicit `scenes.json` manifest and the `brandly gate --scene/--all-scenes` completeness gate (G3)
+- **Director orchestration** — `brandly run <id> --execute` advances real phases with per-phase gates; agent/human-driven, not autonomous (G2)
+- **Agent tools** — discoverable tool manifest + MCP server; `brandly sync` no longer injects raw provider keys (G1)
 - **Credit budgeting** — track spend per phase against a project budget
-- **Style presets** — avoid AI slop with photorealistic, cinematic, editorial, commercial, and documentary presets
-- **Production plan as source of truth** — every generation registers on `docs/plan/production_plan.md`; `brandly produce` generates multi-shot films one shot at a time (Agnes: 1 request/min)
+- **Style presets** — photorealistic, cinematic, editorial, commercial, and documentary
+- **Production plan as source of truth** — every generation registers on `docs/plan/production_plan.md`
 - **Smaller reference payloads** — large local images auto-convert to webp/jpeg before upload
+
+**Not shipped yet (roadmap — tracked, not claimed):**
+
+- Publish/schedule to TikTok/IG/YouTube — planned, decision-gated (G6)
+- Brand-kit enforcement (logo/colour/claim lock) — planned gap
+- Performance-metrics ingest — `analyze` is a heuristic predictor; real ingest planned
+- Campaign A/B at scale — `batch` exists; variant matrix + scoring loop planned
+
+Run `brandly capabilities` for the machine-readable matrix — the same list
+this section is checked against (CI guard: `tests/test_capabilities.py`).
 
 ### v0.3.15 New Features + Issue Fixes (#19–#24)
 

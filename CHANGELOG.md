@@ -27,6 +27,20 @@ All notable changes to this project are documented here.
   `stitch --ratio <r> --fit crop` / `export-platforms --fit`.
   **Removal tracked:** delete the flag in the release after next.
 
+## [Unreleased] — G5: scope truth
+
+### Added
+- `brandly capabilities` — per-persona capability matrix (text + `--json`),
+  rendered from the single source list in `brandly_cli/capabilities.py`.
+
+### Changed
+- README "What is Brandly?" rewritten to the audited reality: what runs
+  today vs what is planned (roadmap lines are marked as planned, not
+  claimed), linked to the audit's gap register. The CI guard
+  (`tests/test_capabilities.py`) fails when a README claim has no
+  capability-list entry. Open F9 gaps filed as issues #97–#99
+  (publish/schedule G6 decision-gated, brand kit, metrics ingest).
+
 ## [0.4.1] — 2026-09-25
 
 ### Fixed

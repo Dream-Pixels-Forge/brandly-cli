@@ -4,7 +4,9 @@ description: >
   Direct AI video like a film director — turn ideas, scripts, screenplays and
   concepts into production-grade, shot-by-shot prompts: camera direction,
   lighting design, visual style, shot planning, storyboarding, multi-shot
-  prompt chaining, character consistency, aspect-ratio selection. Written for
+  prompt chaining, character consistency, aspect-ratio selection, and
+  directing within a project's brand kit (palette / claim / style locks).
+  Written for
   the brandly-cli pipeline (Agnes AI via `brandly video` / `brandly produce`);
   the prompt craft transfers to Veo, Kling, Sora and friends. Trigger for
   commercials, product videos, music/title videos, film scenes, social
@@ -237,6 +239,16 @@ same difference between a snapshot and a photograph.
 ---
 
 ## The 8-Layer Prompt Control Framework
+
+> **Brand lock (v0.6.0, when the project has a kit):** before directing
+> commercial/social work, run `brandly brand show <project_id>` and direct
+> **inside** the lock, not around it. The CLI appends a *Brand lock* after the
+> style preset: the kit's palette stays dominant, on-screen copy is restricted
+> to the kit's claim allowlist, and no third-party logos / trademarks /
+> watermarks. The requested `--style` must match the kit's `style_lock` — a
+> mismatch raises `BrandLockConflict` (fail closed, never blend styles).
+> Layers below must therefore be directed **within** the locked palette,
+> style, and copy.
 
 ### Layer 1: SUBJECT — Who/What Is the Focus?
 
@@ -517,6 +529,20 @@ Shot 3 → Shot 4: "POV match — what Sarah sees: wide shot of foggy street wit
 > beautifully blurred.
 >
 > --ar 16:9 --motion 4
+
+**Brand kit rules (v0.6.0):** if the project has a kit (`brandly brand show
+<project_id>`), direct this template inside the lock:
+
+- **[Background] / [Style]:** keep the kit's palette dominant — the CLI
+  appends the palette to the prompt as a hard constraint.
+- **[Text overlay] / [CTA visual cue]:** write copy **only from the kit's
+  claim allowlist**. Off-allowlist on-screen text hard-fails
+  `brandly gate --scene/--all-scenes` (violations land under
+  `report["brand"]`).
+- **Logo:** never invent a mark — the kit's logo is composited onto exports
+  by `export-platforms --brand` (corner / safe-zone / opacity from the kit).
+- **Style:** must match the kit's `style_lock`; a different `--style` raises
+  `BrandLockConflict`.
 
 ### Template 3: Music Video
 
@@ -1163,6 +1189,11 @@ Raw AI clips
 - [ ] Export format matches platform requirements
 - [ ] Duration matches brief (within tolerance)
 - [ ] No AI artifacts visible (warped faces, impossible physics, etc.)
+- [ ] If the project has a brand kit: palette is dominant, on-screen copy is
+      on the claim allowlist (off-allowlist text hard-fails `brandly gate`),
+      and style matches the kit's `style_lock`
+- [ ] For kit projects: `export-platforms --brand` applied, so the logo lands
+      on platform exports per the kit's overlay spec
 
 ---
 
@@ -1208,6 +1239,16 @@ Raw AI clips
 **Problem:** Raw AI clips delivered as final product
 **Fix:** Plan post-processing from the start. Generate clips with editing in mind — consistent framing, cut points, overlap.
 
+### Pitfall 9: Off-Brand Frames and Copy
+
+**Problem:** Directing a commercial outside the project's brand kit — palette,
+claims, style, or an invented logo. Since v0.6.0 this fails closed:
+off-allowlist on-screen copy hard-fails `brandly gate`, a style mismatch with
+`style_lock` raises `BrandLockConflict`, and `export-platforms --brand`
+refuses to run without a valid kit + logo.
+**Fix:** Run `brandly brand show <project_id>` **first**, direct inside the
+lock, and write any on-screen copy only from the kit's claim allowlist.
+
 ---
 
 ## Workflow Summary
@@ -1224,6 +1265,15 @@ When creating AI video content:
 8. **Generate and review** — Iterate on weak shots
 9. **Post-process** — Edit, color grade, add audio, export
 10. **Quality check** — Run through the delivery checklist
+11. **Brand gate (commercial work, v0.6.0)** — If the project has a kit:
+    confirm palette dominance, on-claims copy, and `style_lock` match;
+    off-allowlist copy hard-fails `brandly gate`, and `export-platforms
+    --brand` composites the kit's logo onto platform exports
+12. **Close the loop (v0.6.0)** — After publishing, ingest real platform
+    results (`brandly metrics import` offline, or `brandly metrics ingest`
+    for YouTube, dry-run-first + credential-gated); `brandly analyze`
+    prefers ingested snapshots and labels its source (`ingested` vs
+    `heuristic`)
 
 ---
 
@@ -1304,3 +1354,10 @@ After applying this skill:
 4. Review aspect ratio matches the intended platform
 5. Generate test clips before committing to full production run
 6. Document what works — build a prompt library for your project
+7. For commercial work with a brand kit (v0.6.0): run `brandly brand show
+   <project_id>` before writing prompts, and direct inside the lock
+   (palette / claims / `style_lock`)
+8. After publishing: ingest results with `brandly metrics import` or
+   `brandly metrics ingest` (YouTube, dry-run-first), and let `brandly
+   analyze` — which now labels its source `ingested` vs `heuristic` — shape
+   the next direction round

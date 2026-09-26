@@ -3,10 +3,10 @@
 ## Current State
 - Project: brandly-cli
 - Started: 2026-09-07
-- Version: 0.3.26 → 0.4.0 (G7 orchestrator + subagent contract layer complete)
+- Version: 0.6.0 (G7 brand kit + G8 metrics ingest shipped; issues #98/#99 closed)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (core features complete)
-- Test Count: 764 passed
+- Test Count: 857 passed
 - Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion

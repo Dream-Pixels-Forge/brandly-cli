@@ -279,10 +279,12 @@ defaults; shipped as four TDD PRs behind one release, per
   full pytest suite **857 passed / 0 failed** (up from 806 at v0.5.0)
 - [x] Bumped 0.5.0 → 0.6.0 (`pyproject.toml` + `__about__.py`, tag-parity
   gate); CHANGELOG `[Unreleased]` consolidated into `[0.6.0] — 2026-09-25`
-- [ ] Tag `v0.6.0` + GitHub release → `release.yml` (OIDC trusted
-  publishing) green → PyPI verified (`pip install brandly-cli==0.6.0`
-  smoke test in a fresh venv)
-- [ ] Close issues #98 + #99 with the capability-matrix link
+- [x] Tag `v0.6.0` + GitHub release → `release.yml` (OIDC trusted
+  publishing) green → PyPI verified: `pip install brandly-cli==0.6.0` in a
+  fresh venv (`brandly --version` → 0.6.0; `capabilities` shows
+  `brand_kit` = supported and `metrics_ingest` = supported; `brand` +
+  `metrics` command groups present)
+- [x] Issues #98 + #99 closed with the capability-matrix link
 - v0.6.0 is the rollback point for G6 follow-ups: `pip install
   brandly-cli==0.6.0` (previous: `0.5.0`)
 - NEXT: G6 PR 2/3 live-upload follow-ups (YouTube live, TikTok/IG

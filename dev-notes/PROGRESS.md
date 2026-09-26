@@ -290,4 +290,31 @@ defaults; shipped as four TDD PRs behind one release, per
 - NEXT: G6 PR 2/3 live-upload follow-ups (YouTube live, TikTok/IG
   adapters) + TikTok/IG analytics adapters
 
+### Round 9/256 — v0.6.0 skills documentation alignment (PR #110)
+
+- [x] Documented the shipped v0.6.0 CLI surface in both video skills
+  (docs-only; zero production code touched):
+  - `skills/brandly-video-generation/SKILL.md`: `brand.json` + `metrics/`
+    in the layout tree; G7/G8 key rules (three-layer brand enforcement,
+    fail-closed; project-local metrics snapshots); two routing rows; new
+    `## Brand Kit & Metrics (v0.6.0)` section (`brand init/verify/show`,
+    gate claim-lock, `export-platforms --brand` overlay, `metrics
+    import/show/ingest`, `analyze` ingested-vs-heuristic labelling);
+    campaign example extended to 7 steps; brand/metrics troubleshooting
+    subsection
+  - `skills/brandly-film-director/SKILL.md`: description now covers
+    brand-kit locks; 8-layer framework "Brand lock (v0.6.0)" callout
+    (direct inside `palette/claims/style_lock`; `BrandLockConflict`);
+    Template 2 brand rules; two checklist items; Pitfall 9 (off-brand
+    frames and copy); workflow close-loop steps 11–12 (brand gate +
+    metrics close-loop) with matching Next Steps
+- [x] All CLI facts anchored to v0.6.0 source (`cmd/brand.py`,
+  `cmd/gate.py`, `cmd/post.py`, `cmd/metrics.py`, `metrics.py`,
+  `youtube_analytics.py`, `capabilities.py`); agentskills spec intact
+  (name == folder, single-sentence trigger)
+- [x] PR #110 (`chore/skills-v060`, commit `8372b41`) squash-merged to
+  main as `a6047ad`; CI green (web-quality + quality matrix)
+- NEXT: G6 PR 2/3 live-upload follow-ups (YouTube live, TikTok/IG
+  adapters) + TikTok/IG analytics adapters
+
 

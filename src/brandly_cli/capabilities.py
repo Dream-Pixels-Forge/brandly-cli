@@ -166,14 +166,15 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
         "id": "brand_kit",
         "persona": "marketer",
-        "status": "partial",
+        "status": "supported",
         "command": "brand",
         "finding": "F9",
         "note": (
-            "`brandly brand init/verify/show` + prompt-layer palette/claim lock "
-            "(G7 PR 1); gate-layer claim check + export logo overlay planned (G7 PR 2)"
+            "G7: `brandly brand init/verify/show` + prompt-layer palette/claim "
+            "lock (PR 1); gate-layer claim check hard-fails `brandly gate` and "
+            "`export-platforms --brand` composites the kit's logo via ffmpeg "
+            "overlay (PR 2)"
         ),
-        "banned_claims": ("brand-kit enforcement", "enforces the brand kit"),
     },
     {
         "id": "metrics_ingest",

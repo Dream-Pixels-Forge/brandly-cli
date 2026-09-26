@@ -54,9 +54,7 @@ class TestClaimGate:
 
     def test_apply_brand_claim_gate_fails_verdict(self) -> None:
         report = {"verdict": "pass"}
-        gate_cmd.apply_brand_claim_gate(
-            report, ["Discount 90% now"], _kit(), "test-proj"
-        )
+        gate_cmd.apply_brand_claim_gate(report, ["Discount 90% now"], _kit(), "test-proj")
         assert report["verdict"] == "fail"
         assert report["brand"]["violations"] == ["Discount 90% now"]
 
@@ -69,13 +67,13 @@ class TestClaimGate:
 
 class TestExportBrandOverlay:
     def test_overlay_position_deterministic(self) -> None:
-        W, H = 1080, 1920
+        width, height = 1080, 1920
         spec = OverlaySpec(corner="bottom-right", safe_zone=0.1, opacity=1.0)
-        x, y = brand_overlay_position(W, H, spec)
-        assert x == f"W-w-{int(0.1 * W)}"
-        assert y == f"H-h-{int(0.1 * H)}"
-        tl = brand_overlay_position(W, H, OverlaySpec(corner="top-left"))
-        assert tl == (str(int(0.1 * W)), str(int(0.1 * H)))
+        x, y = brand_overlay_position(width, height, spec)
+        assert x == f"W-w-{int(0.1 * width)}"
+        assert y == f"H-h-{int(0.1 * height)}"
+        tl = brand_overlay_position(width, height, OverlaySpec(corner="top-left"))
+        assert tl == (str(int(0.1 * width)), str(int(0.1 * height)))
 
     def test_build_cmd_with_brand_overlay(self) -> None:
         spec = OverlaySpec(corner="top-right", safe_zone=0.05, opacity=0.8)
@@ -118,7 +116,9 @@ class TestExportBrandOverlay:
         video.write_bytes(b"\x00\x00")
         result = asyncio.run(
             export_for_platform(
-                video, "tiktok", tmp_path / "out",
+                video,
+                "tiktok",
+                tmp_path / "out",
                 fit="pad",
                 brand_logo=str(tmp_path / "nope.png"),
                 brand_overlay=OverlaySpec(),
@@ -133,10 +133,18 @@ class TestExportBrandOverlay:
         (proj / "videos").mkdir(parents=True)
         (proj / "videos" / "scene.mp4").write_bytes(b"\x00")
         (proj / "project.json").write_text('{"id": "p"}')
-        runner = CliRunner(env={"ROOT": str(tmp_path)})
-        result = runner.invoke(cli, [
-            "export-platforms", "p", "--platforms", "tiktok", "--brand",
-        ])
+        result = CliRunner().invoke(
+            cli,
+            [
+                "export-platforms",
+                "p",
+                "--platforms",
+                "tiktok",
+                "--brand",
+                "--root",
+                str(tmp_path),
+            ],
+        )
         assert result.exit_code != 0
         assert "brand" in result.output.lower()
 
@@ -144,9 +152,7 @@ class TestExportBrandOverlay:
 class TestE2eDryRun:
     """G7 e2e proof: verify + gate claim-lock + export overlay, no network."""
 
-    def test_full_flow_dry_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_full_flow_dry_run(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         proj_dir = tmp_path / ".brandly" / "p"
         (proj_dir / "videos").mkdir(parents=True)
         (proj_dir / "videos" / "scene.mp4").write_bytes(b"\x00")
@@ -161,9 +167,7 @@ class TestE2eDryRun:
         gate_cmd.apply_brand_claim_gate(report, ["Save 30% today"], kit, "p")
         assert report["verdict"] == "pass"
         failing = {"verdict": "pass"}
-        gate_cmd.apply_brand_claim_gate(
-            failing, ["Discount 90% now"], kit, "p"
-        )
+        gate_cmd.apply_brand_claim_gate(failing, ["Discount 90% now"], kit, "p")
         assert failing["verdict"] == "fail"
 
         # export layer: command carries the overlay, no ffmpeg invocation
@@ -171,7 +175,7 @@ class TestE2eDryRun:
 
         captured: list[list[str]] = []
 
-        def fake_run(cmd: list[str]):
+        async def fake_run(cmd: list[str]):
             captured.append(cmd)
             return (0, "")
 
@@ -192,4 +196,3 @@ class TestE2eDryRun:
         assert "error" not in result, result
         joined = " ".join(captured[0])
         assert "logo.png" in joined and "overlay=" in joined
-

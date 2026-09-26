@@ -2,6 +2,7 @@
 Moved from cli.py (structural split, no behavioral change).
 Shared helpers and state still live in ``brandly_cli.cli``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -113,7 +114,9 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
 
     if artifact_count == 0 and media_count == 0:
         console.print("[yellow]No artifacts to export.[/yellow]")
-        console.print("[dim]The project has no media or doc files under images/, videos/, audio/, or docs/.[/dim]")
+        console.print(
+            "[dim]The project has no media or doc files under images/, videos/, audio/, or docs/.[/dim]"
+        )
         return
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -142,6 +145,7 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
     )
     console.print(f"  Manifest: {manifest_path}")
 
+
 @click.command()
 @click.argument("input", type=click.Path(exists=True))
 @click.argument("output", type=click.Path())
@@ -160,10 +164,16 @@ def edit(
     preset: str,
 ) -> None:
     """Trim a video to a segment."""
+
     async def _edit(input, output, start, end, duration, codec, preset):
         result = await trim_video(
-            input, output, start=start, end=end,
-            duration=duration, codec=codec, preset=preset,
+            input,
+            output,
+            start=start,
+            end=end,
+            duration=duration,
+            codec=codec,
+            preset=preset,
         )
         if "error" in result:
             console.print(f"[red]Error: {result['error']}[/red]")
@@ -171,7 +181,9 @@ def edit(
         console.print(f"[green]✓ Trimmed to {output}[/green]")
         console.print(f"  Duration: {result.get('duration_seconds', '?')}s")
         console.print(f"  Size: {human_size(result.get('size_bytes', 0))}")
+
     asyncio.run(_edit(input, output, start, end, duration, codec, preset))
+
 
 @click.command()
 @click.argument("input", type=click.Path(exists=True))
@@ -189,10 +201,15 @@ def resize(
     codec: str,
 ) -> None:
     """Resize a video to given dimensions or aspect ratio."""
+
     async def _resize(input, output, width, height, aspect, codec):
         result = await resize_video(
-            input, output, width=width, height=height,
-            aspect=aspect, codec=codec,
+            input,
+            output,
+            width=width,
+            height=height,
+            aspect=aspect,
+            codec=codec,
         )
         if "error" in result:
             console.print(f"[red]Error: {result['error']}[/red]")
@@ -202,7 +219,9 @@ def resize(
             console.print(f"  Width: {width}px")
         if height:
             console.print(f"  Height: {height}px")
+
     asyncio.run(_resize(input, output, width, height, aspect, codec))
+
 
 @click.command()
 @click.argument("inputs", nargs=-1, required=True, type=click.Path(exists=True))
@@ -210,6 +229,7 @@ def resize(
 @click.option("--codec", default="libx264", help="Video codec")
 def concat(inputs: tuple[str, ...], output: str, codec: str) -> None:
     """Concatenate multiple videos into one."""
+
     async def _concat(inputs, output, codec):
         result = await concatenate_videos(list(inputs), output, codec=codec)
         if "error" in result:
@@ -220,7 +240,9 @@ def concat(inputs: tuple[str, ...], output: str, codec: str) -> None:
             f"videos → {output}[/green]"
         )
         console.print(f"  Duration: {result.get('duration_seconds', '?')}s")
+
     asyncio.run(_concat(inputs, output, codec))
+
 
 @click.command()
 @click.argument("input", type=click.Path(exists=True))
@@ -229,6 +251,7 @@ def concat(inputs: tuple[str, ...], output: str, codec: str) -> None:
 @click.option("--bitrate", default="192k", help="Audio bitrate")
 def audio(input: str, output: str, fmt: str, bitrate: str) -> None:
     """Extract audio track from a video file."""
+
     async def _audio(input, output, fmt, bitrate):
         result = await extract_audio(input, output, format=fmt, bitrate=bitrate)
         if "error" in result:
@@ -237,7 +260,9 @@ def audio(input: str, output: str, fmt: str, bitrate: str) -> None:
         console.print(f"[green]✓ Audio extracted to {output}[/green]")
         console.print(f"  Format: {fmt}")
         console.print(f"  Bitrate: {bitrate}")
+
     asyncio.run(_audio(input, output, fmt, bitrate))
+
 
 @click.command()
 @click.argument("input", type=click.Path(exists=True))
@@ -255,33 +280,41 @@ def captions(
     codec: str,
 ) -> None:
     """Add burned-in subtitles to a video."""
+
     async def _captions(input, output, text, font_size, position, codec):
         result = await add_subtitles(
-            input, output, text,
-            font_size=font_size, position=position, codec=codec,
+            input,
+            output,
+            text,
+            font_size=font_size,
+            position=position,
+            codec=codec,
         )
         if "error" in result:
             console.print(f"[red]Error: {result['error']}[/red]")
             sys.exit(1)
         console.print(f"[green]✓ Subtitles added to {output}[/green]")
+
     asyncio.run(_captions(input, output, text, font_size, position, codec))
+
 
 @click.command()
 @click.argument("input", type=click.Path(exists=True))
 @click.argument("output", type=click.Path())
 @click.argument("speed", type=float)
 @click.option("--codec", default="libx264")
-def speed(
-    input: str, output: str, speed: float, codec: str
-) -> None:
+def speed(input: str, output: str, speed: float, codec: str) -> None:
     """Change video playback speed."""
+
     async def _speed(input, output, speed, codec):
         result = await change_speed(input, output, speed, codec=codec)
         if "error" in result:
             console.print(f"[red]Error: {result['error']}[/red]")
             sys.exit(1)
         console.print(f"[green]✓ Speed changed to {speed}x → {output}[/green]")
+
     asyncio.run(_speed(input, output, speed, codec))
+
 
 @click.command(name="probe")
 @click.argument("input", type=click.Path(exists=True))
@@ -309,18 +342,26 @@ def probe(input: str, output: str) -> None:
     table.add_row("Format", info.get("format", ""))
     console.print(table)
 
+
 @click.command()
 @click.argument("clips", nargs=-1, required=True)
 @click.argument("output")
 @click.option("--transition", default="fade", help="Transition type (fade, dissolve, wipe, slide)")
 @click.option("--transition-duration", default=0.5, help="Transition duration in seconds")
 @click.option(
-    "--color-grade", default="cinematic",
+    "--color-grade",
+    default="cinematic",
     help="Color grade (cinematic, warm, cool, desaturated, none)",
 )
-@click.option("--ratio", default=None, help="Target aspect ratio (e.g. 2.39:1, 9:16) — G4 assembly-time crop/pad")
 @click.option(
-    "--fit", default="crop", type=click.Choice(["crop", "pad"]),
+    "--ratio",
+    default=None,
+    help="Target aspect ratio (e.g. 2.39:1, 9:16) — G4 assembly-time crop/pad",
+)
+@click.option(
+    "--fit",
+    default="crop",
+    type=click.Choice(["crop", "pad"]),
     help="How to reach --ratio: crop (center-crop, default) or pad (letterbox with black bars)",
 )
 @click.option("--root", default=None, help="Working directory")
@@ -336,6 +377,7 @@ def stitch(
 ) -> None:
     """Stitch multiple video clips with transitions and color grading."""
     from brandly_cli.stitch import stitch_videos
+
     clip_paths = [Path(c) for c in clips]
     output_path = Path(output)
     console.print(f"[bold]Stitching[/bold] {len(clip_paths)} clips → {output_path}")
@@ -355,26 +397,37 @@ def stitch(
         sys.exit(1)
     console.print(f"[green]✓ Output:[/green] {result['output_path']}")
     console.print(
-        f"  Duration: {result['duration_seconds']:.1f}s | Size: {result['size_bytes']//1024}KB"
+        f"  Duration: {result['duration_seconds']:.1f}s | Size: {result['size_bytes'] // 1024}KB"
     )
     console.print(f"  Transitions: {', '.join(result['transitions_applied']) or 'none'}")
     console.print(f"  Color grade: {result['color_grade']}")
     if ratio:
         console.print(f"  Ratio: {ratio} (fit: {fit})")
 
+
 @click.command()
 @click.argument("project_id")
 @click.option(
-    "--platforms", multiple=True,
+    "--platforms",
+    multiple=True,
     help="Target platforms (tiktok, instagram_reel, youtube_standard, etc.)",
 )
 @click.option("--output", default=None, help="Output directory")
 @click.option(
-    "--fit", default="crop", type=click.Choice(["crop", "pad"]),
+    "--fit",
+    default="crop",
+    type=click.Choice(["crop", "pad"]),
     help="G4 ratio semantics: crop (default; center-crop to the platform ratio) or pad (letterbox to standard resolution)",
 )
+@click.option(
+    "--brand",
+    "brand_lock",
+    is_flag=True,
+    help="G7: composite the project's brand-kit logo onto the export "
+    "(requires `brandly brand init`; fails closed without a kit or logo)",
+)
 @click.option("--root", default=None, help="Working directory")
-def export_platforms(project_id, platforms, output, fit, root):
+def export_platforms(project_id, platforms, output, fit, brand_lock, root):
     """Export project to platform-optimized formats."""
     from brandly_cli.export_platforms import export_for_platform
 
@@ -390,15 +443,53 @@ def export_platforms(project_id, platforms, output, fit, root):
         console.print("[yellow]No video found in project[/yellow]")
         sys.exit(1)
     out_dir = Path(output) if output else proj_dir / "export"
+
+    # G7 PR 2: --brand resolves the project's kit and composites its logo.
+    kit_logo: str | None = None
+    kit_overlay = None
+    if brand_lock:
+        from brandly_cli import brand_kit
+
+        kit = brand_kit.load_brand_kit(proj_dir)
+        if kit is None:
+            console.print(
+                f"[red]No brand kit for {project_id} — run "
+                f"`brandly brand init` first (G7 fail-closed).[/red]"
+            )
+            sys.exit(1)
+        if not kit.logo:
+            console.print(
+                "[red]Brand kit has no logo set — pass `--logo` to "
+                f"`brandly brand init {project_id}` first.[/red]"
+            )
+            sys.exit(1)
+        logo_path = Path(kit.logo)
+        if not logo_path.is_absolute():
+            logo_path = proj_dir / logo_path
+        if not logo_path.is_file():
+            console.print(f"[red]Brand logo not found: {kit.logo}[/red]")
+            sys.exit(1)
+        kit_logo = str(logo_path)
+        kit_overlay = kit.overlay
+
     for platform in platforms:
         console.print(f"Exporting for [bold]{platform}[/bold]...")
         result = asyncio.run(
-            export_for_platform(video_file, platform, out_dir, root=root, fit=fit)
+            export_for_platform(
+                video_file,
+                platform,
+                out_dir,
+                root=root,
+                fit=fit,
+                brand_logo=kit_logo,
+                brand_overlay=kit_overlay,
+            )
         )
         if "error" in result:
             console.print(f"[red]  Error: {result['error']}[/red]")
         else:
             console.print(f"  ✓ {result['output_path']} ({result['duration_seconds']:.1f}s)")
+
 
 @click.command()
 @click.argument("project_id")
@@ -408,6 +499,7 @@ def export_platforms(project_id, platforms, output, fit, root):
 def thumbnail(project_id: str, count: int, style: str, root: str | None) -> None:
     """Generate thumbnails from project video."""
     from brandly_cli.thumbnails import generate_thumbnails
+
     proj_dir = layout.resolve_project_dir(Path(root or "."), project_id)
     videos_root = proj_dir / "videos"
     video_file = next((videos_root.rglob("*.mp4")), None)
@@ -417,7 +509,10 @@ def thumbnail(project_id: str, count: int, style: str, root: str | None) -> None
     output_dir = layout.media_dir(proj_dir, "images", "general")
     result = asyncio.run(
         generate_thumbnails(
-            video_file, output_dir, count=count, style_preset=style,
+            video_file,
+            output_dir,
+            count=count,
+            style_preset=style,
             root=Path(root) if root else None,
         )
     )
@@ -428,25 +523,34 @@ def thumbnail(project_id: str, count: int, style: str, root: str | None) -> None
     for thumb in result.get("thumbnails", []):
         console.print(f"  {thumb.get('path', thumb)}")
 
+
 @click.command(name="voice-match")
 @click.argument("video_path")
 @click.option("--source", default="en", help="Source language code")
 @click.option(
-    "--target", required=True,
+    "--target",
+    required=True,
     help="Target language code (en, es, fr, de, ja, ko, zh, pt, ar, hi)",
 )
 @click.option("--voice-style", default="professional", help="Voice style")
 @click.option("--output", default=None, help="Output path")
 @click.option("--root", default=None, help="Working directory")
 def voice_match(
-    video_path: str, source: str, target: str, voice_style: str,
-    output: str | None, root: str | None,
+    video_path: str,
+    source: str,
+    target: str,
+    voice_style: str,
+    output: str | None,
+    root: str | None,
 ) -> None:
     """Dub a video to a target language."""
     from brandly_cli.dubbing import dub_video
+
     result = asyncio.run(
         dub_video(
-            Path(video_path), source, target,
+            Path(video_path),
+            source,
+            target,
             voice_style=voice_style,
             output_path=Path(output) if output else None,
             root=Path(root) if root else None,
@@ -459,6 +563,7 @@ def voice_match(
     console.print(f"  Output: {result['output_path']}")
     console.print(f"  Duration: {result['duration_seconds']:.1f}s")
 
+
 @click.command(name="beat-sync")
 @click.argument("video_path")
 @click.argument("audio_path")
@@ -467,14 +572,21 @@ def voice_match(
 @click.option("--min-duration", default=1.0, help="Minimum clip duration")
 @click.option("--root", default=None, help="Working directory")
 def beat_sync(
-    video_path: str, audio_path: str, output: str,
-    threshold: float, min_duration: float, root: str | None,
+    video_path: str,
+    audio_path: str,
+    output: str,
+    threshold: float,
+    min_duration: float,
+    root: str | None,
 ) -> None:
     """Cut video to match beat positions in audio."""
     from brandly_cli.beat_sync import beat_sync as bs_sync
+
     result = asyncio.run(
         bs_sync(
-            Path(video_path), Path(audio_path), Path(output),
+            Path(video_path),
+            Path(audio_path),
+            Path(output),
             beat_threshold=threshold,
             min_clip_duration=min_duration,
             root=Path(root) if root else None,
@@ -487,6 +599,7 @@ def beat_sync(
     console.print(f"  Beats detected: {result['beats_detected']}")
     console.print(f"  Output: {result['output_path']}")
 
+
 @click.command()
 @click.argument("category", default=None, required=False)
 @click.option("--platforms", multiple=True, help="Filter by platforms")
@@ -494,6 +607,7 @@ def beat_sync(
 def trend(category: str | None, platforms: tuple[str, ...], json: bool) -> None:
     """Research trending video formats."""
     from brandly_cli.trends import list_categories, research_trends
+
     cats = list_categories()
     if not category:
         console.print("[bold]Available categories:[/bold]")
@@ -513,6 +627,7 @@ def trend(category: str | None, platforms: tuple[str, ...], json: bool) -> None:
     for fmt in result["trending_formats"]:
         console.print(f"  • {fmt['name']} — {fmt['description']} (virality: {fmt['virality']:.0%})")
 
+
 @click.command()
 @click.argument("video_path")
 @click.option("--script", default=None, help="Script text for hook analysis")
@@ -521,9 +636,12 @@ def trend(category: str | None, platforms: tuple[str, ...], json: bool) -> None:
 def analyze(video_path: str, script: str | None, style: str, root: str | None) -> None:
     """Analyze video performance prediction."""
     from brandly_cli.analyzer import analyze_video
+
     result = asyncio.run(
         analyze_video(
-            Path(video_path), script=script, style=style,
+            Path(video_path),
+            script=script,
+            style=style,
             root=Path(root) if root else None,
         )
     )
@@ -531,8 +649,10 @@ def analyze(video_path: str, script: str | None, style: str, root: str | None) -
         console.print(f"[red]Error: {result['error']}[/red]")
         sys.exit(1)
     console.print("[bold]Video Performance Analysis[/bold]")
-    console.print(f"  Source:        [bold]{result['source']}[/bold]"
-                  f" {'(ingested platform data)' if result['source'] == 'ingested' else '(heuristic prediction)'}")
+    console.print(
+        f"  Source:        [bold]{result['source']}[/bold]"
+        f" {'(ingested platform data)' if result['source'] == 'ingested' else '(heuristic prediction)'}"
+    )
     console.print(f"  Overall Score: [green]{result['overall_score']}[/green]/10")
     console.print(f"  Hook Strength:   {result['hook_strength']}/10")
     console.print(f"  Pacing Score:    {result['pacing_score']}/10")
@@ -545,6 +665,7 @@ def analyze(video_path: str, script: str | None, style: str, root: str | None) -
         for rec in result["recommendations"]:
             console.print(f"  • {rec}")
 
+
 @click.command()
 @click.argument("name")
 @click.option("--style", default="ugc", help="Style preset")
@@ -555,15 +676,25 @@ def analyze(video_path: str, script: str | None, style: str, root: str | None) -
 @click.option("--save", is_flag=True, help="Save as custom template")
 @click.option("--root", default=None, help="Working directory")
 def template(
-    name: str, style: str, shots: int, duration: int, budget: int,
-    platforms: tuple[str, ...], save: bool, root: str | None,
+    name: str,
+    style: str,
+    shots: int,
+    duration: int,
+    budget: int,
+    platforms: tuple[str, ...],
+    save: bool,
+    root: str | None,
 ) -> None:
     """Create or manage project templates."""
     from brandly_cli.templates import create_from_template, save_template
+
     if save:
         config = {
-            "style": style, "shots": shots, "duration": duration,
-            "budget": budget, "platforms": list(platforms) or ["tiktok"],
+            "style": style,
+            "shots": shots,
+            "duration": duration,
+            "budget": budget,
+            "platforms": list(platforms) or ["tiktok"],
         }
         asyncio.run(save_template(name, config, root=Path(root) if root else None))
         console.print(f"[green]✓ Template saved: {name}[/green]")
@@ -573,11 +704,13 @@ def template(
         for k, v in config.items():
             console.print(f"  {k}: {v}")
 
+
 @click.command(name="template-list")
 @click.option("--root", default=None, help="Working directory")
 def template_list(root: str | None) -> None:
     """List available templates."""
     from brandly_cli.templates import list_custom_templates, list_templates
+
     builtins = asyncio.run(list_templates())
     customs = asyncio.run(list_custom_templates(root=Path(root) if root else None))
     console.print("[bold]Built-in Templates[/bold]")
@@ -588,6 +721,7 @@ def template_list(root: str | None) -> None:
         console.print("[bold]Custom Templates[/bold]")
         for t in customs:
             console.print(f"  ★ {t}")
+
 
 def register(cli) -> None:
     cli.add_command(export)

@@ -144,6 +144,17 @@ def verify_kit(kit: BrandKit, proj_dir: Path | None = None) -> list[str]:
     return issues
 
 
+def brand_claim_issues(texts: list[str], kit: BrandKit) -> list[str]:
+    """Deterministic claim-lock check (G7 PR 2, gate layer).
+
+    On-screen copy is restricted to the kit's claim allowlist: every
+    non-blank text must exactly match an allowed claim. Blank values are
+    ignored (an unregistered field never blocks the gate). Returns the
+    offending texts (empty list = compliant).
+    """
+    return [t for t in texts if t.strip() and t not in kit.claims]
+
+
 def brand_constraints(kit: BrandKit) -> str:
     """The prompt-layer brand lock: palette + claims + third-party ban."""
     palette = ", ".join(kit.colors)

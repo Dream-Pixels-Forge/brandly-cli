@@ -18,8 +18,19 @@ All notable changes to this project are documented here.
 ### Changed
 - Capability matrix: `brand_kit` is now `partial` (prompt-layer lock +
   verify shipped; gate-layer claim check + export logo overlay planned —
-  G7 PR 2).
+  G7 PR 2), then `supported` with G7 PR 2.
 - README roadmap line for brand kit synced to the partial reality.
+
+### Added (G7 PR 2 — gate claim-lock + export logo overlay, issue #98)
+- **G7 closes F9 gap 2** — `brand_kit` capability is now `supported` (e2e
+  dry-run proof: `brand verify` + gate claim-lock + export overlay).
+- Gate layer: registered on-screen text outside the brand kit's claim
+  allowlist hard-fails `brandly gate --scene/--all-scenes` (deterministic;
+  blank/unregistered text never blocks; violations recorded under
+  `report["brand"]`).
+- Export layer: `brandly export-platforms --brand` composites the kit's
+  logo via ffmpeg overlay (corner / safe-zone / opacity from the kit's
+  `OverlaySpec`); missing kit, logo, or file fails closed.
 
 ### Added (G8 PR 1 — metrics ingest, issue #99)
 - **Decision records DEV-G8-001/002/003 confirmed**: ingested metrics live

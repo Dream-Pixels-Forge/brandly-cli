@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from brandly_cli.brand_kit import OverlaySpec
 from brandly_cli.io import proc_output
 from brandly_cli.stitch import probe_video_dims, ratio_crop_filter
 
@@ -59,6 +60,7 @@ PLATFORM_PRESETS: dict[str, dict[str, Any]] = {
 # FFmpeg helpers
 # ---------------------------------------------------------------------------
 
+
 def _ffmpeg_available() -> bool:
     try:
         result = subprocess.run(
@@ -99,8 +101,11 @@ def _get_duration(path: Path) -> float:
     if not _ffprobe_available():
         return 0.0
     cmd = [
-        "ffprobe", "-v", "quiet",
-        "-print_format", "json",
+        "ffprobe",
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
         "-show_format",
         str(path),
     ]
@@ -118,6 +123,119 @@ def _get_duration(path: Path) -> float:
 # Export function
 # ---------------------------------------------------------------------------
 
+
+def _build_base_cmd(
+    input_video: Path,
+    output_path: Path,
+    duration: float,
+    filter_parts: list[str],
+) -> list[str]:
+    """The stock ffmpeg command (G4 semantics; unchanged behaviour)."""
+    cmd = ["ffmpeg", "-y", "-i", str(input_video)]
+    if filter_parts:
+        cmd += ["-vf", ",".join(filter_parts)]
+    cmd += [
+        "-t",
+        str(duration),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    return cmd
+
+
+def brand_overlay_position(width: int, height: int, spec) -> tuple[str, str]:
+    """Deterministic (x, y) overlay expressions for a logo (G7 PR 2).
+
+    The margin is ``safe_zone`` of the side length per axis; the logo's own
+    size enters as ffmpeg's ``w``/``h`` overlay expressions so placement
+    stays correct for any logo aspect ratio.
+    """
+    mx = int(round(spec.safe_zone * width))
+    my = int(round(spec.safe_zone * height))
+    if spec.corner == "top-left":
+        return str(mx), str(my)
+    if spec.corner == "top-right":
+        return f"W-w-{mx}", str(my)
+    if spec.corner == "bottom-left":
+        return str(mx), f"H-h-{my}"
+    return f"W-w-{mx}", f"H-h-{my}"  # bottom-right (default)
+
+
+def build_export_cmd(
+    input_video: Path,
+    output_path: Path,
+    duration: float,
+    filter_parts: list[str],
+    brand_logo: Path | None,
+    brand_overlay,
+    target_dims: tuple[int, int] | None,
+) -> list[str]:
+    """FFmpeg command for an export, optionally with the brand logo overlay.
+
+    Without a logo the command is byte-identical to the pre-G7 behaviour
+    (``-vf`` pipeline). With a logo the pipeline switches to
+    ``-filter_complex``: main chain → logo scale (10% of output height) →
+    optional opacity → corner overlay, with audio remapped from input 0.
+    """
+    if not brand_logo:
+        return _build_base_cmd(input_video, output_path, duration, filter_parts)
+
+    w, h = target_dims or (1920, 1080)
+    logo_h = int(round(0.1 * h))
+    logo_chain = [f"scale=-2:{logo_h}"]
+    if brand_overlay is not None and brand_overlay.opacity < 1.0:
+        logo_chain.append("format=rgba")
+        logo_chain.append(f"colorchannelmixer=aa={brand_overlay.opacity}")
+    main_chain = ",".join(filter_parts) if filter_parts else "null"
+    x, y = brand_overlay_position(w, h, brand_overlay or OverlaySpec())
+    filter_complex = (
+        f"[0:v]{main_chain}[vmain];"
+        f"[1:v]{','.join(logo_chain)}[vlogo];"
+        f"[vmain][vlogo]overlay={x}:{y}[vout]"
+    )
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_video),
+        "-i",
+        str(brand_logo),
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "[vout]",
+        "-map",
+        "0:a?",
+        "-t",
+        str(duration),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    return cmd
+
+
 async def export_for_platform(
     input_video: Path,
     platform: str,
@@ -127,6 +245,8 @@ async def export_for_platform(
     captions_text: str | None = None,
     root: Path | None = None,
     fit: str = "crop",
+    brand_logo: str | None = None,
+    brand_overlay: OverlaySpec | None = None,
 ) -> dict[str, Any]:
     """Export video optimized for a specific platform.
 
@@ -140,6 +260,10 @@ async def export_for_platform(
         fit: G4 ratio semantics — ``"crop"`` (default; center-crop to the
             platform ratio at source scale, no bars) or ``"pad"`` (letterbox
             to the platform's standard resolution with black bars).
+        brand_logo: G7 PR 2 — optional brand mark file to composite onto the
+            export (``export-platforms --brand`` passes the kit's logo).
+        brand_overlay: G7 PR 2 — the kit's overlay spec (corner / safe-zone
+            / opacity). Ignored unless ``brand_logo`` is given.
 
     Returns:
         Dict with platform, output_path, duration_seconds, file_size_bytes, captions_added.
@@ -147,6 +271,8 @@ async def export_for_platform(
     """
     input_video = Path(input_video)
     output_dir = Path(output_dir)
+    crop_filter = None
+    src_dims = None
 
     # Validation
     if not input_video.exists():
@@ -211,20 +337,38 @@ async def export_for_platform(
         )
         filter_parts.append(text_filter)
 
+    # G7 PR 2: brand logo overlay (fail-closed — a missing logo file
+    # aborts the export instead of silently dropping the lock).
+    if brand_logo:
+        logo_path = Path(brand_logo)
+        if not logo_path.is_file():
+            return {"error": f"brand logo not found: {brand_logo}"}
+    else:
+        logo_path = None
+
+    # Final frame dimensions the overlay math runs against.
+    target_dims: tuple[int, int] | None = None
+    if fit == "pad":
+        target_dims = ratio_to_dims.get(target_ratio, (1920, 1080))
+    elif crop_filter:
+        import re as _re
+
+        m = _re.match(r"crop=(\d+):(\d+)", crop_filter)
+        if m:
+            target_dims = (int(m.group(1)), int(m.group(2)))
+        else:
+            target_dims = src_dims
+
     # Build FFmpeg command (no -vf at all when there are no filters)
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(input_video),
-    ]
-    if filter_parts:
-        cmd += ["-vf", ",".join(filter_parts)]
-    cmd += [
-        "-t", str(min(source_duration, max_duration)),
-        "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "128k",
-        "-movflags", "+faststart",
-        str(output_path),
-    ]
+    cmd = build_export_cmd(
+        input_video,
+        output_path,
+        min(source_duration, max_duration),
+        filter_parts,
+        logo_path,
+        brand_overlay,
+        target_dims,
+    )
 
     rc, stderr = await _run_ffmpeg(cmd)
     if rc != 0:

@@ -185,7 +185,7 @@ class TestBrandCli:
 
 
 class TestCapabilityRow:
-    def test_brand_kit_partial_with_brand_command(self) -> None:
+    def test_brand_kit_supported_with_brand_command(self) -> None:
         row = next(c for c in caps_mod.CAPABILITIES if c["id"] == "brand_kit")
-        assert row["status"] == "partial"
+        assert row["status"] == "supported"
         assert row.get("command") == "brand"

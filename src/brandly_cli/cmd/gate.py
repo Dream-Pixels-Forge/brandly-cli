@@ -2,6 +2,7 @@
 Moved from cli.py (structural split, no behavioral change).
 Shared helpers and state still live in ``brandly_cli.cli``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -54,6 +55,7 @@ def validate(ctx: click.Context, project_id: str, video_path: str | None) -> Non
             "message": "Virality validation initiated (requires higgsfield MCP tool)",
         }
     )
+
 
 @click.command(name="gate")
 @click.argument("project_id")
@@ -231,8 +233,10 @@ def gate(
     else:
         _print_gate_report(result)
 
-    exit_code = 0 if result.status == quality_gate.PASS else (
-        1 if result.status == quality_gate.WARN else 2
+    exit_code = (
+        0
+        if result.status == quality_gate.PASS
+        else (1 if result.status == quality_gate.WARN else 2)
     )
 
     # Human-in-the-loop: confirm the gate result matches expectations before
@@ -280,6 +284,51 @@ def gate(
     sys.exit(exit_code)
 
 
+def apply_brand_claim_gate(report: dict, texts: list[str], kit, project_id: str) -> None:
+    """G7 PR 2 (DEV-G7-003): claim-lock hard-fail on the scene gate report.
+
+    Deterministic allowlist check — any non-blank on-screen text outside the
+    kit's claims drops the verdict to ``fail`` and records the violations
+    under ``report["brand"]``. A compliant project records an empty list so
+    the report always shows which layer was checked.
+    """
+    from brandly_cli import brand_kit
+
+    violations = brand_kit.brand_claim_issues(texts, kit)
+    report["brand"] = {
+        "project_id": project_id,
+        "claims_ok": not violations,
+        "violations": violations,
+    }
+    if violations:
+        report["verdict"] = "fail"
+
+
+def collect_scene_text(manifest: dict | None) -> list[str]:
+    """Gather registered on-screen text fields from a scene manifest.
+
+    Forward-compatible: collects ``text_overlay`` / ``caption`` /
+    ``captions`` values from every scene/shot entry; absent or blank values
+    contribute nothing (they never block the gate).
+    """
+    texts: list[str] = []
+    if not manifest:
+        return texts
+    entries = manifest.get("scenes", [])
+    if not isinstance(entries, list):
+        entries = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        for key in ("text_overlay", "caption", "captions"):
+            value = entry.get(key)
+            if isinstance(value, str):
+                texts.append(value)
+            elif isinstance(value, list):
+                texts.extend(str(v) for v in value)
+    return texts
+
+
 def _run_scene_gate(
     root: Path,
     project_id: str,
@@ -323,6 +372,19 @@ def _run_scene_gate(
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
+    # G7 PR 2: brand-kit claim lock — when the project has a kit, any
+    # registered on-screen text outside the allowlist hard-fails the gate.
+    from brandly_cli import brand_kit, layout
+
+    proj_dir = layout.resolve_project_dir(root, project_id)
+    try:
+        kit = brand_kit.load_brand_kit(proj_dir)
+    except ValueError:
+        kit = None
+    if kit is not None:
+        manifest = scenes.load_scenes(project_id, root=root)
+        apply_brand_claim_gate(report, collect_scene_text(manifest), kit, project_id)
+
     if output == "json":
         # Plain print: console.print would wrap/mangle long JSON lines.
         print(json.dumps(report, indent=2))
@@ -356,6 +418,7 @@ def memory(ctx: click.Context, action: str, hook: str | None) -> None:
     else:
         console.print("[red]Usage: brandly memory view|like|dislike|reset [HOOK][/red]")
 
+
 @click.command()
 @click.argument("project_id")
 @click.pass_context
@@ -374,6 +437,7 @@ def cost(ctx: click.Context, project_id: str) -> None:
         console.print("  or initialize with `brandly init`.")
         sys.exit(0)
     _print_json(summary)
+
 
 @click.command()
 @click.argument("project_id")
@@ -407,6 +471,7 @@ def record_cost(ctx: click.Context, project_id: str, phase: str, action: str, cr
     except ValueError as e:
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
+
 
 @click.group(invoke_without_command=True, name="config")
 @click.pass_context
@@ -472,22 +537,34 @@ def config_list() -> None:
     names = config_store.credential_names()
     console.print(", ".join(names) if names else "[dim]No credentials stored.[/dim]")
 
+
 @click.command(name="report")
 @click.option(
-    "--error", "-e", default=None,
+    "--error",
+    "-e",
+    default=None,
     help="Error message to report (otherwise interactive prompt)",
 )
 @click.option(
-    "--project", "-p", default=None, help="Project ID to attach context to",
+    "--project",
+    "-p",
+    default=None,
+    help="Project ID to attach context to",
 )
 @click.option(
-    "--root", default=None, help="Brandly root directory",
+    "--root",
+    default=None,
+    help="Brandly root directory",
 )
 @click.option(
-    "--dry-run", is_flag=True, help="Show issue body without submitting",
+    "--dry-run",
+    is_flag=True,
+    help="Show issue body without submitting",
 )
 @click.option(
-    "--auto", is_flag=True, help="Submit without asking (requires prior consent or GITHUB_TOKEN)",
+    "--auto",
+    is_flag=True,
+    help="Submit without asking (requires prior consent or GITHUB_TOKEN)",
 )
 def report(
     error: str | None,
@@ -509,7 +586,11 @@ def report(
         submit_issue,
     )
 
-    root_path = Path(root) if root else _get_root(click.get_current_context(silent=True) or click.Context(cli))
+    root_path = (
+        Path(root)
+        if root
+        else _get_root(click.get_current_context(silent=True) or click.Context(cli))
+    )
     exc = None
     if error:
         exc = RuntimeError(error)
@@ -528,9 +609,7 @@ def report(
             console.print(f"[green]✓ Issue opened: {result['url']}[/green]")
             console.print(f"  Number: #{result.get('number')}")
         else:
-            console.print(
-                f"[red]Report failed: {result.get('error') or result}[/red]"
-            )
+            console.print(f"[red]Report failed: {result.get('error') or result}[/red]")
         return
 
     if ask_permission(ctx, body):
@@ -540,11 +619,10 @@ def report(
             console.print(f"[green]✓ Issue opened: {result['url']}[/green]")
             console.print(f"  Number: #{result.get('number')}")
         else:
-            console.print(
-                f"[red]Report failed: {result.get('error') or result}[/red]"
-            )
+            console.print(f"[red]Report failed: {result.get('error') or result}[/red]")
     else:
         console.print("[dim]Issue report skipped.[/dim]")
+
 
 def register(cli) -> None:
     cli.add_command(validate)

@@ -251,3 +251,41 @@
 - [x] v0.5.0 is the rollback point for G6 follow-ups: `pip install brandly-cli==0.5.0`
 - NEXT: G6 PR 2/3 (live YouTube upload, credential-gated) and PR 3/3 (TikTok/IG adapters); issues #98 (brand kit) and #99 (metrics ingest) remain open
 
+### Round 8/256 — v0.6.0 release (F9 closure: G7 brand kit + G8 metrics ingest)
+
+Decision gates DEV-G7-001..003 + DEV-G8-001..003 all confirmed on
+defaults; shipped as four TDD PRs behind one release, per
+`dev-notes/GOAL-BRAND-KIT-METRICS.md` (PR #105 plan).
+
+- [x] **G7 PR 1 (#106)** — `brand_kit.py` model (palette / claim allowlist /
+  style lock / overlay spec, `.brandly/<project>/brand.json`, F2
+  project-local) + `brandly brand init/verify/show` + prompt-layer lock
+  (`apply_brand_lock`, conflicting styles raise `BrandLockConflictError`);
+  capability row absent → partial
+- [x] **G8 PR 1 (#107)** — `metrics.py` + `brandly metrics import/show`
+  (versioned CSV/JSON → project-local snapshots) + `analyze`
+  ingested-vs-heuristic source labelling (DEV-G8-002); capability row
+  partial → supported
+- [x] **G7 PR 2 (#108)** — gate claim-lock (off-allowlist on-screen text
+  hard-fails `brandly gate --scene/--all-scenes`) + `export-platforms
+  --brand` ffmpeg logo overlay (corner/safe-zone/opacity, fail-closed);
+  e2e dry-run proof; capability row partial → **supported**
+- [x] **G8 PR 2 (#109)** — `youtube_analytics.py` adapter
+  (`reports:query`, credential-gated via `brandly config set
+  youtube:analytics <token>`, dry-run-first, G6 pattern) writing through
+  the shared `import_rows` core; TikTok/IG analytics stay planned
+  (DEV-G8-003)
+- [x] Local gate stack green: ruff clean, mypy `Success` (85 files),
+  full pytest suite **857 passed / 0 failed** (up from 806 at v0.5.0)
+- [x] Bumped 0.5.0 → 0.6.0 (`pyproject.toml` + `__about__.py`, tag-parity
+  gate); CHANGELOG `[Unreleased]` consolidated into `[0.6.0] — 2026-09-25`
+- [ ] Tag `v0.6.0` + GitHub release → `release.yml` (OIDC trusted
+  publishing) green → PyPI verified (`pip install brandly-cli==0.6.0`
+  smoke test in a fresh venv)
+- [ ] Close issues #98 + #99 with the capability-matrix link
+- v0.6.0 is the rollback point for G6 follow-ups: `pip install
+  brandly-cli==0.6.0` (previous: `0.5.0`)
+- NEXT: G6 PR 2/3 live-upload follow-ups (YouTube live, TikTok/IG
+  adapters) + TikTok/IG analytics adapters
+
+

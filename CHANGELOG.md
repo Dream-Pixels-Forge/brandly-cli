@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.6.0] — 2026-09-25
 
 ### Added (G7 PR 1 — brand kit, issue #98)
 - **Decision records DEV-G7-001/002/003 confirmed**: project-level brand kit

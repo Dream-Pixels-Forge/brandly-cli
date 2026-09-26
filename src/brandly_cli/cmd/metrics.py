@@ -1,11 +1,15 @@
-"""G8 PR 1 (issue #99): `brandly metrics` — project-local metrics ingest.
+"""G8 (issue #99): `brandly metrics` — platform metrics ingest.
 
 * `metrics import <file> --platform youtube [--project <id>]` — CSV/JSON
-  snapshot import, fail-closed on unknown platform or malformed rows.
+  snapshot import, fail-closed on unknown platform or malformed rows (G8 PR 1).
 * `metrics show [--project <id>]` — latest ingested snapshot per platform.
+* `metrics ingest --platform youtube --property <id> [--dry-run]` — G8 PR 2:
+  credential-gated YouTube Analytics API pull (dry-run-first, G6 pattern);
+  writes the same project-local snapshot files as `import`.
 
-No network, no credentials in this command group; the YouTube Analytics
-API adapter (`metrics ingest`) is G8 PR 2.
+Credentials live in the user config store (`brandly config set
+youtube:analytics <token>`), never in project files or `.env` (F2).
+TikTok/IG analytics adapters are planned follow-ups (DEV-G8-003).
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from pathlib import Path
 import click
 
 from brandly_cli import layout
+from brandly_cli import youtube_analytics as ya
 from brandly_cli.cli import _get_root, console
 from brandly_cli.io import is_valid_project_id
 from brandly_cli.metrics import SUPPORTED_PLATFORMS
@@ -127,6 +132,107 @@ def metrics_show(
                 f"watch_time_s={row.get('watch_time_seconds')} "
                 f"ctr_pct={row.get('ctr_pct')}"
             )
+
+
+@metrics.command("ingest")
+@click.option(
+    "--platform", default="youtube", show_default=True, type=click.Choice(SUPPORTED_PLATFORMS)
+)
+@click.option(
+    "--property",
+    "property_id",
+    default=None,
+    help="YouTube Analytics property id (channel) — required",
+)
+@click.option(
+    "--days", default=28, show_default=True, type=int, help="Lookback window for the report"
+)
+@click.option("--project", "project_id", default=None, help="Project id (default: latest project)")
+@click.option("--dry-run", is_flag=True, help="Render the exact request; never call the API")
+@click.option("--json", "json_out", is_flag=True, help="Emit the ingest record as JSON")
+@click.option(
+    "--token",
+    default=None,
+    help=f"Analytics credential — or store it once with "
+    f"`brandly config set {ya.CREDENTIAL_KEY} <token>`",
+)
+@click.option("--root", default=None, help="Working directory")
+@click.pass_context
+def metrics_ingest(
+    ctx: click.Context,
+    platform: str,
+    property_id: str | None,
+    days: int,
+    project_id: str | None,
+    dry_run: bool,
+    json_out: bool,
+    token: str | None,
+    root: str | None,
+) -> None:
+    """Pull real metrics from the YouTube Analytics API (dry-run first)."""
+    import brandly_cli.metrics as m
+    from brandly_cli import config_store
+
+    if not property_id:
+        console.print(
+            "[red]Missing --property: pass the YouTube Analytics property "
+            "(channel) id, e.g. `--property UC…`.[/red]"
+        )
+        sys.exit(1)
+
+    adapter = ya.YouTubeAnalyticsAdapter()
+    request = adapter.build_request(property_id, days=days)
+
+    if dry_run:
+        record = {
+            "dry_run": True,
+            "platform": platform,
+            "request": request,
+            "note": "dry-run: no API call was made",
+        }
+        if json_out:
+            print(json.dumps(record, indent=2, ensure_ascii=False))
+        else:
+            console.print(
+                f"[green]✓ dry-run:[/green] exact {request['method']} request "
+                f"rendered (nothing was sent)"
+            )
+            console.print_json(data=request)
+        return
+
+    live_token = token or config_store.get_credential(ya.CREDENTIAL_KEY)
+    if not live_token:
+        console.print(
+            f"[red]No {ya.CREDENTIAL_KEY} credential — this would call the "
+            f"YouTube Analytics API live, so it fails closed.[/red]\n"
+            f"[dim]Store one: `brandly config set {ya.CREDENTIAL_KEY} <token>`, "
+            f"or preview without calling: add `--dry-run`.[/dim]"
+        )
+        sys.exit(1)
+
+    try:
+        payload = adapter.execute(request, live_token)
+    except Exception as e:
+        console.print(f"[red]YouTube Analytics call failed: {e}[/red]")
+        sys.exit(1)
+
+    rows = ya.rows_from_report(payload)
+    if not rows:
+        console.print("[yellow]No metric rows in the report (empty window?)[/yellow]")
+        sys.exit(1)
+
+    proj_dir = _resolve_project(ctx, root, project_id)
+    try:
+        written = m.import_rows(rows, platform, proj_dir)
+    except ValueError as e:
+        console.print(f"[red]Ingest validation failed: {e}[/red]")
+        sys.exit(1)
+    for path in written:
+        console.print(f"[green]✓ {path.name}[/green] ({platform})")
+    console.print(
+        f"[green]✓ ingested {len(written)} snapshot(s) for {platform} "
+        f"into {proj_dir / m.METRICS_DIR}[/green]"
+    )
 
 
 def register(cli) -> None:  # type: ignore[no-untyped-def]

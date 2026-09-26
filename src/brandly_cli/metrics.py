@@ -87,18 +87,26 @@ def import_metrics(source: Path | str, platform: str, proj_dir: Path) -> list[Pa
     ``ValueError`` on unknown platform, unreadable file, or any malformed
     row (fail-closed — a bad file never produces a partial ingest).
     """
-    if platform not in SUPPORTED_PLATFORMS:
-        raise ValueError(f"unknown platform {platform!r}; supported: {SUPPORTED_PLATFORMS}")
     source = Path(source)
     if not source.is_file():
         raise ValueError(f"metrics file not found: {source}")
+    return import_rows(_rows_from_file(source), platform, proj_dir)
 
-    raw_rows = _rows_from_file(source)
-    if not raw_rows:
-        raise ValueError("metrics file has no rows")
+
+def import_rows(rows: list[dict[str, Any]], platform: str, proj_dir: Path) -> list[Path]:
+    """Validate raw rows and write snapshot files (shared write core).
+
+    Used by `import_metrics` (CSV/JSON files) and the YouTube Analytics
+    adapter (G8 PR 2), so every source lands through the SAME
+    fail-closed validation + project-local store.
+    """
+    if platform not in SUPPORTED_PLATFORMS:
+        raise ValueError(f"unknown platform {platform!r}; supported: {SUPPORTED_PLATFORMS}")
+    if not rows:
+        raise ValueError("no metric rows to import")
 
     by_date: dict[str, list[dict[str, Any]]] = {}
-    for line_no, raw in enumerate(raw_rows, start=2):
+    for line_no, raw in enumerate(rows, start=2):
         if not isinstance(raw, dict):
             raise ValueError(f"row {line_no}: expected an object")
         parsed = _parse_row(raw, line_no)
@@ -107,12 +115,12 @@ def import_metrics(source: Path | str, platform: str, proj_dir: Path) -> list[Pa
     out_dir = metrics_dir(Path(proj_dir))
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    for date, rows in sorted(by_date.items()):
+    for date, parsed_rows in sorted(by_date.items()):
         snapshot = {
             "platform": platform,
             "schema": METRICS_SCHEMA_VERSION,
             "date": date,
-            "rows": rows,
+            "rows": parsed_rows,
         }
         path = out_dir / f"{platform}-{date}.json"
         path.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")

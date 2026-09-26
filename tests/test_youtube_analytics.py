@@ -22,7 +22,6 @@ from brandly_cli import capabilities as caps_mod
 from brandly_cli import youtube_analytics as ya
 from brandly_cli.cli import cli
 
-
 REPORT = {
     "reports": [
         {
@@ -83,14 +82,25 @@ class TestIngestCli:
     ) -> None:
         calls: list[str] = []
         monkeypatch.setattr(
-            ya.urllib.request, "urlopen",
+            ya.urllib.request,
+            "urlopen",
             lambda *a, **k: calls.append("net") or None,
         )
-        result = CliRunner().invoke(cli, [
-            "metrics", "ingest", "--platform", "youtube",
-            "--property", "PROP", "--dry-run", "--json",
-            "--root", str(project),
-        ])
+        result = CliRunner().invoke(
+            cli,
+            [
+                "metrics",
+                "ingest",
+                "--platform",
+                "youtube",
+                "--property",
+                "PROP",
+                "--dry-run",
+                "--json",
+                "--root",
+                str(project),
+            ],
+        )
         assert result.exit_code == 0, result.output
         doc = json.loads(result.output)
         assert doc["dry_run"] is True
@@ -100,11 +110,19 @@ class TestIngestCli:
     def test_live_without_credentials_fails_closed(
         self, project: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        result = CliRunner().invoke(cli, [
-            "metrics", "ingest", "--platform", "youtube",
-            "--property", "PROP",
-            "--root", str(project),
-        ])
+        result = CliRunner().invoke(
+            cli,
+            [
+                "metrics",
+                "ingest",
+                "--platform",
+                "youtube",
+                "--property",
+                "PROP",
+                "--root",
+                str(project),
+            ],
+        )
         assert result.exit_code != 0
         assert "credential" in result.output.lower()
         assert "brandly config set youtube:analytics" in result.output
@@ -114,7 +132,9 @@ class TestIngestCli:
     ) -> None:
         import brandly_cli.config_store as cs
 
-        monkeypatch.setattr(cs, "get_credential", lambda name: "tok" if name == "youtube:analytics" else None)
+        monkeypatch.setattr(
+            cs, "get_credential", lambda name: "tok" if name == "youtube:analytics" else None
+        )
 
         class _Resp:
             def __enter__(self):
@@ -133,11 +153,21 @@ class TestIngestCli:
             return _Resp()
 
         monkeypatch.setattr(ya.urllib.request, "urlopen", fake_urlopen)
-        result = CliRunner().invoke(cli, [
-            "metrics", "ingest", "--platform", "youtube",
-            "--property", "PROP", "--project", "test-proj",
-            "--root", str(project),
-        ])
+        result = CliRunner().invoke(
+            cli,
+            [
+                "metrics",
+                "ingest",
+                "--platform",
+                "youtube",
+                "--property",
+                "PROP",
+                "--project",
+                "test-proj",
+                "--root",
+                str(project),
+            ],
+        )
         assert result.exit_code == 0, result.output
         snap = project / ".brandly" / "test-proj" / "metrics" / "youtube-2026-09-01.json"
         assert snap.is_file()
@@ -148,10 +178,18 @@ class TestIngestCli:
                 assert "tok" not in p.read_text(encoding="utf-8", errors="ignore")
 
     def test_missing_property_fails_closed(self, project: Path) -> None:
-        result = CliRunner().invoke(cli, [
-            "metrics", "ingest", "--platform", "youtube", "--dry-run",
-            "--root", str(project),
-        ])
+        result = CliRunner().invoke(
+            cli,
+            [
+                "metrics",
+                "ingest",
+                "--platform",
+                "youtube",
+                "--dry-run",
+                "--root",
+                str(project),
+            ],
+        )
         assert result.exit_code != 0
         assert "property" in result.output.lower()
 

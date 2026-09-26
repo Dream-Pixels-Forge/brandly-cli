@@ -51,6 +51,25 @@ All notable changes to this project are documented here.
   blend shipped; YouTube Analytics API next step planned — G8 PR 2).
 - README metrics roadmap line synced.
 
+### Added (G8 PR 2 — YouTube Analytics adapter, issue #99)
+- **Decision records DEV-G8-003 confirmed**: YouTube Analytics only this
+  round; TikTok/IG analytics adapters stay planned (next-step note in the
+  capability row).
+- `brandly metrics ingest --platform youtube --property <id> [--days N]
+  [--dry-run]` — pulls real channel metrics from the YouTube Analytics
+  `reports:query` endpoint and writes them through the same project-local
+  snapshot store as `metrics import` (shared `import_rows` write core,
+  fail-closed validation).
+- G6 pattern: dry-run renders the exact request and never calls the API;
+  live ingest fails closed without a stored credential (`brandly config set
+  youtube:analytics <token>`); credentials never touch project files (F2).
+- `youtube_analytics.rows_from_report` maps API rows to the versioned
+  schema (CTR fraction → percent); unit-tested with mocked HTTP only.
+
+### Changed (G8 PR 2)
+- `metrics_ingest` capability note now records the shipped adapter + the
+  planned TikTok/IG analytics follow-up; README line synced.
+
 ## [0.5.0] — 2026-09-25
 
 ### Added

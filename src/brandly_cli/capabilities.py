@@ -184,8 +184,9 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
         "finding": "F9",
         "note": (
             "`brandly metrics import` (CSV/JSON, project-local snapshots) + "
-            "`analyze` ingested-vs-heuristic source labelling (G8 PR 1); "
-            "YouTube Analytics API next step planned (G8 PR 2)"
+            "`analyze` ingested-vs-heuristic source labelling (G8 PR 1) + "
+            "`metrics ingest` YouTube Analytics API adapter, credential-gated "
+            "and dry-run-first (G8 PR 2); TikTok/IG analytics planned"
         ),
     },
 )

@@ -29,7 +29,7 @@ Everything lives under `.brandly/<project_id>/` (single layout, no legacy `refs/
     videos/scenes/ insert/ transition/ general/
     audio/soundtrack/ sfx/ foley/ voiceover/ general/
     3d-spatial/cameras/ keyframes/ depthmaps/ general/
-    project.json  cost.json  export/
+    project.json  cost.json  brand.json  export/  metrics/
 ```
 
 Key rules:
@@ -62,6 +62,17 @@ Key rules:
   before continuing, to make sure the result matches expectations. Rejecting
   writes a review note to `docs/tmp/review_<stage>_<ts>.md`. In non-interactive
   (piped/EOF) runs the defaults auto-approve.
+- **Brand kit (v0.6.0, G7)**: `.brandly/<project>/brand.json` (palette, claim
+  allowlist, `style_lock`, logo + overlay spec) — project-level only, never user
+  config. Enforced at three layers: prompt lock (palette/claims/third-party-mark
+  ban; style mismatch raises `BrandLockConflict`), gate claim-lock (off-allowlist
+  on-screen text hard-fails `brandly gate`), and `export-platforms --brand`
+  (ffmpeg logo overlay). All fail-closed. See `## Brand Kit & Metrics (v0.6.0)`.
+- **Metrics snapshots (v0.6.0, G8)**: `.brandly/<project>/metrics/<platform>-<date>.json`
+  — project-local ingested platform metrics, never the user config store.
+  Written by `brandly metrics import` (offline CSV/JSON) and `brandly metrics
+  ingest` (YouTube Analytics API, credential-gated, dry-run-first);
+  `brandly analyze` prefers them over heuristics and labels the source.
 
 ## Quick Start
 
@@ -111,6 +122,8 @@ brandly job-resume <video_id> --project-id <project_id>
 | **Create mecha refs**            | → `../brandly-mecha-sheet/SKILL.md`      |
 | **Create animal refs**           | → `../brandly-animal-sheet/SKILL.md`     |
 | **Create plant refs**            | → `../brandly-plant-sheet/SKILL.md`      |
+| **Set up / verify a brand kit**  | `## Brand Kit & Metrics (v0.6.0)` below |
+| **Ingest platform metrics**      | `## Brand Kit & Metrics (v0.6.0)` below |
 
 ---
 
@@ -417,13 +430,96 @@ The Director agent automatically uses these techniques when generating videos:
 3. Stores results in project artifacts
 4. Tracks costs and progress
 
+## Brand Kit & Metrics (v0.6.0)
+
+v0.6.0 adds two command groups around the generation loop: `brandly brand`
+(brand-kit enforcement, G7) and `brandly metrics` (platform-metrics ingest, G8).
+Both are **fail-closed** — a missing kit, logo, credential, or malformed row
+stops the run instead of silently degrading.
+
+### Brand kit (G7)
+
+The kit lives at `.brandly/<project>/brand.json` (project-level only, never
+user config or `.env`): palette, claim allowlist, pinned `style_lock`, logo +
+overlay spec.
+
+```bash
+# 1. Set up the kit (before generating commercial work)
+brandly brand init <project_id> \
+  --logo assets/logo.png \
+  --color "#0F172A" --color "#22D3EE" \
+  --claim "Up to 50% off" --claim "Free shipping" \
+  --style cinematic \
+  --overlay-corner bottom-right --overlay-safe-zone 0.1 --overlay-opacity 0.9
+
+# 2. Verify / inspect
+brandly brand verify <project_id>      # exits 1 on missing or malformed kit
+brandly brand show <project_id>        # text or --json
+```
+
+Three enforcement layers:
+
+- **Prompt layer** — the CLI appends a *Brand lock* after the style preset:
+  palette dominance, copy restricted to the claims, ban on third-party logos /
+  trademarks / watermarks. A requested `--style` that disagrees with the
+  kit's `style_lock` raises `BrandLockConflict` — fail closed, never blend
+  styles.
+- **Gate layer** — `brandly gate --scene/--all-scenes` collects registered
+  on-screen text (`text_overlay` / `caption` / `captions`); anything outside
+  the claim allowlist hard-fails the gate (violations recorded under
+  `report["brand"]`; blank/unregistered text never blocks).
+- **Export layer** — `export-platforms --brand` composites the kit's logo
+  onto every export via ffmpeg overlay (corner / safe-zone / opacity from the
+  kit's overlay spec). Missing kit, logo, or file fails closed.
+
+```bash
+# Platform exports with the kit's logo baked in
+brandly export-platforms <project_id> --platforms tiktok --platforms youtube_standard --brand
+```
+
+### Metrics ingest (G8)
+
+Ingested metrics live project-local at
+`.brandly/<project>/metrics/<platform>-<date>.json` (never the user config
+store). Row schema: `{date, views, likes, watch_time_seconds, ctr_pct}` —
+CSV or JSON, fail-closed on unknown platform, malformed rows, or out-of-range
+values (date ISO `YYYY-MM-DD`; non-negative counts; `ctr_pct` 0–100).
+
+```bash
+# Offline: import a CSV/JSON export from a platform
+brandly metrics import metrics.csv --platform youtube --project <project_id>
+brandly metrics show                # latest ingested snapshot per platform
+
+# Live: YouTube Analytics API adapter (dry-run-first, credential-gated)
+brandly metrics ingest --platform youtube --property UCxxxx --days 28 --dry-run
+brandly config set youtube:analytics <token>   # store the credential once
+brandly metrics ingest --platform youtube --property UCxxxx
+```
+
+- The credential lives in the user config store (`youtube:analytics`), never
+  in project files. No credential → the live pull fails closed; `--dry-run`
+  renders the exact request without calling the API.
+- `brandly analyze <video> [--root .]` now prefers the latest ingested
+  snapshot over heuristics and always labels the source in its output
+  (`ingested` vs `heuristic`); the CTR row blends the ingested `ctr_pct`.
+- Today only `youtube` is a supported platform; TikTok/Instagram analytics
+  adapters (and live-upload adapters) are the planned follow-ups.
+
 ## Example: Full Product Campaign
 
 ```bash
 # 1. Initialize project
 brandly init --name "Summer Soda Campaign" --idea "Refreshing soda commercial for summer" --style cinematic --shots 4 --budget 500
 
-# 2. Generate cinematic prompt
+# 2. Set up the brand kit (G7) — so the prompt layer locks palette +
+#    claims + style before any generation
+brandly brand init <project_id> \
+  --logo assets/logo.png \
+  --color "#0F172A" --color "#22D3EE" \
+  --claim "50% off this week" \
+  --style cinematic
+
+# 3. Generate cinematic prompt
 brandly prompt \
   -s "A cold can of soda" \
   -a "opens with a refreshing fizz, condensation dripping" \
@@ -431,7 +527,7 @@ brandly prompt \
   -n 4 --style cinematic \
   -c "young woman, 25, athletic build, suntanned skin, wearing swimsuit and sunglasses"
 
-# 3. Generate video with reference image (Agnes AI)
+# 4. Generate video with reference image (Agnes AI)
 brandly video <project_id> \
   --prompt "MASTER PROMPT: A cold can of soda opens..." \
   --style cinematic \
@@ -439,14 +535,19 @@ brandly video <project_id> \
   --reference-images "https://example.com/model-ref.jpg" \
   --wait
 
-# 4. Generate hero image (Agnes AI)
+# 5. Generate hero image (Agnes AI)
 brandly image \
   --prompt "Product hero shot of soda can on ice" \
   --style-preset commercial \
   --size 2K
 
-# 5. Export all assets
+# 6. Export all assets (+ kit's logo on platform exports, G7 export layer)
 brandly export <project_id>
+brandly export-platforms <project_id> --platforms tiktok --platforms youtube_standard --brand
+
+# 7. After publishing, close the loop with real platform data (G8)
+brandly metrics import youtube-export.csv --platform youtube --project <project_id>
+brandly analyze <exported-video> --root .   # source label: `ingested` vs `heuristic`
 ```
 
 ## Provider Routing
@@ -512,3 +613,23 @@ Run `brandly rate-limits` for the live table. Headlines:
 - Add specific lighting and camera details
 - Include film stock references (Kodak Vision3, Fuji Superia)
 - Use `--size 2K` or higher for images
+
+### Brand Kit or Metrics Fails (v0.6.0)
+
+- **Gate fails with off-allowlist copy** — `report["brand"]` lists the
+  violating texts; fix the on-screen copy or add it to the kit's claim
+  allowlist (re-run `brandly brand init ... --force`, then `brandly brand
+  verify`). Blank/unregistered text fields never block the gate.
+- **`BrandLockConflict`** — the requested `--style` disagrees with the
+  kit's `style_lock`. Use the locked style (or re-init the kit with a
+  different `--style`); the lock never blends styles.
+- **`export-platforms --brand` fails closed** — no kit (`brandly brand
+  init` first), no logo set (re-init with `--logo`), or logo file missing
+  on disk.
+- **`metrics ingest` reports no credential** — store it once with
+  `brandly config set youtube:analytics <token>`; preview the exact
+  request without calling the API via `--dry-run`.
+- **`metrics import` rejects a file** — rows must be `{date (ISO
+  YYYY-MM-DD), views, likes, watch_time_seconds, ctr_pct}`; counts are
+  non-negative, `ctr_pct` is 0–100; only `--platform youtube` is
+  supported today.

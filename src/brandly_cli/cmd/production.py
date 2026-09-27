@@ -662,6 +662,17 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
     default=False,
     help="Open the timeline editor UI after all shots are generated.",
 )
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    default=False,
+    help=(
+        "Print the flattened shot list (ids, scene, duration, resolved "
+        "reference paths, prompt preview, progress status) and exit - no "
+        "API calls, no plans, no progress writes (issue #122)."
+    ),
+)
 @click.pass_context
 def produce(
     ctx: click.Context,
@@ -679,6 +690,7 @@ def produce(
     aspect_ratio: str | None,
     no_plan: bool,
     open_ui: bool,
+    dry_run: bool,
 ) -> None:
     """Generate a multi-shot film shot by shot from the production plan.
 
@@ -726,6 +738,26 @@ def produce(
     except ValueError as e:
         console.print(f"[red]Invalid shot list: {e}[/red]")
         sys.exit(1)
+
+    # Issue #122: dry run resolves + prints everything the real run would
+    # do, then exits before any write or API call.
+    if dry_run:
+        images_dir = layout.resolve_media_root(root, project_id, "images")
+        try:
+            flat = shot_runner.flatten_shots(shots, images_dir, character=character)
+        except (ValueError, FileNotFoundError) as e:
+            console.print(f"[red]{e}[/red]")
+            sys.exit(1)
+        progress = shot_runner.ProgressLog(
+            layout.docs_dir(layout.resolve_project_dir(root, project_id), "tmp")
+            / shot_runner.PROGRESS_FILENAME
+        )
+        done = progress.completed_ids(s.id for s in flat)
+        if only:
+            # Mirror run_shots: --only re-drops its ids from the skip list.
+            done -= set(only)
+        _print_dry_run_shots(flat, done, shot_runner.PROGRESS_FILENAME)
+        return
 
     # Goal 3 (audit F6/F7): register the scene manifest BEFORE any generation
     # begins — scenes.json is the source of truth for the scene gate
@@ -893,6 +925,34 @@ def produce(
         except ImportError:
             console.print("[yellow]Web UI not available — install with: pip install brandly-cli[web][/yellow]")
 
+def _print_dry_run_shots(shots: list, done: set[str], progress_name: str) -> None:
+    """Issue #122: render the flattened shot list for --dry-run.
+
+    Shows id, scene, duration, resolved reference paths, prompt preview and
+    the progress-file status per shot. Callers must invoke this BEFORE any
+    plan write, progress write, or API call.
+    """
+    table = Table(title=f"Dry run - {len(shots)} shot(s) [{progress_name} status]")
+    table.add_column("Status", style="dim")
+    table.add_column("Shot", style="cyan")
+    table.add_column("Scene")
+    table.add_column("Dur")
+    table.add_column("Refs")
+    table.add_column("Prompt")
+    total = 0.0
+    for s in shots:
+        total += s.duration
+        status = "OK" if s.id in done else "pending"
+        refs = ", ".join(Path(r).name for r in s.refs) if s.refs else "-"
+        prompt = s.prompt if len(s.prompt) <= 70 else s.prompt[:70] + "..."
+        table.add_row(status, s.id, str(s.scene), f"{s.duration}s", refs, prompt)
+    console.print(table)
+    console.print(
+        f"[green]Dry run: {len(shots)} shot(s), {total:.0f}s total - "
+        "no API calls, no files written.[/green]"
+    )
+
+
 @click.command(name="storyboard")
 @click.argument("project_id")
 @click.option(
@@ -930,6 +990,16 @@ def produce(
     default=None,
     help="Character identity anchor (same semantics as brandly produce).",
 )
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    default=False,
+    help=(
+        "Print the flattened shot list and exit - no keyframe generations, "
+        "no progress writes (issue #122)."
+    ),
+)
 @click.pass_context
 def storyboard(
     ctx: click.Context,
@@ -940,6 +1010,7 @@ def storyboard(
     interval: float,
     no_gate: bool,
     character: str | None,
+    dry_run: bool,
 ) -> None:
     """Generate storyboard keyframes for each shot before spending video credits.
 
@@ -971,7 +1042,13 @@ def storyboard(
     images_dir = layout.resolve_media_root(root, project_id, "images")
     storyboard_dir = images_dir / "storyboard"
     project_dir = layout.resolve_project_dir(root, project_id)
-    shots = shot_runner.flatten_shots(data, images_dir, character=character)
+    try:
+        shots = shot_runner.flatten_shots(data, images_dir, character=character)
+    except (ValueError, FileNotFoundError) as e:
+        # Clean errors for invalid lists and missing plates - the same
+        # message the dry run surfaces (issue #122).
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
     if only:
         shots = [s for s in shots if s.id in set(only)]
         console.print(f"[dim]--only: {len(shots)} of the shot list match(es) given ids[/dim]")
@@ -980,6 +1057,12 @@ def storyboard(
     progress = shot_runner.ProgressLog(progress_path)
     done = progress.completed_ids(s.id for s in shots)
     pending = [s for s in shots if s.id not in done]
+
+    if dry_run:
+        # Issue #122: print the flattened list + progress status and exit
+        # before any keyframe generation.
+        _print_dry_run_shots(shots, done, progress_path.name)
+        return
 
     from brandly_cli import quality_gate
 

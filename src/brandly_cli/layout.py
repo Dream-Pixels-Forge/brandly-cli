@@ -268,6 +268,32 @@ def build_sheet_filename(
     return f"{token}_{timestamp}{ext}"
 
 
+def ensure_project_tree(root: str | Path, project_id: str) -> None:
+    """Create the v2-aware project tree (issue #117).
+
+    Project *state* lives under ``.brandly/<id>/`` (``docs/`` categories +
+    ``export/``); media trees live in the v2 roots that
+    ``resolve_media_root`` actually reads: image categories under
+    ``pre-production/<id>/`` and video/audio categories under
+    ``production/<id>/videos|audio``. The legacy media tree under
+    ``.brandly/<id>/`` is deliberately NOT created - nothing resolves it.
+    """
+    root_path = Path(root)
+    proj_dir = project_dir(root_path, project_id)
+    for cat in DOC_CATEGORIES:
+        (proj_dir / "docs" / cat).mkdir(parents=True, exist_ok=True)
+    (proj_dir / "export").mkdir(parents=True, exist_ok=True)
+    images_root = resolve_media_root(root_path, project_id, "images")
+    for cat in IMAGE_CATEGORIES:
+        (images_root / cat).mkdir(parents=True, exist_ok=True)
+    videos_root = resolve_media_root(root_path, project_id, "videos")
+    for cat in VIDEO_CATEGORIES:
+        (videos_root / cat).mkdir(parents=True, exist_ok=True)
+    audio_root = resolve_media_root(root_path, project_id, "audio")
+    for cat in AUDIO_CATEGORIES:
+        (audio_root / cat).mkdir(parents=True, exist_ok=True)
+
+
 def ensure_project_dirs(proj_dir: str | Path) -> None:
     """Create the full sub-folder tree for a project (idempotent)."""
     proj_dir = Path(proj_dir)
@@ -289,6 +315,27 @@ def ensure_project_dirs(proj_dir: str | Path) -> None:
 # ---------------------------------------------------------------------------
 
 _IMAGE_EXTS = ("*.png", "*.jpg", "*.jpeg", "*.webp")
+
+
+def discover_project_plates(root: str | Path, project_id: str) -> list[Path]:
+    """Every reference plate for a project - v2 media root first, legacy fallback.
+
+    Issue #117: ``resolve_media_root`` reads ``pre-production/<id>/`` (v2)
+    while the old discovery only scanned ``.brandly/<id>/images/``. Plates
+    land in both across versions, so scan the v2 root's category folders
+    and fall back to the legacy tree, keeping a stable sorted order.
+    """
+    root_path = Path(root)
+    found: list[Path] = []
+    images_root = resolve_media_root(root_path, project_id, "images")
+    if images_root.is_dir():
+        for ext in _IMAGE_EXTS:
+            found.extend(images_root.rglob(ext))
+    legacy_root = project_dir(root_path, project_id) / "images"
+    if legacy_root.is_dir():
+        for ext in _IMAGE_EXTS:
+            found.extend(legacy_root.rglob(ext))
+    return sorted({p.resolve() for p in found})
 
 
 def discover_images(proj_dir: Path) -> list[Path]:

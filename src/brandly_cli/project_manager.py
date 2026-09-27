@@ -57,7 +57,10 @@ class ProjectManager:
         """Create a new project and persist it. Returns project ID."""
         proj_dir = self._resolve_project_dir(data.id)
         proj_dir.mkdir(parents=True, exist_ok=True)
-        layout.ensure_project_dirs(proj_dir)
+        # Issue #117: create the v2-aware tree - docs/export under
+        # .brandly/<id>/, media under pre-production/ + production/ (the
+        # roots resolve_media_root actually reads). No dead legacy tree.
+        layout.ensure_project_tree(self.root, data.id)
         write_json(proj_dir / "project.json", data.to_dict())
         return data.id
 

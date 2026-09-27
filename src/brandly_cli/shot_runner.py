@@ -422,6 +422,11 @@ class RunnerConfig:
     """Called after each shot's terminal result as ``(shot, ok)`` — used to
     update production-plan rows and project.json (issues #36/#37). A hook
     exception is reported but never aborts the run."""
+    continue_on_fail: bool = False
+    """Issue #115: keep running after a terminal shot failure. The run
+    records FAIL, prints a CONTINUE notice per failed shot, runs the
+    remaining shots, then prints a summary with ``--only`` re-run commands
+    and exits 1. Default ``False`` preserves the legacy stop-on-failure."""
 
     def move_shot_clips(self, shot: Shot, new_clips: Sequence[Path]) -> list[Path]:
         """After generating ``shot``, relocate its clips when the shot is a
@@ -717,11 +722,13 @@ def _new_clips(scenes: Path, before: Mapping[str, int]) -> list[Path]:
 
 
 def run_shots(config: RunnerConfig) -> int:
-    """Run every pending shot, stop on first unrecovered failure.
+    """Run every pending shot; stop on first unrecovered failure by default.
 
-    Returns 0 when all pending shots finished, 1 when a shot failed and the
-    run stopped (re-run the same command to resume — completed shots are
-    recorded in the progress file).
+    Returns 0 when all pending shots finished. Returns 1 when a shot failed:
+    with ``continue_on_fail`` (issue #115) the failure is recorded and the
+    remaining shots still run (exit 1 at the end); without it the run stops
+    at the first failure. Completed shots are always recorded in the
+    progress file either way.
     """
     shots = config.shots
     done = config.progress.completed_ids(s.id for s in shots)
@@ -737,6 +744,7 @@ def run_shots(config: RunnerConfig) -> int:
 
     config.say(f"pending: {len(pending)} of {len(shots)} shots (done: {len(done)})")
     scenes = config.scenes_dir
+    failed: list[Shot] = []
     backoff = config.retry_backoff or config.interval
     max_attempts = 1 + max(config.retries, 0)
     for i, shot in enumerate(pending):
@@ -786,11 +794,26 @@ def run_shots(config: RunnerConfig) -> int:
             )
             config.say(f"{shot.id} FAIL exit={exit_code}{reason}")
             _fire_hook(config, shot, False)
+            if not config.continue_on_fail:
+                config.say(
+                    f"STOP: {shot.id} failed after {max_attempts} attempt(s). Fix and "
+                    f"re-run to resume (remaining shots stay pending)."
+                )
+                return 1
+            # Issue #115: keep going — the remaining shots stay runnable and
+            # the summary below lists every failure with its re-run command.
+            failed.append(shot)
             config.say(
-                f"STOP: {shot.id} failed after {max_attempts} attempt(s). Fix and "
-                f"re-run to resume (remaining shots stay pending)."
+                f"CONTINUE: {shot.id} failed after {max_attempts} attempt(s); "
+                "moving on (--continue-on-fail)."
             )
-            return 1
+    if failed:
+        config.say(
+            f"run complete: {len(failed)} of {len(pending)} shot(s) failed — re-run with:"
+        )
+        for shot in failed:
+            config.say(f"  --only {shot.id}")
+        return 1
     config.say("all pending shots complete")
     return 0
 

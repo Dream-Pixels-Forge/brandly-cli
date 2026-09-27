@@ -369,6 +369,33 @@ def infer_video_mode(
     return "text"
 
 
+#: Issue #124: monotonic timestamp of the last video create POST. The
+#: provider counts every create against its 1 request/minute window - even
+#: failed ones - so short internal 503 backoffs self-saturate the limiter.
+_LAST_VIDEO_CREATE_AT: float | None = None
+
+#: Agnes video create endpoint: 1 request/minute (matches --interval default).
+MIN_VIDEO_CREATE_GAP_SECONDS = 60.0
+
+
+async def _enforce_video_create_spacing(gap: float | None = None) -> None:
+    """Wait until the provider's create window has room (issue #124).
+
+    Called before EVERY video create POST - including internal 503 retries
+    and shot-level retries - so two creates can never land inside the
+    1 req/min window. A fresh process (no prior create) never waits.
+    """
+    global _LAST_VIDEO_CREATE_AT
+    import time
+
+    min_gap = MIN_VIDEO_CREATE_GAP_SECONDS if gap is None else gap
+    now = time.monotonic()
+    if _LAST_VIDEO_CREATE_AT is not None and now - _LAST_VIDEO_CREATE_AT < min_gap:
+        wait = min_gap - (now - _LAST_VIDEO_CREATE_AT)
+        await asyncio.sleep(wait)
+    _LAST_VIDEO_CREATE_AT = time.monotonic()
+
+
 async def create_video_task(
     prompt: str,
     *,
@@ -468,6 +495,9 @@ async def create_video_task(
         )
 
     async def _request() -> Any:
+        # Issue #124: space every create attempt >= MIN_VIDEO_CREATE_GAP_SECONDS
+        # apart - across shot retries AND internal attempts.
+        await _enforce_video_create_spacing()
         # 180s: large reference payloads (even after webp/jpeg conversion)
         # need headroom on the slow create endpoint (issue #24).
         async with httpx.AsyncClient(timeout=180) as client:

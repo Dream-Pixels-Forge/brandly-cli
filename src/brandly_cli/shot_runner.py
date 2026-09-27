@@ -446,6 +446,12 @@ class RunnerConfig:
     records FAIL, prints a CONTINUE notice per failed shot, runs the
     remaining shots, then prints a summary with ``--only`` re-run commands
     and exits 1. Default ``False`` preserves the legacy stop-on-failure."""
+    park_after_consecutive_failures: int = 0
+    """Issue #124: with continue_on_fail, park the run after N consecutive
+    failed shots (0 = never park) instead of burning through the whole list
+    while the provider is degraded or the quota is exhausted. The parked
+    message points at the same-command resume; completed shots are skipped
+    on re-run."""
 
     def move_shot_clips(self, shot: Shot, new_clips: Sequence[Path]) -> list[Path]:
         """After generating ``shot``, relocate its clips when the shot is a
@@ -764,9 +770,15 @@ def run_shots(config: RunnerConfig) -> int:
     config.say(f"pending: {len(pending)} of {len(shots)} shots (done: {len(done)})")
     scenes = config.scenes_dir
     failed: list[Shot] = []
+    consecutive_failures = 0
+    parked = False
     backoff = config.retry_backoff or config.interval
     max_attempts = 1 + max(config.retries, 0)
     for i, shot in enumerate(pending):
+        if parked:
+            # Issue #124: parked on a previous iteration - stop the shot
+            # loop here (the break inside the attempt loop alone cannot).
+            break
         if i > 0:
             config.say(
                 f"rate limit: waiting {config.interval:.0f}s before {shot.id}..."
@@ -794,6 +806,7 @@ def run_shots(config: RunnerConfig) -> int:
                 # the ratio decision happens once, in assembly
                 # (`stitch --ratio R --fit crop|pad` / `export-platforms`).
                 _fire_hook(config, shot, True)
+                consecutive_failures = 0
                 break
             if attempt < max_attempts:
                 reason = f" {note}" if note else ""
@@ -822,10 +835,26 @@ def run_shots(config: RunnerConfig) -> int:
             # Issue #115: keep going — the remaining shots stay runnable and
             # the summary below lists every failure with its re-run command.
             failed.append(shot)
+            consecutive_failures += 1
             config.say(
                 f"CONTINUE: {shot.id} failed after {max_attempts} attempt(s); "
                 "moving on (--continue-on-fail)."
             )
+            # Issue #124: a run of consecutive failures means the provider is
+            # degraded or the quota is exhausted - park instead of burning
+            # through the rest of the list.
+            park_at = config.park_after_consecutive_failures
+            if park_at and consecutive_failures >= park_at:
+                config.say(
+                    f"PARK: {consecutive_failures} consecutive shot failure(s) - "
+                    "provider degraded or quota exhausted. Resume later with "
+                    "the same command (completed shots are skipped)."
+                )
+                parked = True
+                # The attempt loop ends here (terminal iteration); the flag
+                # below breaks the SHOT loop - a plain break would only exit
+                # the attempt loop and keep burning shots.
+                break
     if failed:
         config.say(
             f"run complete: {len(failed)} of {len(pending)} shot(s) failed — re-run with:"

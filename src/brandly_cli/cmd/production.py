@@ -646,6 +646,19 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
     ),
 )
 @click.option(
+    "--park-after",
+    "park_after",
+    type=int,
+    default=3,
+    show_default=True,
+    help=(
+        "With --continue-on-fail, park the run after N consecutive failed "
+        "shots (issue #124) instead of burning through the whole list while "
+        "the provider is degraded or the quota is exhausted. 0 disables "
+        "parking."
+    ),
+)
+@click.option(
     "--aspect-ratio",
     "aspect_ratio",
     default=None,
@@ -710,6 +723,7 @@ def produce(
     retries: int,
     split_long_shots: bool,
     continue_on_fail: bool,
+    park_after: int,
     aspect_ratio: str | None,
     no_plan: bool,
     open_ui: bool,
@@ -818,6 +832,7 @@ def produce(
             no_plan=no_plan,
             continue_on_fail=continue_on_fail,
             gate_threshold=gate_threshold,
+            park_after=park_after,
         )
         return
 

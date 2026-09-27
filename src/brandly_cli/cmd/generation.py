@@ -16,7 +16,7 @@ from typing import Any
 import click
 from rich.table import Table
 
-from brandly_cli import layout, shot_runner
+from brandly_cli import inflight, layout, shot_runner
 from brandly_cli.agnes_client import (
     create_video_task,
     generate_image,
@@ -1517,6 +1517,8 @@ def video(
             )
             if saved:
                 console.print(f"  Saved → {saved}")
+                # Issue #114: terminal state - clear the in-flight entry.
+                inflight.remove(root, project_id, video_id)
                 # Record the job so `brandly job-resume <id>` can locate the project.
                 # (The generation doc + plan COMPLETED upsert happen after the
                 # human gate approves, or later via `job-resume`.)

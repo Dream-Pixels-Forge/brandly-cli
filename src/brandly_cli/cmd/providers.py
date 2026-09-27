@@ -14,7 +14,7 @@ from typing import Any
 import click
 from rich.table import Table
 
-from brandly_cli import layout
+from brandly_cli import inflight, layout
 from brandly_cli.agent_tools import get_builtin_tools
 from brandly_cli.agnes_client import (
     agent_tool_loop,
@@ -248,8 +248,63 @@ def jobs(status: str | None, limit: int, output: str) -> None:
         console.print("[dim]Tip: Use 'brandly job-resume <id>' to poll for completion[/dim]")
     asyncio.run(_jobs(status, limit, output))
 
+def _sweep_inflight(
+    ctx: click.Context,
+    project_id: str,
+    *,
+    max_wait: int,
+    model: str,
+    no_download: bool,
+) -> None:
+    """Issue #114: adopt every in-flight task recorded for a project."""
+    from brandly_cli.agnes_client import get_video_status
+    from brandly_cli.io import is_valid_project_id
+
+    if not is_valid_project_id(project_id):
+        console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(1)
+    root = _get_root(ctx)
+    ledger = inflight.entries(root, project_id)
+    if not ledger:
+        console.print(f"[dim]No in-flight tasks recorded for {project_id}.[/dim]")
+        return
+
+    console.print(f"[dim]Sweeping {len(ledger)} in-flight task(s) for {project_id}...[/dim]")
+    kept = 0
+    for entry in ledger:
+        video_id = str(entry.get("video_id", ""))
+        console.print(f"[bold]Resume {video_id}[/bold] ({entry.get('note') or 'no note'})")
+        try:
+            status_result = asyncio.run(get_video_status(video_id, model_name=model))
+        except Exception as e:
+            console.print(f"  [yellow]Status check failed: {e} - kept for a later sweep[/yellow]")
+            kept += 1
+            continue
+        status = status_result.get("status", "unknown")
+        if status == "completed":
+            ctx.invoke(
+                job_resume,
+                video_id=video_id,
+                project_id=project_id,
+                max_wait=max_wait,
+                model=model,
+                no_download=no_download,
+            )
+            inflight.remove(root, project_id, video_id)
+            console.print("  [green]resumed + downloaded; cleared from the ledger[/green]")
+        elif status == "failed":
+            inflight.remove(root, project_id, video_id)
+            console.print(
+                f"  [red]failed: {status_result.get('error') or 'unknown error'} - cleared[/red]"
+            )
+        else:
+            kept += 1
+            console.print(f"  [dim]still {status} ({status_result.get('progress', 0)}%) - kept[/dim]")
+    console.print(f"[dim]sweep complete: {kept} task(s) kept for later.[/dim]")
+
+
 @click.command()
-@click.argument("video_id")
+@click.argument("video_id", required=False)
 @click.option(
     "--project-id",
     default=None,
@@ -262,21 +317,43 @@ def jobs(status: str | None, limit: int, output: str) -> None:
     help="Agnes video model name used when polling (2.5-flash is the current default)",
 )
 @click.option("--no-download", is_flag=True, help="Only report status, do not download the video")
+@click.option(
+    "--sweep",
+    "sweep_project",
+    default=None,
+    help=(
+        "Resume every in-flight task recorded for this project (issue #114): "
+        "completed tasks are downloaded and cleared, failed tasks cleared, "
+        "still-running tasks kept for a later sweep."
+    ),
+)
 @click.pass_context
 def job_resume(
     ctx: click.Context,
-    video_id: str,
+    video_id: str | None,
     project_id: str | None,
     max_wait: int,
     model: str,
     no_download: bool,
+    sweep_project: str | None,
 ) -> None:
     """Poll a video job to completion and download the video to disk.
 
     If the job is still running, polls until it completes (or --max-wait is
     reached). Once a URL is available the video is downloaded to
     .brandly/<project>/videos/scenes/ — use --no-download to skip saving.
+
+    With --sweep <project> (issue #114) the ids come from the durable
+    in-flight ledger: every recorded task is checked, completed tasks are
+    resumed (downloaded) and cleared, failed tasks cleared, still-running
+    tasks kept for a later sweep.
     """
+    if sweep_project is not None:
+        _sweep_inflight(ctx, sweep_project, max_wait=max_wait, model=model, no_download=no_download)
+        return
+    if video_id is None:
+        console.print("[red]Provide a video id, or --sweep <project> to resume the ledger.[/red]")
+        sys.exit(1)
     from brandly_cli.agnes_client import get_video_status
 
     root = _get_root(ctx)

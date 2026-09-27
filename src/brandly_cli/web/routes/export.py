@@ -28,7 +28,7 @@ async def export_project(project_id: str, request: Request) -> dict:
     clips: list[Path] = []
     missing = []
     for clip in timeline.clips:
-        clip_path = deps.clip_media_path(proj_dir, clip)
+        clip_path = deps.clip_media_path(root, project_id, clip)
         if clip_path is not None:
             clips.append(clip_path)
         else:

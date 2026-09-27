@@ -56,6 +56,19 @@ from brandly_cli.video_prompts import (
     list_video_styles,
 )
 
+#: Issue #123: projects already warned about a missing primary reference in
+#: this process. Long produce runs call the reference resolver once per shot;
+#: the warning must print once per project, not once per shot.
+_NO_PRIMARY_REF_WARNED: set[str] = set()
+
+
+def _should_warn_no_primary_reference(project_id: str) -> bool:
+    """True the first time a project is checked in this process (issue #123)."""
+    if project_id in _NO_PRIMARY_REF_WARNED:
+        return False
+    _NO_PRIMARY_REF_WARNED.add(project_id)
+    return True
+
 
 @click.command(name="reference")
 @click.argument("project_id")
@@ -1242,7 +1255,7 @@ def video(
                 "Use --allow-referenceless to override.[/red]"
             )
             sys.exit(2)
-        else:
+        elif _should_warn_no_primary_reference(project_id):
             console.print(
                 f"[yellow]⚠ No primary reference for project {project_id}.[/yellow]\n"
                 f"  Video generation without a reference produces high-drift output.\n"
@@ -1676,11 +1689,16 @@ def music(
 ) -> None:
     """Generate background music via MiniMax Audio."""
     console.print(f"[dim]Generating music ({model}, {duration}s)...[/dim]")
-    result = asyncio.run(
-        generate_music(
-            prompt, model=model, duration_seconds=duration, instrumental=instrumental, lyrics=lyrics
+    try:
+        result = asyncio.run(
+            generate_music(
+                prompt, model=model, duration_seconds=duration, instrumental=instrumental, lyrics=lyrics
+            )
         )
-    )
+    except OSError as exc:
+        # Issue #123: provider pre-flight errors (e.g. missing MINIMAX_API_KEY)
+        # surface as a clean ClickException, not a raw traceback.
+        raise click.ClickException(str(exc)) from exc
     url = result.get("url") or ""
     if url:
         console.print(f"[green]✓ Music generated:[/green] {url}")
@@ -1724,17 +1742,22 @@ def tts(
 ) -> None:
     """Generate voiceover via MiniMax TTS."""
     console.print(f"[dim]Generating TTS ({model}, voice={voice_id})...[/dim]")
-    result = asyncio.run(
-        generate_tts(
-            text,
-            model=model,
-            voice_id=voice_id,
-            speed=speed,
-            vol=vol,
-            pitch=pitch,
-            emotion=emotion,
+    try:
+        result = asyncio.run(
+            generate_tts(
+                text,
+                model=model,
+                voice_id=voice_id,
+                speed=speed,
+                vol=vol,
+                pitch=pitch,
+                emotion=emotion,
+            )
         )
-    )
+    except OSError as exc:
+        # Issue #123: provider pre-flight errors (e.g. missing MINIMAX_API_KEY)
+        # surface as a clean ClickException, not a raw traceback.
+        raise click.ClickException(str(exc)) from exc
     url = result.get("url") or ""
     if url:
         console.print(f"[green]✓ Voiceover generated:[/green] {url}")

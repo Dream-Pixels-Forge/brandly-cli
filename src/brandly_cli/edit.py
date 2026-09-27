@@ -133,6 +133,24 @@ async def trim_video(
     return info
 
 
+def _parse_aspect(text: str) -> float | None:
+    """Parse ``W:H`` (ints or decimals, e.g. ``16:9``, ``2.39:1``) to W/H.
+
+    Returns ``None`` for anything that is not two positive numbers — the
+    caller fails closed with a clear message instead of building a broken
+    ffmpeg filter (issue #123).
+    """
+    try:
+        left, right = text.split(":", 1)
+        w = float(left.strip())
+        h = float(right.strip())
+    except ValueError:
+        return None
+    if w <= 0 or h <= 0:
+        return None
+    return w / h
+
+
 async def resize_video(
     input_path: str | Path,
     output_path: str | Path,
@@ -152,15 +170,21 @@ async def resize_video(
 
     out.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["ffmpeg", "-y", "-i", str(inp)]
-    if aspect:
-        # Parse common aspect ratios
-        cmd += [
-            "-vf",
-            f"scale='if(gt(iw,ih),{-width if width else -1}:"
-            f"{-height if height else -1})':"
-            f"'if(gt(iw,ih),{-width if width else -1}:"
-            f"{-height if height else -1}'",
-        ]
+    if aspect is not None:
+        # Issue #123: parse arbitrary W:H ratios (2.39:1, 16:9, ...) and
+        # center-crop to the target ratio at source scale (the G4 ratio
+        # policy), then optionally scale to explicit dimensions.
+        ratio = _parse_aspect(aspect)
+        if ratio is None:
+            return {"error": f"Invalid aspect ratio {aspect!r} - use W:H like 16:9 or 2.39:1"}
+        vf = f"crop=w='min(iw,ih*{ratio})':h='min(ih,iw/{ratio})'"
+        if width and height:
+            vf += f",scale={width}:{height}"
+        elif width:
+            vf += f",scale={width}:-2"
+        elif height:
+            vf += f",scale=-2:{height}"
+        cmd += ["-vf", vf]
     elif width and height:
         cmd += ["-vf", f"scale={width}:{height}"]
     elif width:

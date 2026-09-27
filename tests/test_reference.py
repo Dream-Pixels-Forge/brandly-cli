@@ -18,6 +18,15 @@ from brandly_cli.cli import (
 from brandly_cli.utils import generate_project_id
 
 
+@pytest.fixture(autouse=True)
+def _reset_reference_warning_state() -> None:
+    """Issue #123: the no-primary-reference warning is once-per-project-per-
+    process now; reset the guard so each test sees the warning deterministically."""
+    from brandly_cli.cmd import generation
+
+    generation._NO_PRIMARY_REF_WARNED.clear()
+
+
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
     """Return the .brandly root (new layout: projects at .brandly/{id}/)."""

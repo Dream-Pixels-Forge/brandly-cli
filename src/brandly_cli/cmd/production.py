@@ -17,6 +17,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
+from brandly_cli import assemble as assemble_mod
 from brandly_cli import layout, scenes, shot_runner, stitch
 from brandly_cli.agnes_client import (
     create_video_task,
@@ -2563,6 +2564,117 @@ def scenes_status(ctx: click.Context, project_id: str, as_json: bool) -> None:
         _print_scene_report(report)
 
 
+@click.command()
+@click.argument("project_id")
+@click.option(
+    "--shots",
+    "shots_file",
+    required=True,
+    help="Path to the shot list JSON used for the production run.",
+)
+@click.option(
+    "--transition",
+    "transition",
+    default="fade",
+    show_default=True,
+    type=click.Choice(["fade", "dissolve", "wipe", "slide"]),
+    help="Transition applied BETWEEN scenes (scenes join with hard cuts).",
+)
+@click.option(
+    "--transition-duration",
+    "transition_duration",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="Duration of each between-scene transition in seconds.",
+)
+@click.option("--ratio", default=None, help="Assembly-time aspect ratio (e.g. 2.39:1, G4 policy).")
+@click.option(
+    "--fit",
+    type=click.Choice(["crop", "pad"]),
+    default="crop",
+    show_default=True,
+    help="How to reach --ratio: center-crop or letterbox.",
+)
+@click.option(
+    "--color-grade",
+    "color_grade",
+    type=click.Choice(["cinematic", "warm", "cool", "desaturated", "none"]),
+    default="cinematic",
+    show_default=True,
+    help="Color grade applied at assembly.",
+)
+@click.option("-o", "--output", default=None, help="Output path (default: .brandly/<id>/export/final.mp4).")
+@click.pass_context
+def assemble(
+    ctx: click.Context,
+    project_id: str,
+    shots_file: str,
+    transition: str,
+    transition_duration: float,
+    ratio: str | None,
+    fit: str,
+    color_grade: str,
+    output: str | None,
+) -> None:
+    """Assemble the final film from the deterministic clip names (issue #121).
+
+    Derives clip order from the shot list + the Scene-XX-Shot-X-Y naming,
+    concatenates each scene (hard cuts), then stitches the scene segments
+    with the between-scene transition, color grade and the G4 ratio policy.
+    Fails closed on missing shots and prints their --only re-run commands.
+    """
+    if not is_valid_project_id(project_id):
+        console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(1)
+
+    root = _get_root(ctx)
+    path = Path(shots_file)
+    if not path.is_file():
+        console.print(f"[red]Shot list not found: {path}[/red]")
+        sys.exit(1)
+    try:
+        data = shot_runner.load_shots_file(path)
+    except ValueError as e:
+        console.print(f"[red]Invalid shot list: {e}[/red]")
+        sys.exit(1)
+
+    images_dir = layout.resolve_media_root(root, project_id, "images")
+    try:
+        shots = shot_runner.flatten_shots(data, images_dir)
+    except (ValueError, FileNotFoundError) as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    scenes_dir = layout.resolve_media_root(root, project_id, "videos") / "scenes"
+    plan = assemble_mod.plan_assembly(shots, scenes_dir)
+    if plan.missing:
+        console.print(
+            f"[red]Missing {len(plan.missing)} shot(s) - generate them first:[/red]"
+        )
+        for sid in plan.missing:
+            console.print(f"  --only {sid}")
+        sys.exit(1)
+
+    out = Path(output) if output else layout.project_dir(root, project_id) / "export" / "final.mp4"
+    result = asyncio.run(
+        assemble_mod.assemble_project(
+            plan,
+            out,
+            transition=transition,
+            transition_duration=transition_duration,
+            color_grade=color_grade,
+            ratio=ratio,
+            fit=fit,
+            say=lambda msg: console.print(f"[dim]{msg}[/dim]"),
+        )
+    )
+    if "error" in result:
+        console.print(f"[red]Error: {result['error']}[/red]")
+        sys.exit(1)
+    console.print(f"[green]Assembled film -> {result.get('output_path', out)}[/green]")
+
+
 def register(cli) -> None:
     cli.add_command(init)
     cli.add_command(status)
@@ -2573,6 +2685,7 @@ def register(cli) -> None:
     cli.add_command(approve)
     cli.add_command(estimate)
     cli.add_command(produce)
+    cli.add_command(assemble)
     cli.add_command(storyboard)
     cli.add_command(migrate)
     cli.add_command(progress)

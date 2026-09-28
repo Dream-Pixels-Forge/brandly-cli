@@ -335,6 +335,25 @@ def flatten_shots(
                     index_in_scene=shot_position,
                 )
             )
+    # Issue #113: progress logs (storyboard/produce) match by bare shot id, so
+    # two shots sharing an id alias each other - the first OK line marks every
+    # same-id shot done, and FAIL lines become ambiguous across acts. Fail
+    # closed on collisions instead of returning an aliased list.
+    seen_ids: dict[str, list[str]] = {}
+    for shot in shots:
+        seen_ids.setdefault(shot.id, []).append(shot.act or "<top-level>")
+    duplicates = {
+        sid: acts for sid, acts in seen_ids.items() if len(acts) > 1
+    }
+    if duplicates:
+        detail = ", ".join(
+            f"{sid!r} (acts: {', '.join(acts)})" for sid, acts in sorted(duplicates.items())
+        )
+        raise ValueError(
+            f"duplicate shot ids across acts: {detail}. Progress logs match "
+            "by bare shot id, so shared ids silently corrupt storyboard/produce "
+            "resume. Use globally-unique ids, e.g. '<act>-<id>' (scene1-shot01)."
+        )
     return shots
 
 

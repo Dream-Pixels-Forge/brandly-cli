@@ -2,6 +2,13 @@
 
 > **Date:** 2026-09-25 · **Status:** DECIDED · **Gates:** G6 anti-drift rules
 > (one platform at a time; no live-by-default; no secrets in `.env` — F2).
+>
+> **Status 2026-09-28 (issue #97 closed):** all three F9 adapters shipped —
+> YouTube (G6 PR 1), TikTok direct-post + Instagram Reels (issue #97 PR).
+> Anti-drift rules held: dry-run first everywhere, live only behind a stored
+> credential, scheduling only where the platform supports it (YouTube
+> `publishAt`; TikTok refuses `--schedule`; Instagram needs a shared
+> `--video-url`). Capability row: `publish_schedule` = `supported`.
 
 ## Decision
 

@@ -147,20 +147,16 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
         "id": "publish_schedule",
         "persona": "marketer",
-        "status": "partial",
+        "status": "supported",
         "command": "publish",
         "finding": "F9",
-        "planned": "live YouTube upload (credentials) + TikTok/IG adapters (DEV-G6-001)",
-        "note": "`brandly publish <id> --platform youtube [--schedule ISO] "
-        "[--dry-run]` — dry-run renders the exact payload, never posts; live "
-        "posting requires a stored credential (decision DEV-G6-001). "
-        "TikTok/Instagram adapters are follow-ups",
-        "banned_claims": (
-            "publishes to",
-            "publish to",
-            "schedules to",
-            "auto-publish",
-            "automated workflow",
+        "note": (
+            "issue #97 closed: `brandly publish <id> [--platform "
+            "youtube|tiktok|instagram] [--schedule ISO] [--dry-run]` - "
+            "dry-run renders the exact payload, never posts; live posting "
+            "requires a stored credential (`brandly config set <platform> "
+            "<token>`, decision DEV-G6-001). Scheduling: YouTube only "
+            "(publishAt); Instagram needs a shared --video-url"
         ),
     },
     {

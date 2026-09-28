@@ -7,6 +7,7 @@ const PANELS: { kind: PanelKind; label: string; icon: string; badge?: string }[]
   { kind: 'asset_manifest', label: 'Asset Manifest', icon: 'folder_zip', badge: 'clips' },
   { kind: 'props', label: 'Props Inspector', icon: 'tune' },
   { kind: 'render', label: 'Render Queue', icon: 'cloud_sync' },
+  { kind: 'monitor', label: 'Production Monitor', icon: 'monitor_heart' },
   { kind: 'agnes_ai', label: 'Agnes AI Synthesizer', icon: 'auto_awesome' },
 ];
 

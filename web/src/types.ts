@@ -47,7 +47,49 @@ export interface ProjectTimeline {
   updated_at: string;
 }
 
-export type PanelKind = 'preview' | 'timeline' | 'asset_manifest' | 'props' | 'color' | 'audio' | 'render' | 'agnes_ai';
+export interface MonitorGate {
+  score: number;
+  status: string;
+  issues: string[];
+}
+
+export interface MonitorRow {
+  shot_id: string;
+  scene: number | string;
+  produce: 'OK' | 'RETRY' | 'FAIL' | 'pending';
+  storyboard: 'OK' | 'RETRY' | 'FAIL' | 'pending';
+  attempts: number;
+  retries: number;
+  backoff: string | null;
+  note: string;
+  exit_code: number | null;
+  timestamp: string | null;
+  gate: MonitorGate | null;
+  resume_command: string | null;
+}
+
+export interface MonitorProvider {
+  status: string;
+  video_seconds_today: number;
+  quota_seconds: number;
+  records: number;
+  last_error: null | {
+    shot_id: string;
+    timestamp: string;
+    note: string;
+    http_status: number | null;
+  };
+}
+
+export interface MonitorSnapshot {
+  project_id: string;
+  shots: MonitorRow[];
+  provider: MonitorProvider;
+  gates: Record<string, MonitorGate>;
+  tail: Record<string, { lines: string[]; offset: number }>;
+}
+
+export type PanelKind = 'preview' | 'timeline' | 'asset_manifest' | 'props' | 'color' | 'audio' | 'render' | 'monitor' | 'agnes_ai';
 
 export type TransitionType = 'fade' | 'dissolve' | 'wipe' | 'slide';
 

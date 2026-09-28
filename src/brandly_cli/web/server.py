@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import webbrowser
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -15,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from brandly_cli import __version__
 from brandly_cli.web import deps, security
 from brandly_cli.web.routes import clips, export, gate, projects, timeline, waveform
+from brandly_cli.web.routes import monitor as monitor_route
 from brandly_cli.web.utils.thumbnail import ensure_thumbnail
 
 # ---------------------------------------------------------------------------
@@ -69,6 +71,7 @@ def create_app(root: str | Path | None = None, *, token: str | None = None) -> F
     app.include_router(export.router)
     app.include_router(waveform.router)
     app.include_router(gate.router)
+    app.include_router(monitor_route.router)
 
     # Static files for SPA
     static_dir = Path(__file__).parent / "static"
@@ -110,17 +113,27 @@ def create_app(root: str | Path | None = None, *, token: str | None = None) -> F
     # WebSocket for generation progress
     @app.websocket("/ws/{project_id}")
     async def websocket_endpoint(websocket: WebSocket, project_id: str) -> None:
-        """Register connection then forward generation events."""
+        """Register connection, forward generation events, stream progress tails.
+
+        Issue #126: alongside the existing in-process generation events, the
+        watcher pushes new produce/storyboard progress lines as
+        ``monitor_tail`` messages so a long CLI run is visible live.
+        """
+        from brandly_cli.web import monitor
         from brandly_cli.web.websocket import register, unregister
 
         await websocket.accept()
         register(project_id, websocket)
+        watcher = asyncio.create_task(
+            monitor.watch(websocket.app.state.root, project_id, websocket)
+        )
         try:
             while True:
                 await websocket.receive_text()
         except WebSocketDisconnect:
             pass
         finally:
+            watcher.cancel()
             unregister(project_id, websocket)
 
     return app

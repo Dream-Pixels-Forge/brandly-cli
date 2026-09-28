@@ -23,6 +23,30 @@ MIN_CLIP_DURATION = 1.0
 MAX_CLIP_DURATION = 12.0  # Agnes model limit
 
 
+def resolve_media_file(root: Path, project_id: str, clip_path: str) -> Path | None:
+    """Resolve a stored relative clip path to an on-disk file (v2 first).
+
+    Issue #125: produce writes clips to the v2 media root
+    (``production/<id>/videos/...``) via ``layout.resolve_media_root`` while
+    the stored timeline paths are relative to a project *base*. The v2 base is
+    ``production/<id>`` and the legacy v1 base is ``.brandly/<id>`` — the same
+    relative shape (``videos/scenes/<name>.mp4``) resolves under both. v2 wins
+    because it is what the runners write today; the legacy fallback keeps v1
+    projects working. Containment is enforced on every candidate.
+    """
+    if not clip_path:
+        return None
+    from brandly_cli.web.security import safe_join
+
+    v2_base = layout.resolve_media_root(Path(root), project_id, "videos").parent
+    legacy_base = layout.project_dir(root, project_id)
+    for base in (v2_base, legacy_base):
+        candidate = safe_join(base, clip_path)
+        if candidate is not None and candidate.is_file():
+            return candidate
+    return None
+
+
 class TimelineState:
     """In-memory timeline state synced to timeline.json on disk."""
 
@@ -179,10 +203,8 @@ class TimelineState:
         clip = self.get_clip(clip_id)
         if clip is None or not clip.clip_path:
             return None
-        proj_dir = layout.project_dir(self.root, self.project_id)
-        from brandly_cli.web.security import safe_join
-        full_path = safe_join(proj_dir, clip.clip_path)
-        if full_path is None or not full_path.is_file():
+        full_path = resolve_media_file(self.root, self.project_id, clip.clip_path or "")
+        if full_path is None:
             return None
         import asyncio
 
@@ -226,27 +248,34 @@ class TimelineState:
         return layout.docs_dir(proj_dir, "tmp") / TIMELINE_FILENAME
 
     def _build_from_project(self) -> ProjectTimeline:
-        """Build initial timeline from existing project files."""
+        """Build initial timeline from existing project files.
+
+        Issue #125: scan the v2 media root (where produce writes) first,
+        then the legacy ``.brandly/<id>/videos`` tree, so both v2 and v1
+        projects build a real timeline. Duplicate stems across the two trees
+        resolve to the v2 file (the runner's current output location).
+        """
         proj_dir = layout.project_dir(self.root, self.project_id)
+        v2_videos = layout.resolve_media_root(Path(self.root), self.project_id, "videos")
+        scan_dirs = [
+            (v2_videos / "scenes", "scenes"),
+            (layout.media_dir(proj_dir, "videos", "scenes"), "scenes"),
+            (v2_videos / "transition", "transition"),
+            (layout.media_dir(proj_dir, "videos", "transition"), "transition"),
+        ]
         clips: list[Clip] = []
-
-        # Scan for generated video clips
-        videos_dir = layout.media_dir(proj_dir, "videos", "scenes")
-        if videos_dir.exists():
-            for mp4 in sorted(videos_dir.glob("*.mp4")):
+        seen: set[str] = set()
+        for scan_dir, _role in scan_dirs:
+            if not scan_dir.is_dir():
+                continue
+            for mp4 in sorted(scan_dir.glob("*.mp4")):
                 stem = mp4.stem  # e.g. "Scene-01-Shot-1-1"
+                if stem in seen:
+                    continue
                 clip = self._parse_clip_filename(stem, mp4, proj_dir)
                 if clip:
                     clips.append(clip)
-
-        # Also check transition clips
-        trans_dir = layout.media_dir(proj_dir, "videos", "transition")
-        if trans_dir.exists():
-            for mp4 in sorted(trans_dir.glob("*.mp4")):
-                stem = mp4.stem
-                clip = self._parse_clip_filename(stem, mp4, proj_dir)
-                if clip:
-                    clips.append(clip)
+                    seen.add(stem)
 
         timeline = ProjectTimeline(
             project_id=self.project_id,

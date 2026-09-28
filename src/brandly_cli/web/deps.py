@@ -14,7 +14,7 @@ from brandly_cli import layout
 from brandly_cli.io import is_valid_project_id
 from brandly_cli.web.models import Clip
 from brandly_cli.web.security import safe_join
-from brandly_cli.web.state import TimelineState
+from brandly_cli.web.state import TimelineState, resolve_media_file
 
 
 def require_project_dir(root: Path, project_id: str) -> Path:
@@ -39,18 +39,21 @@ def require_clip(root: Path, project_id: str, clip_id: str) -> tuple[Path, Clip]
     return proj_dir, clip
 
 
-def clip_media_path(proj_dir: Path, clip: Clip) -> Path | None:
-    """Resolve a clip's media file *inside* the project, else ``None``."""
-    if not clip.clip_path:
-        return None
-    candidate = safe_join(proj_dir, clip.clip_path)
-    return candidate if candidate is not None and candidate.is_file() else None
+def clip_media_path(root: Path, project_id: str, clip: Clip) -> Path | None:
+    """Resolve a clip's media file, v2 media root first, else ``None``.
+
+    Issue #125: delegates to :func:`state.resolve_media_file` so stored
+    relative paths resolve against ``production/<id>/`` (where produce
+    writes) before the legacy ``.brandly/<id>/`` tree. Containment is
+    enforced on every candidate.
+    """
+    return resolve_media_file(root, project_id, clip.clip_path or "")
 
 
 def require_clip_media(root: Path, project_id: str, clip_id: str) -> tuple[Path, Path]:
     """Return ``(project_dir, media_file)`` or raise 404."""
     proj_dir, clip = require_clip(root, project_id, clip_id)
-    media = clip_media_path(proj_dir, clip)
+    media = clip_media_path(root, project_id, clip)
     if media is None:
         raise HTTPException(status_code=404, detail=f"Clip file not found: {clip_id}")
     return proj_dir, media

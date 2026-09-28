@@ -89,7 +89,19 @@ export interface MonitorSnapshot {
   tail: Record<string, { lines: string[]; offset: number }>;
 }
 
-export type PanelKind = 'preview' | 'timeline' | 'asset_manifest' | 'props' | 'color' | 'audio' | 'render' | 'monitor' | 'agnes_ai';
+export interface ReviewItem {
+  item_id: string;
+  stage: string;
+  path: string;
+  scene: number | null;
+  gate: MonitorGate | null;
+  shot_id: string | null;
+  decided: boolean;
+  decided_at: string | null;
+  modified: string;
+}
+
+export type PanelKind = 'preview' | 'timeline' | 'asset_manifest' | 'props' | 'color' | 'audio' | 'render' | 'monitor' | 'review' | 'agnes_ai';
 
 export type TransitionType = 'fade' | 'dissolve' | 'wipe' | 'slide';
 

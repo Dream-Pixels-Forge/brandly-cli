@@ -1919,6 +1919,7 @@ def _run_produce_runner(
     retries: int = 0,
     split_long_shots: bool = False,
     no_plan: bool = False,
+    continue_on_fail: bool = False,
 ) -> None:
     """Progress-file runner path for ``brandly produce`` (see produce())."""
     project_dir = layout.resolve_project_dir(root, project_id)
@@ -2058,6 +2059,7 @@ def _run_produce_runner(
         say=lambda msg: console.print(f"[dim]{msg}[/dim]"),
         retries=retries,
         on_shot_done=_on_shot_done,
+        continue_on_fail=continue_on_fail,
     )
     rc = shot_runner.run_shots(config)
     _sync_project("complete" if rc == 0 else "failed")

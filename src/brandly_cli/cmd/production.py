@@ -635,6 +635,17 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
     ),
 )
 @click.option(
+    "--continue-on-fail",
+    "continue_on_fail",
+    is_flag=True,
+    default=False,
+    help=(
+        "Keep running after a terminal shot failure (issue #115): record FAIL, "
+        "continue with the remaining shots, then print a summary with --only "
+        "re-run commands. Default stops at the first failure."
+    ),
+)
+@click.option(
     "--aspect-ratio",
     "aspect_ratio",
     default=None,
@@ -676,6 +687,7 @@ def produce(
     max_shots: int,
     retries: int,
     split_long_shots: bool,
+    continue_on_fail: bool,
     aspect_ratio: str | None,
     no_plan: bool,
     open_ui: bool,
@@ -760,6 +772,7 @@ def produce(
             retries=retries,
             split_long_shots=split_long_shots,
             no_plan=no_plan,
+            continue_on_fail=continue_on_fail,
         )
         return
 

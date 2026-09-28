@@ -684,6 +684,17 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
         "API calls, no plans, no progress writes (issue #122)."
     ),
 )
+@click.option(
+    "--gate-threshold",
+    "gate_threshold",
+    type=int,
+    default=None,
+    help=(
+        "Flag takes whose AI quality-gate score falls below N/100: the "
+        "end-of-run summary lists each with a --only re-run command "
+        "(issue #116). Clips are kept; exit code unchanged."
+    ),
+)
 @click.pass_context
 def produce(
     ctx: click.Context,
@@ -703,6 +714,7 @@ def produce(
     no_plan: bool,
     open_ui: bool,
     dry_run: bool,
+    gate_threshold: int | None,
 ) -> None:
     """Generate a multi-shot film shot by shot from the production plan.
 
@@ -805,6 +817,7 @@ def produce(
             split_long_shots=split_long_shots,
             no_plan=no_plan,
             continue_on_fail=continue_on_fail,
+            gate_threshold=gate_threshold,
         )
         return
 

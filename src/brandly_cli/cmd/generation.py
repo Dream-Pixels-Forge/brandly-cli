@@ -70,6 +70,41 @@ def _should_warn_no_primary_reference(project_id: str) -> bool:
     return True
 
 
+#: Issue #116: the last quality-gate verdict from the ``video`` pipeline.
+#: Produce routes every shot through ctx.invoke(video) - the gate result
+#: never returns to the runner, so the video command records its verdict
+#: here and produce's generate_one reads it right after each shot.
+_LAST_GATE: dict[str, Any] = {"__last__": None}
+
+
+def _gate_note(score: int | None) -> str:
+    """Runner note fragment for a shot's gate score (empty when unknown)."""
+    if score is None:
+        return ""
+    return f"gate={score}/100"
+
+
+def _print_gate_threshold_summary(gate_scores: dict[str, int], threshold: int) -> list[str]:
+    """Print below-threshold takes with their --only re-run commands (issue #116).
+
+    Flag mode: clips are kept and exit codes are unchanged - the summary is
+    the actionable follow-up. Returns the below-threshold shot ids.
+    """
+    below = sorted(
+        sid for sid, score in gate_scores.items() if score < threshold
+    )
+    if below:
+        console.print(
+            f"[yellow]run complete: {len(below)} take(s) scored below the "
+            f"gate threshold {threshold}/100 - regenerate with:[/yellow]"
+        )
+        for sid in below:
+            console.print(
+                f"  --only {sid}   (gate={gate_scores[sid]}/100)"
+            )
+    return below
+
+
 @click.command(name="reference")
 @click.argument("project_id")
 @click.option(
@@ -1530,6 +1565,13 @@ def video(
                 )
             )
             _print_gate_report(gate_result)
+            # Issue #116: record the verdict so produce can surface the
+            # score on the shot's OK line and apply --gate-threshold.
+            _LAST_GATE["__last__"] = {
+                "clip": _saved_media.name,
+                "score": int(gate_result.score or 0),
+                "status": gate_result.status,
+            }
             if gate_result.status == quality_gate.FAIL:
                 console.print(
                     "[yellow]⚠ Quality gate failed — review or regenerate "
@@ -1920,6 +1962,7 @@ def _run_produce_runner(
     split_long_shots: bool = False,
     no_plan: bool = False,
     continue_on_fail: bool = False,
+    gate_threshold: int | None = None,
 ) -> None:
     """Progress-file runner path for ``brandly produce`` (see produce())."""
     project_dir = layout.resolve_project_dir(root, project_id)
@@ -2033,6 +2076,8 @@ def _run_produce_runner(
             )
         _sync_project("in_progress")
 
+    gate_scores: dict[str, int] = {}
+
     def generate_one(shot: shot_runner.Shot) -> tuple[bool, int, str]:
         ok = _generate_shot(
             project_id,
@@ -2046,7 +2091,15 @@ def _run_produce_runner(
             scene=shot.scene,
             shot_number=shot.index_in_scene,
         )
-        return ok, 0 if ok else 1, ""
+        # Issue #116: pull the gate verdict the video pipeline just recorded
+        # so the runner's OK line carries the score (gate=N/100).
+        last = _LAST_GATE.get("__last__")
+        score = None
+        if ok and isinstance(last, dict):
+            gate_scores[shot.id] = int(last.get("score") or 0)
+            score = gate_scores[shot.id]
+        note = _gate_note(score)
+        return ok, 0 if ok else 1, note
 
     config = shot_runner.RunnerConfig(
         shots=shots,
@@ -2062,6 +2115,10 @@ def _run_produce_runner(
         continue_on_fail=continue_on_fail,
     )
     rc = shot_runner.run_shots(config)
+    # Issue #116: below-threshold takes are flagged, clips kept, exit code
+    # unchanged - the summary is the follow-up worklist.
+    if gate_threshold is not None and gate_scores:
+        _print_gate_threshold_summary(gate_scores, gate_threshold)
     _sync_project("complete" if rc == 0 else "failed")
     sys.exit(rc)
 

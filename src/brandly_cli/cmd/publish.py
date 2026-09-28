@@ -23,13 +23,18 @@ from brandly_cli.io import is_valid_project_id
 @click.argument("project_id")
 @click.option(
     "--platform", default="youtube", show_default=True,
-    help="Target platform (first adapter: youtube; see dev-notes/DECISION-G6-PUBLISH-PATH.md)",
+    help="Target platform: youtube (publishAt scheduling), tiktok (direct post, "
+    "private), instagram (Reels, needs --video-url)",
 )
-@click.option("--schedule", default=None, help="ISO-8601 schedule time (private post at that moment)")
+@click.option("--schedule", default=None, help="ISO-8601 schedule time (YouTube only: private post at that moment)")
 @click.option("--dry-run", is_flag=True, help="Render the exact request payload; never post")
 @click.option("--json", "json_out", is_flag=True, help="Emit the publish record as JSON")
 @click.option("--title", default=None, help="Publish title (default: project ID)")
 @click.option("--description", default=None, help="Publish description")
+@click.option(
+    "--video-url", "video_url", default=None,
+    help="Publicly reachable video URL (Instagram needs one: share the video first)",
+)
 @click.option(
     "--token", default=None,
     help="Publish credential — or store it once with `brandly config set <platform> <token>`",
@@ -45,6 +50,7 @@ def publish(
     json_out: bool,
     title: str | None,
     description: str | None,
+    video_url: str | None,
     token: str | None,
     root: str | None,
 ) -> None:
@@ -84,12 +90,19 @@ def publish(
         console.print(f"[red]Unsupported platform: {e}[/red]")
         sys.exit(1)
 
-    payload = adapter.build_payload(
-        video,
-        title=title or project_id,
-        description=description or "",
-        schedule_iso=schedule,
-    )
+    try:
+        payload = adapter.build_payload(
+            video,
+            title=title or project_id,
+            description=description or "",
+            schedule_iso=schedule,
+            video_url=video_url,
+        )
+    except ValueError as e:
+        # Issue #97: payload-level validation (TikTok scheduling, IG video URL)
+        # fails closed with a clean message, not a traceback.
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
 
     if dry_run:
         record = {

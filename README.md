@@ -39,10 +39,10 @@ via a CLI, an agent-callable tool surface, and an MCP server.
 - **Style presets** — photorealistic, cinematic, editorial, commercial, and documentary
 - **Production plan as source of truth** — every generation registers on `docs/plan/production_plan.md`
 - **Smaller reference payloads** — large local images auto-convert to webp/jpeg before upload
+- **Publish/schedule to TikTok/IG/YouTube** — `brandly publish` (dry-run-first, credential-gated live via `brandly config set <platform> <token>`; YouTube `publishAt` scheduling; TikTok direct-post private; Instagram Reels need a shared `--video-url`)
 
 **Not shipped yet (roadmap — tracked, not claimed):**
 
-- Publish/schedule to TikTok/IG/YouTube — planned, decision-gated (G6)
 - Brand kit — `brandly brand init/verify/show` + prompt-layer colour/claim lock (G7 PR 1); gate claim-lock + `export-platforms --brand` logo overlay (G7 PR 2); TikTok/IG analytics + live uploads planned
 - Performance-metrics ingest — `brandly metrics import` + `analyze` source labelling (G8 PR 1) + `metrics ingest` YouTube Analytics API (credential-gated, dry-run-first, G8 PR 2); TikTok/IG analytics planned
 - Campaign A/B at scale — `batch` exists; variant matrix + scoring loop planned

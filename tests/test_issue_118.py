@@ -34,8 +34,24 @@ def _record(path: Path, seconds: int, when: datetime) -> None:
     )
 
 
+def _utc_noon_today() -> datetime:
+    """Anchored "now" for quota tests (issue #118 regression, PR #141).
+
+    The quota window is a *UTC date*, so anchoring the fixture clock at
+    ``now`` made this test time-of-day dependent: a record written at
+    ``now - 30min`` lands on the previous UTC date whenever the suite runs
+    between 00:00 and 00:30 UTC, and the expected sum drops from 11 to 6
+    (main went red on exactly that). Anchoring at noon keeps every
+    "today" record on today's UTC date — and "yesterday" one day back —
+    no matter when the suite runs.
+    """
+    return datetime.now(timezone.utc).replace(
+        hour=12, minute=0, second=0, microsecond=0
+    )
+
+
 def test_video_seconds_today_sums_utc_day(tmp_path: Path) -> None:
-    now = datetime.now(timezone.utc)
+    now = _utc_noon_today()
     docs = tmp_path / ".brandly" / "proj-a" / "docs" / "tmp"
     _record(docs / "video_1.json", 6, now)
     _record(docs / "video_2.json", 5, now - timedelta(minutes=30))

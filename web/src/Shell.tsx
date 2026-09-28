@@ -12,6 +12,7 @@ import PropsInspectorPanel from './components/panels/PropsInspectorPanel';
 import ColorGradingPanel from './components/panels/ColorGradingPanel';
 import AudioMixerPanel from './components/panels/AudioMixerPanel';
 import RenderDispatchPanel from './components/panels/RenderDispatchPanel';
+import ProductionMonitorPanel from './components/panels/ProductionMonitorPanel';
 import './Shell.css';
 
 type PanelComponent = () => ReactNode;
@@ -29,6 +30,7 @@ const PANELS: Record<PanelKind, PanelComponent> = {
   color: () => <ColorGradingPanel />,
   audio: () => <AudioMixerPanel />,
   render: () => <RenderDispatchPanel />,
+  monitor: () => <ProductionMonitorPanel />,
   agnes_ai: () => <ShotListPanel />,
 };
 
@@ -57,7 +59,10 @@ export default function Shell() {
       try {
         const msg = JSON.parse(ev.data);
         const type = msg.type || '';
-        if (type.startsWith('generation_')) {
+        if (type === 'monitor_tail') {
+          // Issue #126: forward live progress lines to the monitor panel.
+          window.dispatchEvent(new CustomEvent('brandly-monitor-tail', { detail: msg }));
+        } else if (type.startsWith('generation_')) {
           useAppStore.setState({ wsEvent: `${type} · ${msg.phase || ''}` });
           setTimeout(() => useAppStore.setState({ wsEvent: null }), 3000);
         }

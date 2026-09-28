@@ -20,6 +20,7 @@ PANEL_WIRING: dict[str, str] = {
     "color": "ColorGradingPanel",
     "audio": "AudioMixerPanel",
     "render": "RenderDispatchPanel",
+    "monitor": "ProductionMonitorPanel",
 }
 
 

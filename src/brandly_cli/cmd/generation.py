@@ -1963,6 +1963,7 @@ def _run_produce_runner(
     no_plan: bool = False,
     continue_on_fail: bool = False,
     gate_threshold: int | None = None,
+    park_after: int = 0,
 ) -> None:
     """Progress-file runner path for ``brandly produce`` (see produce())."""
     project_dir = layout.resolve_project_dir(root, project_id)
@@ -2113,6 +2114,7 @@ def _run_produce_runner(
         retries=retries,
         on_shot_done=_on_shot_done,
         continue_on_fail=continue_on_fail,
+        park_after_consecutive_failures=park_after,
     )
     rc = shot_runner.run_shots(config)
     # Issue #116: below-threshold takes are flagged, clips kept, exit code

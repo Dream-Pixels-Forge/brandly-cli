@@ -75,7 +75,8 @@ def tail(root: str | Path, project_id: str, stage: str, offset: int) -> dict[str
     return {"lines": lines[start:], "offset": len(lines)}
 
 
-def _parse_line(line: str) -> dict[str, Any] | None:
+def parse_line(line: str) -> dict[str, Any] | None:
+    """Parse one progress-log line into its fields (``None`` when unparsable)."""
     match = _LINE_RE.match(line.strip())
     if not match:
         return None
@@ -95,7 +96,7 @@ def _stage_state(root: str | Path, project_id: str, stage: str) -> dict[str, dic
     """Last line + attempt accounting per shot id for one stage."""
     state: dict[str, dict[str, Any]] = {}
     for line in _read_lines(progress_path(root, project_id, stage)):
-        parsed = _parse_line(line)
+        parsed = parse_line(line)
         if parsed is None:
             continue
         entry = state.setdefault(parsed["shot_id"], {"last": parsed, "lines": 0, "backoff": None})
@@ -248,7 +249,7 @@ def provider_health(root: str | Path, project_id: str) -> dict[str, Any]:
     quota = video_seconds_today(root)
     last_error: dict[str, Any] | None = None
     for line in _read_lines(progress_path(root, project_id, "produce")):
-        parsed = _parse_line(line)
+        parsed = parse_line(line)
         if parsed and parsed["status"] == "FAIL":
             marker = _HTTP_RE.search(parsed["note"] or "")
             last_error = {

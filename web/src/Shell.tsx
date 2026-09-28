@@ -13,6 +13,7 @@ import ColorGradingPanel from './components/panels/ColorGradingPanel';
 import AudioMixerPanel from './components/panels/AudioMixerPanel';
 import RenderDispatchPanel from './components/panels/RenderDispatchPanel';
 import ProductionMonitorPanel from './components/panels/ProductionMonitorPanel';
+import ReviewQueuePanel from './components/panels/ReviewQueuePanel';
 import './Shell.css';
 
 type PanelComponent = () => ReactNode;
@@ -31,6 +32,7 @@ const PANELS: Record<PanelKind, PanelComponent> = {
   audio: () => <AudioMixerPanel />,
   render: () => <RenderDispatchPanel />,
   monitor: () => <ProductionMonitorPanel />,
+  review: () => <ReviewQueuePanel />,
   agnes_ai: () => <ShotListPanel />,
 };
 

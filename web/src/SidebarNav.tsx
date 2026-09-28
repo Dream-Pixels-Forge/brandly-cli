@@ -8,6 +8,7 @@ const PANELS: { kind: PanelKind; label: string; icon: string; badge?: string }[]
   { kind: 'props', label: 'Props Inspector', icon: 'tune' },
   { kind: 'render', label: 'Render Queue', icon: 'cloud_sync' },
   { kind: 'monitor', label: 'Production Monitor', icon: 'monitor_heart' },
+  { kind: 'review', label: 'Review Queue', icon: 'fact_check' },
   { kind: 'agnes_ai', label: 'Agnes AI Synthesizer', icon: 'auto_awesome' },
 ];
 

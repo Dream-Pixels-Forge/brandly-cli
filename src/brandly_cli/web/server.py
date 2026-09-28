@@ -17,6 +17,7 @@ from brandly_cli import __version__
 from brandly_cli.web import deps, security
 from brandly_cli.web.routes import clips, export, gate, projects, timeline, waveform
 from brandly_cli.web.routes import monitor as monitor_route
+from brandly_cli.web.routes import review as review_route
 from brandly_cli.web.utils.thumbnail import ensure_thumbnail
 
 # ---------------------------------------------------------------------------
@@ -72,6 +73,7 @@ def create_app(root: str | Path | None = None, *, token: str | None = None) -> F
     app.include_router(waveform.router)
     app.include_router(gate.router)
     app.include_router(monitor_route.router)
+    app.include_router(review_route.router)
 
     # Static files for SPA
     static_dir = Path(__file__).parent / "static"

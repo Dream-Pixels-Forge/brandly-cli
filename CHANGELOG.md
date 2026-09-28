@@ -2,6 +2,65 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added (production-run hardening — issues #113–#125)
+- **Resume corruption fixed (#113)**: `flatten_shots` fails closed on
+  duplicate shot ids across acts (progress logs match by bare id, so shared
+  ids silently aliased storyboard/produce resume).
+- **Web timeline v2 media root (#125)**: `state.resolve_media_file` resolves
+  `production/<id>/videos/...` first with the legacy `.brandly/<id>/` tree as
+  a v1 fallback; every clip-path consumer routes through it.
+- `brandly mux INPUT AUDIO... OUTPUT` (#119) — mix narration VO and/or a
+  music bed into a video (`replace` / `mix` / `duck` with sidechain ducking);
+  audio-less videos fall back to replace.
+- Polish trio (#123): `resize --aspect` accepts arbitrary `W:H`
+  (center-crop at source scale, then optional scale); tts/music provider
+  pre-flight errors surface as clean `ClickException`s; the
+  no-primary-reference warning prints once per project per process.
+- `produce --continue-on-fail` (#115) — a terminal shot failure no longer
+  blocks the shot list: failures are recorded, the run continues, and the
+  end-of-run summary lists each failure's `--only` re-run command.
+- `produce --dry-run` / `storyboard --dry-run` (#122) — print the flattened
+  shot list (ids, refs, durations, prompts, progress status) with zero side
+  effects; missing-plate/duplicate-id errors surface at dry-run time.
+- **v2-aware project tree (#117)**: `init` no longer creates the dead legacy
+  media tree; image categories land under `pre-production/<id>/`, video/audio
+  under `production/<id>/`; plate discovery reads the v2 root first.
+- `captions` accepts SRT/VTT (#120) — subtitle files burn as timed cues
+  (one ASS `Dialogue` per cue); a bare string keeps the static overlay.
+- Quality-gate scores in produce (#116): every OK line carries `gate=N/100`;
+  `--gate-threshold N` prints a below-threshold worklist with `--only` reruns.
+- Local video-quota accounting (#118): `brandly cost` reports
+  `video-seconds today (UTC, all projects)` against the nominal 500s free
+  quota, from the per-video generation records.
+- Create spacing across retries + `produce --park-after N` (#124) — video
+  creates are spaced >=60s apart (the provider counts failed POSTs against
+  its 1 req/min window), and a run parks after N consecutive failed shots
+  instead of burning the list.
+- `brandly assemble <project> --shots shots.json` (#121) — ordered final
+  assembly from the deterministic clip names: scene grouping, hard cuts
+  within scenes, between-scene transition, color grade, G4 ratio policy;
+  missing shots fail closed with `--only` hints.
+- Durable in-flight ledger + `brandly job-resume --sweep <project>` (#114) —
+  created task ids persist before polling, terminal states clear them, and a
+  crashed run's stranded tasks are adopted by the sweep.
+
+### Added (web studio — issues #126/#127)
+- **Production Monitor panel (#126)**: per-shot status matrix from the
+  progress logs (OK/RETRY/FAIL/pending, attempts, backoff notes), gate
+  scores per completed take, provider-health strip (video-seconds today +
+  last 503/429), copy-resume actions, and a live tail streamed over the
+  existing `/ws/{project_id}` socket (`GET /api/projects/{id}/monitor`,
+  `GET .../monitor/tail`).
+- **Review Queue panel (#127)**: everything that auto-approved since the
+  last human review session queues for approve/reject (storyboard keyframes,
+  clips with gate score/issues, reference sheets); reject writes the
+  standard review note and un-completes the shot for a re-run; approve
+  stamps reviewer + timestamp into the generation record; filters by stage,
+  scene, and gate-score-below-threshold (`GET /api/projects/{id}/review/queue`,
+  `POST .../review/{item_id}/approve|reject`, `GET .../review/{item_id}/media`).
+
 ## [0.6.0] — 2026-09-25
 
 ### Added (G7 PR 1 — brand kit, issue #98)

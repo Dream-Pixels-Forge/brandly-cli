@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from brandly_cli.cli import cli
@@ -86,11 +85,8 @@ def test_produce_dry_run_missing_plate_fails_closed(tmp_path: Path) -> None:
     assert "char_missing" in result.output
 
 
-@pytest.mark.xfail(
-    reason="duplicate-id validation ships in #113's PR; once merged this "
-    "becomes a real pass (dry-run must surface the same error)",
-    strict=False,
-)
+# #113's duplicate-id validation shipped, so this is a real assertion now:
+# the dry run must surface the exact same error the real run would raise.
 def test_produce_dry_run_duplicate_ids_error(tmp_path: Path) -> None:
     shots_path = _setup(tmp_path)
     data = json.loads(shots_path.read_text(encoding="utf-8"))

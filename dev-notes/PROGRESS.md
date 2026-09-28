@@ -3,10 +3,10 @@
 ## Current State
 - Project: brandly-cli
 - Started: 2026-09-07
-- Version: 0.6.0 (G7 brand kit + G8 metrics ingest shipped; issues #98/#99 closed)
+- Version: 0.6.0 (production-run hardening batch shipped: issues #113–#125 closed, web monitor + review queue live; unreleased — v0.7.0 cut is decision-gated)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
-- Status: in-progress (core features complete)
-- Test Count: 857 passed
+- Status: in-progress (issue backlog clear except decision-gated #97)
+- Test Count: 963 passed (0 xfail/xpass)
 - Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
@@ -316,5 +316,37 @@ defaults; shipped as four TDD PRs behind one release, per
   main as `a6047ad`; CI green (web-quality + quality matrix)
 - NEXT: G6 PR 2/3 live-upload follow-ups (YouTube live, TikTok/IG
   adapters) + TikTok/IG analytics adapters
+
+
+### Round 10/256 — production-run hardening batch: issues #113–#125 closed, web monitor + review queue shipped
+
+- [x] Merged all 13 open PRs (#128–#140) one at a time, each CI-green:
+  - #128/#129/#130/#131 (fixes: duplicate shot ids fail closed, v2 web
+    timeline resolver, `brandly mux`, polish trio)
+  - #132/#133 (produce `--continue-on-fail`, `--dry-run` shot list)
+  - #134 (v2 tree + plate discovery), #135 (SRT/VTT captions)
+  - #136/#137 (gate scores in produce, video-quota accounting)
+  - #138/#139/#140 (create spacing + `--park-after`, `brandly assemble`,
+    in-flight ledger + `job-resume --sweep`)
+- [x] Conflict resolutions recorded: #136/#138 rebased onto main and combined
+  (`--continue-on-fail` + `--dry-run` + `--gate-threshold` + `--park-after`
+  all wired into the produce runner); #138's stacked base retargeted to main
+- [x] Integration fixes found by validation (each with a regression test):
+  - #124's process-level create-spacing guard leaked 60s sleeps into
+    unrelated tests → `tests/conftest.py` autouse reset (test_agnes_client
+    back to ~2s)
+  - #118's quota test was time-of-day dependent (red main on runs between
+    00:00–00:30 UTC) → noon-UTC anchor (hotfix PR #141, main restored)
+  - SPA template EOL drift failed the web-quality freshness gate →
+    `web/index.html` normalized + `eol=lf` pinned (in #142)
+- [x] Issue #126 shipped (PR #142): `web/monitor.py` per-shot matrix +
+  gate scores + provider health + `/monitor` snapshot + `/monitor/tail` +
+  ws `monitor_tail` watcher; ProductionMonitorPanel with copy-resume actions
+- [x] Issue #127 shipped (PR #143): `web/review.py` review queue +
+  approve/reject + contained media route; ReviewQueuePanel with
+  stage/scene/gate-threshold filters; reject writes the standard review note
+  and un-completes the shot in the progress log
+- [x] #133's xfail converted to a real assertion (duplicate-id dry-run error)
+- NEXT: v0.7.0 release cut (decision-gated) + #97 TikTok/IG publish/analytics
 
 

@@ -456,12 +456,13 @@ def detect_project_artifacts(project_id: str, root: Path | None = None) -> dict[
         Dictionary mapping artifact type to list of file paths
     """
     base = Path(root) if root else Path.cwd()
-    proj_dir = layout.resolve_project_dir(base, project_id)
     result: dict[str, list[str]] = {
         "images": [],
     }
 
-    for img in layout.discover_images(proj_dir):
+    # Issue #117: plates live in the v2 media root (pre-production/<id>/)
+    # with a legacy .brandly/<id>/images/ fallback for v1 projects.
+    for img in layout.discover_project_plates(base, project_id):
         result["images"].append(str(img))
 
     return result

@@ -261,13 +261,13 @@ def test_external_run_with_project_keeps_metadata_inside_project(
     added = _tree(tmp_path) - before
     for entry in sorted(added):
         parts = entry.split("/")
-        if parts == ["external"] or parts == [".brandly"] or parts == ["pre-production"]:
+        if parts == ["external"] or parts == [".brandly"] or parts == ["pre-production"] or parts == ["production"]:
             continue  # top-level container directories
         if parts[:2] == [".brandly", "jobs"]:
             continue  # root-level durable job store (#74), not project metadata
         if parts[0] == "external":
             assert entry == "external/plate.png", f"unexpected external write: {entry}"
-        elif parts[0] in (".brandly", "pre-production"):
+        elif parts[0] in (".brandly", "pre-production", "production"):
             assert len(parts) > 1 and parts[1] == "myproj", (
                 f"metadata leaked outside the project: {entry}"
             )

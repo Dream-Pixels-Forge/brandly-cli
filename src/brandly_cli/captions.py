@@ -117,6 +117,73 @@ def generate_cc_xml(captions: list[dict[str, Any]], index_start: int = 1) -> str
     return "\n".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Subtitle-file parsing (issue #120)
+# ---------------------------------------------------------------------------
+
+#: SRT uses "HH:MM:SS,mmm --> HH:MM:SS,mmm", VTT "HH:MM:SS.mmm --> HH:MM:SS.mmm".
+_CUE_RE = re.compile(
+    r"(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*"
+    r"(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})"
+)
+
+
+def _cue_seconds(h: str, m: str, s: str, ms: str) -> float:
+    """Convert a timestamp group to seconds (ms part is 1-3 digits)."""
+    return int(h) * 3600 + int(m) * 60 + int(s) + int(ms.ljust(3, "0")) / 1000.0
+
+
+def _parse_cues(text: str) -> list[dict[str, Any]]:
+    """Parse SRT/VTT cue blocks into dicts with start/end/text keys.
+
+    Both formats share the ``-->`` timestamp line; VTT simply has a
+    ``WEBVTT`` header (skipped naturally - it carries no timestamp). Cues
+    with unparseable timestamps are dropped (fail-soft per cue, empty list
+    when nothing parses).
+    """
+    nl = chr(10)
+    cues: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for line in text.splitlines():
+        match = _CUE_RE.search(line)
+        if match:
+            if current:
+                cues.append(current)
+            g = match.groups()
+            current = {
+                "start": _cue_seconds(g[0], g[1], g[2], g[3]),
+                "end": _cue_seconds(g[4], g[5], g[6], g[7]),
+                "text": "",
+            }
+            continue
+        if current is not None:
+            if line.strip():
+                joined = current["text"] + nl + line.strip()
+                current["text"] = joined.strip(nl)
+            elif current["text"]:
+                cues.append(current)
+                current = None
+    if current and current["text"]:
+        cues.append(current)
+    return cues
+
+
+def parse_srt(text: str) -> list[dict[str, Any]]:
+    """Parse SRT text into cue dicts (see :func:`_parse_cues`)."""
+    return _parse_cues(text)
+
+
+def parse_vtt(text: str) -> list[dict[str, Any]]:
+    """Parse WebVTT text into cue dicts (see :func:`_parse_cues`)."""
+    return _parse_cues(text)
+
+
+def parse_subtitle_file(path: str | Path) -> list[dict[str, Any]]:
+    """Parse an .srt/.vtt file into cue dicts; ``[]`` when nothing parses."""
+    data = Path(path).read_text(encoding="utf-8", errors="replace")
+    return _parse_cues(data)
+
+
 def auto_capitalize(text: str) -> str:
     """Capitalize the first letter of each sentence for caption readability."""
     sentences = re.split(r"(?<=[.!?])\s+", text)

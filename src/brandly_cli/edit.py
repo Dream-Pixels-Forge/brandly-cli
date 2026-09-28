@@ -308,6 +308,15 @@ async def extract_audio(
     }
 
 
+def _ass_time(seconds: float) -> str:
+    """Convert seconds to an ASS ``H:MM:SS.cc`` timestamp (centiseconds)."""
+    cs = int(round(seconds * 100))
+    h, rem = divmod(cs, 360000)
+    m, rem = divmod(rem, 6000)
+    s, c = divmod(rem, 100)
+    return f"{h}:{m:02d}:{s:02d}.{c:02d}"
+
+
 async def add_subtitles(
     input_path: str | Path,
     output_path: str | Path,
@@ -343,6 +352,28 @@ async def add_subtitles(
         f"&H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 2, 1, 2, "
         f"20, 20, {y_pos.replace('%', '') * 10}, 1"
     )
+    # Issue #120: a subtitle file (.srt/.vtt) carries real cue timing, so it
+    # expands into one ASS Dialogue per cue. A bare string keeps the single
+    # static overlay (title-card mode).
+    events = f"Dialogue: 0,0:00:00.00,0:10:00.00,Default,{subtitle_text}"
+    sub_path = Path(subtitle_text)
+    if sub_path.is_file() and sub_path.suffix.lower() in (".srt", ".vtt"):
+        from brandly_cli.captions import parse_subtitle_file
+
+        cues = parse_subtitle_file(sub_path)
+        if not cues:
+            return {"error": f"No subtitle cues found in {sub_path}"}
+        nl = chr(10)
+        ass_nl = chr(92) + "N"  # ASS in-text newline
+        events = nl.join(
+            "Dialogue: 0,"
+            + _ass_time(float(c["start"]))
+            + ","
+            + _ass_time(float(c["end"]))
+            + ",Default,"
+            + str(c["text"]).replace(nl, ass_nl)
+            for c in cues
+        )
     ass_content = f"""\
 [Script Info]
 Title: Brandly Subtitles
@@ -356,7 +387,7 @@ PlayResY: 1080
 
 [Events]
 Format: Layer, Start, End, Style, Text
-Dialogue: 0,0:00:00.00,0:10:00.00,Default,{subtitle_text}
+{events}
 """
     ass_file.write_text(ass_content, encoding="utf-8")
     try:

@@ -3,10 +3,10 @@
 ## Current State
 - Project: brandly-cli
 - Started: 2026-09-07
-- Version: 0.6.0 (production-run hardening batch shipped: issues #113–#125 closed, web monitor + review queue live; unreleased — v0.7.0 cut is decision-gated)
+- Version: 0.6.0 (issue backlog CLEAR — all 33 open issues #31–#127 + F9 #97 closed; unreleased — v0.7.0 cut is decision-gated)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
-- Status: in-progress (issue backlog clear except decision-gated #97)
-- Test Count: 963 passed (0 xfail/xpass)
+- Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
+- Test Count: 976 passed (0 xfail/xpass)
 - Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
@@ -348,5 +348,32 @@ defaults; shipped as four TDD PRs behind one release, per
   and un-completes the shot in the progress log
 - [x] #133's xfail converted to a real assertion (duplicate-id dry-run error)
 - NEXT: v0.7.0 release cut (decision-gated) + #97 TikTok/IG publish/analytics
+
+
+### Round 11/256 — F9 publish path closed (#97): TikTok + Instagram adapters, backlog CLEAR
+
+- [x] Issue #97 shipped (PR #145, TDD 13 tests) on the same `Adapter` interface:
+  - **TikTok** — direct-post init (`/v2/post/publish/video/init/`):
+    FILE_UPLOAD chunking (byte size from the video, 64 MiB chunks,
+    `total_chunk_count` splits bigger files), `SELF_ONLY` privacy default,
+    caption folds title + description (TikTok's single caption field)
+  - **Instagram** — Reels via the Graph API two-step container flow
+    (`/me/media` create → `/me/media_publish`, container id reused); the
+    Graph API cannot fetch local files, so a Reel needs a publicly
+    reachable `--video-url` — fail-closed without one
+  - Anti-drift held: dry-run renders the exact payload and never posts;
+    live only behind a stored credential (`brandly config set <platform>
+    <token>`); scheduling only where the platform supports it — YouTube
+    `publishAt`, TikTok refuses `--schedule` (no scheduling in direct post)
+- [x] Shared `_post_json` live executor (YouTube's duplicate block collapsed)
+- [x] CLI: `--platform youtube|tiktok|instagram` + `--video-url`; payload
+  validation surfaces as a clean error, not a traceback
+- [x] Scope truth: capability row `publish_schedule` → `supported`; README
+  roadmap line moved to the shipped features; DEV-G6-001 stamped with the
+  shipped state
+- [x] Full suite 976 passed (0 xfail/xpass); ruff + mypy + import-linter clean
+- **Backlog status: 0 open issues, 0 open PRs** — the entire tracked backlog
+  (#15–#127 + F9 #97) is closed
+- NEXT: v0.7.0 release cut (decision-gated, manual publish approval)
 
 

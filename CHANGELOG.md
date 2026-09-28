@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.7.0] - 2026-09-28
 
 ### Added (production-run hardening — issues #113–#125)
 - **Resume corruption fixed (#113)**: `flatten_shots` fails closed on

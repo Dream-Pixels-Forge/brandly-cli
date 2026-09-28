@@ -405,3 +405,126 @@ async def change_speed(
     info["action"] = "speed"
     info["speed"] = speed
     return info
+
+
+async def mux_audio(
+    input_path: str | Path,
+    audio_paths: list[str | Path],
+    output_path: str | Path,
+    *,
+    mode: str = "duck",
+    duck_threshold: float = 0.05,
+    duck_ratio: float = 8.0,
+    fade_in: float = 0.0,
+    fade_out: float = 0.0,
+    offset: float = 0.0,
+    audio_gain: float = 1.0,
+    codec: str = "libx264",
+) -> dict[str, Any]:
+    """Mix one or more audio tracks into a video (issue #119).
+
+    Modes:
+      * ``replace`` — the added audio(s) replace any audio the video carries
+      * ``mix``     — the added audio(s) are summed with the video's own audio
+      * ``duck``    — the added bed is sidechain-compressed under the video's
+        own audio (VO/ambient), so music swells in the silent parts
+
+    The added inputs are first mixed into a single ``[bed]`` (per-input gain,
+        fade-in, tail fade via areverse trick, and delay/offset). Videos with
+    no audio stream fall back to replace semantics in every mode.
+
+    Fail-closed: missing files, invalid mode, or non-positive gains/offsets
+    return ``{"error": ...}`` without touching ffmpeg.
+    """
+    inp = Path(input_path)
+    audios = [Path(a) for a in audio_paths]
+    out = Path(output_path)
+    if not inp.exists():
+        return {"error": f"Input file not found: {inp}"}
+    missing = [str(a) for a in audios if not a.exists()]
+    if missing:
+        return {"error": f"Audio file not found: {', '.join(missing)}"}
+    if not audios:
+        return {"error": "At least one audio input is required"}
+    if mode not in ("replace", "mix", "duck"):
+        return {"error": f"Invalid mode {mode!r} - use replace, mix or duck"}
+    if not 0 < duck_threshold <= 1:
+        return {"error": "duck_threshold must be in (0, 1]"}
+    if duck_ratio < 1:
+        return {"error": "duck_ratio must be >= 1"}
+    if fade_in < 0 or fade_out < 0 or offset < 0:
+        return {"error": "fade_in, fade_out and offset must be >= 0"}
+    if audio_gain <= 0:
+        return {"error": "audio_gain must be > 0"}
+    if not _ffmpeg_available():
+        return {"error": "ffmpeg not found. Install FFmpeg first."}
+
+    # Does the video already carry audio (VO / ambient)?
+    info = await get_video_info(inp)
+    video_has_audio = bool(info.get("has_audio"))
+
+    # --- build the audio bed: one branch per added input ------------------
+    parts: list[str] = []
+    labels: list[str] = []
+    for idx, _audio in enumerate(audios):
+        chain: list[str] = []
+        if audio_gain != 1.0:
+            chain.append(f"volume={audio_gain:g}")
+        if offset > 0:
+            chain.append(f"adelay={int(offset * 1000)}")
+        if fade_in > 0:
+            chain.append(f"afade=t=in:st=0:d={fade_in:g}")
+        if fade_out > 0:
+            # areverse/afade/areverse = tail fade without probing the duration
+            chain.append(f"areverse,afade=t=in:st=0:d={fade_out:g},areverse")
+        label = f"a{idx + 1}"
+        joined = ",".join(chain) if chain else "anull"
+        parts.append(f"[{idx + 1}:a]{joined}[{label}]")
+        labels.append(f"[{label}]")
+
+    if len(labels) > 1:
+        parts.append(
+            "".join(labels)
+            + f"amix=inputs={len(labels)}:duration=longest:normalize=0[bed]"
+        )
+    else:
+        parts.append(f"{labels[0]}anull[bed]")
+
+    # --- combine the bed with the video's own audio per mode --------------
+    maps: list[str] = ["0:v"]
+    tail: list[str] = []
+    if mode == "replace" or not video_has_audio:
+        maps.append("[bed]")
+        tail = ["-shortest"]
+    elif mode == "mix":
+        parts.append("[0:a][bed]amix=inputs=2:duration=first:normalize=0[aout]")
+        maps.append("[aout]")
+    else:  # duck
+        parts.append(
+            f"[bed][0:a]sidechaincompress=threshold={duck_threshold:g}"
+            f":ratio={duck_ratio:g}:attack=50:release=400[ducked]"
+        )
+        parts.append("[0:a][ducked]amix=inputs=2:duration=first:normalize=0[aout]")
+        maps.append("[aout]")
+
+    cmd: list[str] = ["ffmpeg", "-y", "-i", str(inp)]
+    for a in audios:
+        cmd += ["-i", str(a)]
+    cmd += ["-filter_complex", ";".join(parts)]
+    for m in maps:
+        cmd += ["-map", m]
+    cmd += ["-c:v", codec, "-c:a", "aac", "-b:a", "192k", *tail, str(out)]
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        return {"error": proc_output(stderr)[:500]}
+    info = await get_video_info(out)
+    info["action"] = "mux"
+    info["mode"] = mode
+    return info

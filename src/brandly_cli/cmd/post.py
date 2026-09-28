@@ -26,6 +26,7 @@ from brandly_cli.edit import (
     concatenate_videos,
     extract_audio,
     get_video_info,
+    mux_audio,
     resize_video,
     trim_video,
 )
@@ -723,7 +724,67 @@ def template_list(root: str | None) -> None:
             console.print(f"  ★ {t}")
 
 
+@click.command(name="mux")
+@click.argument("input", type=click.Path(exists=True))
+@click.argument("audio", nargs=-1, required=True, type=click.Path(exists=True))
+@click.argument("output")
+@click.option(
+    "--mode",
+    type=click.Choice(["replace", "mix", "duck"]),
+    default="duck",
+    help="replace: new audio replaces the video's audio; mix: summed with it; "
+    "duck: bed sidechain-compressed under the video's audio.",
+)
+@click.option("--duck-threshold", type=float, default=0.05, help="Duck compressor threshold (0-1].")
+@click.option("--duck-ratio", type=float, default=8.0, help="Duck compressor ratio (>=1).")
+@click.option("--fade-in", type=float, default=0.0, help="Fade-in seconds on the added audio.")
+@click.option("--fade-out", type=float, default=0.0, help="Fade-out seconds on the added audio tail.")
+@click.option("--offset", type=float, default=0.0, help="Start the added audio N seconds in.")
+@click.option("--audio-gain", type=float, default=1.0, help="Gain applied to the added audio.")
+@click.option("--codec", default="libx264", help="Video codec for the output.")
+def mux(
+    input: str,
+    audio: tuple[str, ...],
+    output: str,
+    mode: str,
+    duck_threshold: float,
+    duck_ratio: float,
+    fade_in: float,
+    fade_out: float,
+    offset: float,
+    audio_gain: float,
+    codec: str,
+) -> None:
+    """Mix narration VO and/or a music bed into a video (issue #119).
+
+    The added audio files are mixed into one bed, then combined with the
+    video per --mode. Videos without their own audio track always behave
+    like replace.
+    """
+    async def _mux() -> dict:
+        return await mux_audio(
+            input,
+            list(audio),
+            output,
+            mode=mode,
+            duck_threshold=duck_threshold,
+            duck_ratio=duck_ratio,
+            fade_in=fade_in,
+            fade_out=fade_out,
+            offset=offset,
+            audio_gain=audio_gain,
+            codec=codec,
+        )
+
+    result = asyncio.run(_mux())
+    if "error" in result:
+        console.print(f"[red]Error: {result['error']}[/red]")
+        sys.exit(1)
+    console.print(f"[green]✓ Audio mixed ({mode}) -> {output}[/green]")
+
+
 def register(cli) -> None:
+    cli.add_command(mux)
     cli.add_command(export)
     cli.add_command(edit)
     cli.add_command(resize)

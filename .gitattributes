@@ -1,1 +1,2 @@
 src/brandly_cli/web/static/** text eol=lf
+web/index.html text eol=lf

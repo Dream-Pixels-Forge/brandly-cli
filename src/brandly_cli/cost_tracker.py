@@ -12,6 +12,57 @@ from rich.console import Console
 console = Console()
 
 
+#: Nominal free-tier daily video quota (Agnes Token Plan docs, 2026-06).
+NOMINAL_VIDEO_SECONDS_PER_DAY = 500
+
+
+def video_seconds_today(root: str | Path) -> dict[str, int]:
+    """Sum video-seconds generated today (UTC) across ALL projects (issue #118).
+
+    The Agnes free tier allows ~500 video-seconds/day, but nothing reported
+    actual usage - during provider 503/429 waves there was no way to tell
+    quota exhaustion from service degradation. The per-video generation
+    records (``.brandly/<id>/docs/tmp/video_*.json``) already carry
+    ``generated_at`` + ``metadata.duration``, so this is a pure local read.
+
+    Counts a record when: asset_type == "video", the UTC date of
+    ``generated_at`` is today, and ``metadata.duration`` parses as a
+    positive number. Malformed files are skipped silently.
+    """
+    from datetime import datetime
+    from datetime import timezone as _tz
+
+    root_path = Path(root)
+    today = datetime.now(_tz.utc).date()
+    seconds = 0
+    records = 0
+    for record_path in root_path.glob(".brandly/*/docs/tmp/video_*.json"):
+        try:
+            data = json.loads(record_path.read_text(encoding="utf-8", errors="replace"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(data, dict) or data.get("asset_type") != "video":
+            continue
+        try:
+            stamp = datetime.fromisoformat(str(data.get("generated_at", "")))
+        except ValueError:
+            continue
+        if stamp.tzinfo is None:
+            from datetime import timezone as _tz2
+
+            stamp = stamp.replace(tzinfo=_tz2.utc)
+        if stamp.astimezone(_tz.utc).date() != today:
+            continue
+        try:
+            duration = int(data.get("metadata", {}).get("duration", 0))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if duration > 0:
+            seconds += duration
+            records += 1
+    return {"seconds": seconds, "records": records}
+
+
 class CostEntry:
     def __init__(self, phase: str, action: str, credits: int, timestamp: str) -> None:
         self.phase = phase

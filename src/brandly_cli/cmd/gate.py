@@ -27,7 +27,11 @@ from brandly_cli.cli import (
     cli,
     console,
 )
-from brandly_cli.cost_tracker import CostTracker
+from brandly_cli.cost_tracker import (
+    NOMINAL_VIDEO_SECONDS_PER_DAY,
+    CostTracker,
+    video_seconds_today,
+)
 from brandly_cli.memory import UserPreferences
 from brandly_cli.project_manager import ProjectManager
 from brandly_cli.utils import (
@@ -437,6 +441,14 @@ def cost(ctx: click.Context, project_id: str) -> None:
         console.print("  or initialize with `brandly init`.")
         sys.exit(0)
     _print_json(summary)
+    # Issue #118: local video-quota accounting (all projects, UTC today) -
+    # the actionable number during provider 503/429 waves.
+    quota = video_seconds_today(root)
+    console.print(
+        f"[dim]video-seconds today (UTC, all projects): {quota['seconds']}s / "
+        f"{NOMINAL_VIDEO_SECONDS_PER_DAY}s nominal free quota "
+        f"({quota['records']} generation(s))[/dim]"
+    )
 
 
 @click.command()

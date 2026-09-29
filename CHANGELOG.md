@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-29
+
 ### Fixed (Agnes 503 hardening — issues #148–#152)
 - **503 body classification (#148)**: error bodies are parsed in every
   observed shape (nested `error.code`, top-level `code`, `detail`, int

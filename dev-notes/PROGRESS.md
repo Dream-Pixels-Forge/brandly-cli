@@ -3,7 +3,7 @@
 ## Current State
 - Project: brandly-cli
 - Started: 2026-09-07
-- Version: 0.7.0 (shipped via #147; backlog CLEAR — #148–#152 closed by PR #153; #154 open: Windows console glyph encoding)
+- Version: 0.8.0 (release cut 2026-09-29; prior 0.7.0 via #147)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
 - Test Count: 1109 passed (0 xfail/xpass)
@@ -507,6 +507,7 @@ defaults; shipped as four TDD PRs behind one release, per
   = old behavior byte-identical (13 new tests)
 - [x] Full suite **1109 passed** (from 1076); ruff + mypy clean
 - **Backlog status: 0 open issues, 0 open PRs**
-- NEXT: v0.7.1 release cut / publish decision (decision-gated)
+- NEXT: v0.8.0 release cut (decided 2026-09-29: minor bump - three
+  feature batches since 0.7.0) / publish via tag -> release.yml -> PyPI
 
 

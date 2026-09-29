@@ -226,6 +226,20 @@ DEFAULT_AGNES_IMAGE_MODEL = "agnes-image-2.5-flash"
 DEFAULT_AGNES_VIDEO_MODEL = "agnes-video-2.5-flash"
 DEFAULT_AGNES_TEXT_MODEL = "agnes-2.5-flash"
 
+# Issue #161: Agnes image aspect ratios (Image 2.5 Flash docs, 2026-09-29).
+# ffmpeg-side crop targets (stitch --ratio, export_platforms) are NOT Agnes
+# requests and must not be constrained to this set.
+AGNES_IMAGE_RATIOS: tuple[str, ...] = (
+    "1:1",
+    "3:4",
+    "4:3",
+    "16:9",
+    "9:16",
+    "2:3",
+    "3:2",
+    "21:9",
+)
+
 IMAGE_MODEL_INFO: dict[ImageModel, dict[str, Any]] = {
     "agnes-image-2.5-flash": {
         "name": "Agnes Image 2.5 Flash",

@@ -38,6 +38,7 @@ from brandly_cli.cli import (
     console,
 )
 from brandly_cli.constants import (
+    AGNES_IMAGE_RATIOS,
     DEFAULT_AGNES_IMAGE_MODEL,
     STYLE_PRESET_OPTIONS,
 )
@@ -134,6 +135,7 @@ def _print_gate_threshold_summary(gate_scores: dict[str, int], threshold: int) -
 @click.option(
     "--ratio",
     default="16:9",
+    type=click.Choice(AGNES_IMAGE_RATIOS),
     help=(
         "Aspect ratio (16:9 default; multi-view grid for object/character, full-frame for location)"
     ),
@@ -538,7 +540,12 @@ def _print_machine_json(obj: Any) -> None:
     help="Agnes image model (2.5-flash is the current default)",
 )
 @click.option("--size", default="2K", help="Image size tier (1K, 2K, 3K, 4K)")
-@click.option("--ratio", default="16:9", help="Aspect ratio")
+@click.option(
+    "--ratio",
+    default="16:9",
+    type=click.Choice(AGNES_IMAGE_RATIOS),
+    help="Aspect ratio",
+)
 @click.option(
     "--style-preset",
     default=None,

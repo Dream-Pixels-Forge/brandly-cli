@@ -673,11 +673,27 @@ async def create_video_task(
             body["images"] = reference_images
         if reference_audios:
             body["audios"] = reference_audios
-        # Add reference hint for consistency
-        body["prompt"] += (
-            "\n\nReference image anchored: Preserve exact appearance, lighting, "
-            "and composition from the provided reference image(s)."
-        )
+        # Issue #158: the API binds reference media through <Picture N> /
+        # <Audio N> tokens referenced from the prompt (1-based, array order;
+        # doc examples: "Use ... in <Picture 1> as reference",
+        # "Use <Audio 1> as the rhythm and ambience reference").
+        binding_sentences: list[str] = []
+        if reference_images:
+            pictures = ", ".join(
+                f"<Picture {i}>" for i in range(1, len(reference_images) + 1)
+            )
+            binding_sentences.append(
+                f"Use {pictures} as reference: preserve exact appearance, "
+                "lighting, and composition from the provided reference image(s)."
+            )
+        if reference_audios:
+            audios = ", ".join(f"<Audio {i}>" for i in range(1, len(reference_audios) + 1))
+            binding_sentences.append(
+                f"Use {audios} as reference: match rhythm, ambience, and sound "
+                "character from the provided reference audio(s)."
+            )
+        if binding_sentences:
+            body["prompt"] += "\n\n" + " ".join(binding_sentences)
 
     async def _request() -> Any:
         # Issue #124: space every create attempt >= MIN_VIDEO_CREATE_GAP_SECONDS

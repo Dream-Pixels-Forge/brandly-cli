@@ -1423,7 +1423,11 @@ def batch(
             if wait and video_id:
                 console.print("[dim]Waiting for completion...[/dim]")
                 try:
-                    result = await poll_video(video_id, max_wait_seconds=300)
+                    # Issue #152: reference/keyframe mode polls are invalid
+                    # without model_name (Agnes docs) — always forward it.
+                    result = await poll_video(
+                        video_id, max_wait_seconds=300, model_name=model
+                    )
                     task["url"] = result.get("url")
                     task["final_status"] = result.get("status")
                 except TimeoutError:

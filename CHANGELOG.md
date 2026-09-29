@@ -61,6 +61,29 @@ All notable changes to this project are documented here.
   calling verified live 2026-09-29). `DEFAULT_TEXT_MODEL` stays
   `agnes-2.5-flash` pending a separate flip decision.
 
+### Added (Agnes text-model enhancements - #170/#171)
+- **LLM prompt enhancement (`--llm-enhance`, #170)**: opt-in flag on
+  `brandly image` / `brandly video` rewrites the final (style-preset
+  applied) prompt through an Agnes text model to expand cinematography
+  detail; `<Picture N>` / `<Audio N>` binding tokens and the request
+  parameters are preserved, `--llm-model` selects the rewriter (default
+  `agnes-2.5-flash`). Fail-open: API error, malformed/empty reply, or a
+  lost binding token falls back to the deterministic prompt with a note.
+- **Gate judge model selection (`--judge-model`, #171)**: `brandly gate`
+  forwards a vision-judge model of choice into the multimodal verdict
+  call; default unchanged (`agnes-2.5-flash`), e.g. `agnes-3.0-flash`
+  for the 512K-context judge.
+- **Multi-frame scene judging (`--judge-frames`, #171)**: `brandly gate`
+  on a video with `2..8` frames extracts evenly spaced extra frames
+  (`_extra_video_frames` / `_frame_at`) and sends them labeled
+  (`FRAME k of N`) in ONE model call alongside frame 0 and the optional
+  reference, with a cross-frame `consistency` block; per-frame verdicts
+  aggregate worst-case (min quality, max slop/distortion/drift,
+  any-frame identity bleed, worst frame/consistency verdict) into the
+  existing single-verdict schema, issues prefixed `frame N:` /
+  `consistency:`. Single-frame stays the default and the fallback when
+  no extra frame extracts.
+
 ## [0.7.0] - 2026-09-28
 
 ### Added (production-run hardening — issues #113–#125)

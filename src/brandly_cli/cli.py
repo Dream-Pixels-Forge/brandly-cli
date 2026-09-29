@@ -220,14 +220,8 @@ def cli(ctx: click.Context, root: str | None) -> None:
     ctx.ensure_object(dict)
     if root is not None:
         ctx.obj["root"] = root
-    # Ensure stdout/stderr are UTF-8 on Windows (charmap codecs cannot encode U+26A0 etc.)
-    if sys.platform == "win32":
-        for _s in (sys.stdout, sys.stderr):
-            if _s is not None and hasattr(_s, "reconfigure"):
-                try:
-                    _s.reconfigure(encoding="utf-8")
-                except Exception:
-                    pass
+    # UTF-8 output is ensured at package import (issue #154,
+    # brandly_cli.ensure_utf8_output) — not here.
 
 
 # ---------------------------------------------------------------------------

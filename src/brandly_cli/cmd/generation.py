@@ -72,6 +72,28 @@ def _should_warn_no_primary_reference(project_id: str) -> bool:
     return True
 
 
+def _maybe_llm_enhance(
+    prompt: str, *, enabled: bool, model: str | None, context: str
+) -> str:
+    """Issue #170: optional LLM polish pass, fail-open to the input prompt."""
+    if not enabled:
+        return prompt
+
+    from brandly_cli.prompt_enhance import llm_enhance_prompt
+
+    try:
+        enhanced = asyncio.run(llm_enhance_prompt(prompt, model=model, context=context))
+    except Exception:
+        enhanced = None
+    if enhanced is None:
+        console.print(
+            "[dim]LLM enhancement unavailable — using deterministic prompt (issue #170)[/dim]"
+        )
+        return prompt
+    console.print("[dim]Prompt enhanced via LLM (issue #170)[/dim]")
+    return enhanced
+
+
 #: Issue #116: the last quality-gate verdict from the ``video`` pipeline.
 #: Produce routes every shot through ctx.invoke(video) - the gate result
 #: never returns to the runner, so the video command records its verdict
@@ -568,6 +590,21 @@ def _print_machine_json(obj: Any) -> None:
     help="Emit only a machine-readable JSON result (success object or "
     "structured error) instead of human-readable console output (issue #73).",
 )
+@click.option(
+    "--llm-enhance",
+    "llm_enhance",
+    is_flag=True,
+    default=False,
+    help="Polish the assembled prompt with an Agnes text model before "
+    "generation (issue #170). Falls back to the deterministic prompt on "
+    "any failure.",
+)
+@click.option(
+    "--llm-model",
+    "llm_model",
+    default=None,
+    help="Text model for --llm-enhance (default: agnes-2.5-flash).",
+)
 @click.pass_context
 def image(
     ctx: click.Context,
@@ -579,6 +616,8 @@ def image(
     style_preset: str | None,
     output: str | None,
     json_out: bool,
+    llm_enhance: bool,
+    llm_model: str | None,
 ) -> None:
     """Generate an image via Agnes AI."""
     # Issue #73: in --json mode, suppress rich console output entirely
@@ -659,6 +698,15 @@ def image(
 
     console.print(
         f"[dim]Generating image with model {model} ({style_preset or 'default'} style)...[/dim]"
+    )
+
+    # Issue #170: opt-in LLM polish pass over the fully assembled prompt.
+    enhanced = _maybe_llm_enhance(
+        enhanced,
+        enabled=llm_enhance,
+        model=llm_model,
+        context=f"command=image; size={size}; ratio={ratio}; "
+        f"style={style_preset or 'default'}",
     )
 
     try:
@@ -1184,6 +1232,21 @@ def job_poll(
     default=False,
     help="Open the timeline editor UI after generation completes.",
 )
+@click.option(
+    "--llm-enhance",
+    "llm_enhance",
+    is_flag=True,
+    default=False,
+    help="Polish the assembled prompt with an Agnes text model before "
+    "generation (issue #170). Falls back to the deterministic prompt on "
+    "any failure.",
+)
+@click.option(
+    "--llm-model",
+    "llm_model",
+    default=None,
+    help="Text model for --llm-enhance (default: agnes-2.5-flash).",
+)
 @click.pass_context
 def video(
     ctx: click.Context,
@@ -1209,6 +1272,8 @@ def video(
     scene: int | None,
     shot_number: int | None,
     open_ui: bool,
+    llm_enhance: bool,
+    llm_model: str | None,
     expected_characters: tuple[str, ...] | None = None,
 ) -> None:
     """Generate an AI video via Agnes AI.
@@ -1415,6 +1480,14 @@ def video(
         # here (prompt layer) because providers no longer import style_presets.
         if style == "cinematic":
             enhanced = apply_style_preset(enhanced, "cinematic")
+        # Issue #170: opt-in LLM polish pass over the fully assembled prompt.
+        enhanced = _maybe_llm_enhance(
+            enhanced,
+            enabled=llm_enhance,
+            model=llm_model,
+            context=f"command=video; style={style}; mode={mode}; "
+            f"duration={duration}s; aspect={aspect_ratio}",
+        )
         task = asyncio.run(
             create_video_task(
                 enhanced,

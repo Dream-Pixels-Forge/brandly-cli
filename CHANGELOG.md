@@ -27,6 +27,40 @@ All notable changes to this project are documented here.
   forwards `model_name` to `poll_video` (required by Agnes in
   reference/keyframe mode).
 
+### Fixed (Agnes reference mode, stale defaults, console crash — #154/#156/#157)
+- **Audio-only reference mode (#156)**: `infer_video_mode` now receives
+  `reference_audios`; reference degrades to text mode only when images
+  AND audios are empty, so pure-audio inputs stay in reference mode.
+- **Stale image-model defaults (#157)**: three hardcoded
+  `agnes-image-2.1-flash` sites (`brandly image` option+help,
+  `production.generate_image`, sync provider id) now use
+  `DEFAULT_AGNES_IMAGE_MODEL` (2.5-flash).
+- **Legacy-console glyph crash (#154)**: `ensure_utf8_output()` runs at
+  package import, reconfiguring stdout/stderr to UTF-8 with
+  `errors="replace"` so Rich's `✗`/`⚠` can no longer raise
+  `UnicodeEncodeError` on cp1252 streams — covers the CLI,
+  `python -m brandly_cli`, and direct library use (probes); the
+  v0.3.13 `cli()`-only, win32-only block is gone.
+
+### Added (Agnes Image/Video docs alignment — #158–#161)
+- **Flash create pre-validation (#160)**: `create_video_task` rejects
+  unsupported `size`, >5 reference images, >3 reference audios, and a
+  `videos` key for `agnes-video-2.5-flash` client-side with
+  docs-backed messages (`AGNES_VIDEO_ASPECT_RATIOS`,
+  `MAX_REFERENCE_IMAGES`, `MAX_REFERENCE_AUDIOS`).
+- **Reference media binding tokens (#158)**: reference-mode prompts
+  append `<Picture N>` / `<Audio N>` tokens built from the actual
+  inputs (1-based, array order) so the API can bind media, replacing
+  the unconditional image-only prose hint.
+- **Image ratio choices (#161)**: `brandly image` and `brandly
+  reference` `--ratio` accept only the eight supported ratios
+  (`AGNES_IMAGE_RATIOS` + `click.Choice`); unsupported values are
+  rejected at parse time. ffmpeg-side crop ratios are unaffected.
+- **agnes-3.0-flash catalog (#159)**: the text-model catalog gains
+  `agnes-3.0-flash` (512K context, 65.5K max output, $0 pricing; tool
+  calling verified live 2026-09-29). `DEFAULT_TEXT_MODEL` stays
+  `agnes-2.5-flash` pending a separate flip decision.
+
 ## [0.7.0] - 2026-09-28
 
 ### Added (production-run hardening — issues #113–#125)

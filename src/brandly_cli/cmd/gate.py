@@ -10,6 +10,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 from rich.table import Table
@@ -60,6 +61,166 @@ def validate(ctx: click.Context, project_id: str, video_path: str | None) -> Non
             "message": "Virality validation initiated (requires higgsfield MCP tool)",
         }
     )
+
+
+_EXPLAIN_SYSTEM = (
+    "You are a pipeline failure analyst for brandly-cli. You receive a "
+    "quality-gate result (status, score, issues, warnings, checks) and, when "
+    "available, the shot's generation prompt and recent progress-log lines. "
+    "Explain WHY the gate flagged this element and what to change. Reply "
+    "with ONLY a JSON object, no prose:\n"
+    '{"diagnoses": [{"shot_id": "...", "likely_cause": "...", '
+    '"suggested_change": "...", "suggested_command": "..."}]}\n'
+    "Rules:\n"
+    "- One entry per distinct failure/warning theme (usually 1-3). Use the "
+    "element name as shot_id when no shot id is given.\n"
+    "- likely_cause: one concrete sentence mapping the gate issue (e.g. "
+    "distortion/slop/drift/threshold/pre-check) to its meaning.\n"
+    "- suggested_change: one sentence describing the actual prompt or "
+    "generation-parameter change.\n"
+    "- suggested_command: a copy-pasteable brandly CLI command, or an empty "
+    "string when none fits. Only use the existing surface: re-generate with "
+    "`brandly image` / `brandly video` (optionally --llm-enhance), re-check "
+    "with `brandly gate <project> <element>` (flags: --strict, --lenient, "
+    "--threshold N, --judge-model M, --judge-frames N), or edit the shot "
+    "prompt in .brandly/<project>/shots.json. Never invent flags or "
+    "subcommands.\n"
+    '- "diagnoses" must be a list; use [] when there is nothing to explain.'
+)
+
+
+def _shot_context(
+    root: Path, project_id: str, element: Path
+) -> dict[str, Any]:
+    """Matched shot prompt + recent progress lines (read-only, best-effort).
+
+    Matches the element stem against shot ids in ``<proj>/shots.json``
+    (flat list or ``acts``-structured) and collects the last progress-log
+    lines mentioning the matched shot or the element itself. Any read
+    error silently drops that context source.
+    """
+    from brandly_cli import layout
+
+    proj = layout.resolve_project_dir(root, project_id)
+    stem = element.stem.lower()
+    matched_ids: list[str] = []
+    shot_ctx: dict[str, Any] = {}
+
+    shots_path = proj / "shots.json"
+    if shots_path.is_file():
+        try:
+            raw = json.loads(shots_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raw = None
+        entries: list[dict[str, Any]] = []
+        if isinstance(raw, list):
+            entries = [e for e in raw if isinstance(e, dict)]
+        elif isinstance(raw, dict):
+            acts = raw.get("acts") or {}
+            if isinstance(acts, dict):
+                for act in acts.values():
+                    if isinstance(act, dict):
+                        shots = act.get("shots") or []
+                        if isinstance(shots, list):
+                            entries.extend(s for s in shots if isinstance(s, dict))
+        for shot in entries:
+            sid = str(shot.get("id") or shot.get("name") or "")
+            if not sid:
+                continue
+            low = sid.lower()
+            if stem == low or stem in low or low in stem:
+                prompt = shot.get("prompt", "")
+                if not isinstance(prompt, str):
+                    prompt = json.dumps(prompt, ensure_ascii=False)
+                shot_ctx = {"id": sid, "prompt": prompt[:1500]}
+                matched_ids.append(low)
+                break
+
+    lines: list[str] = []
+    for name in ("produce_progress.txt", "storyboard_progress.txt"):
+        path = layout.docs_dir(proj, "tmp") / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            line_l = line.lower()
+            if stem in line_l or any(mid in line_l for mid in matched_ids):
+                lines.append(line)
+
+    ctx: dict[str, Any] = {}
+    if shot_ctx:
+        ctx["shot"] = shot_ctx
+    if lines:
+        ctx["progress_log"] = lines[-10:]
+    return ctx
+
+
+def _explain_gate(
+    root: Path, project_id: str, element: Path, result: Any
+) -> tuple[list[dict[str, str]], str | None]:
+    """ONE text-model call turning the gate result into diagnoses.
+
+    Returns ``(diagnoses, error)`` — on failure ``error`` names the reason
+    and ``diagnoses`` is empty (fail-open: callers fall back to the plain
+    report). Read-only: never writes files.
+    """
+    from brandly_cli.agnes_client import chat_completion
+
+    context: dict[str, Any] = {
+        "element": str(element),
+        "gate_result": result.to_dict(),
+    }
+    context.update(_shot_context(root, project_id, element))
+    messages = [
+        {"role": "system", "content": _EXPLAIN_SYSTEM},
+        {
+            "role": "user",
+            "content": json.dumps(context, indent=2, ensure_ascii=False),
+        },
+    ]
+    try:
+        raw = asyncio.run(
+            chat_completion(
+                messages,
+                model=DEFAULT_AGNES_TEXT_MODEL,
+                response_format={"type": "json_object"},
+            )
+        )
+        text = raw.get("choices", [{}])[0].get("message", {}).get("content", "")
+        from brandly_cli import quality_gate
+
+        parsed = quality_gate._parse_verdict(text or "")
+        diags = parsed.get("diagnoses")
+        if not isinstance(diags, list):
+            return [], "malformed response (no diagnoses list)"
+        clean: list[dict[str, str]] = []
+        for d in diags:
+            if not isinstance(d, dict):
+                continue
+            clean.append(
+                {
+                    "shot_id": str(d.get("shot_id") or element.name),
+                    "likely_cause": str(d.get("likely_cause") or ""),
+                    "suggested_change": str(d.get("suggested_change") or ""),
+                    "suggested_command": str(d.get("suggested_command") or ""),
+                }
+            )
+        return clean, None
+    except Exception as e:  # noqa: BLE001 — fail-open by design (issue #173)
+        return [], e.__class__.__name__
+
+
+def _print_explanations(diags: list[dict[str, str]]) -> None:
+    console.print("[bold]AI explanation:[/bold]")
+    for d in diags:
+        console.print(f"  [cyan]• {d['shot_id']}[/cyan]: {d['likely_cause']}")
+        if d["suggested_change"]:
+            console.print(f"      change: {d['suggested_change']}")
+        if d["suggested_command"]:
+            console.print(f"      try:   [green]{d['suggested_command']}[/green]")
 
 
 @click.command(name="gate")
@@ -161,6 +322,15 @@ def validate(ctx: click.Context, project_id: str, video_path: str | None) -> Non
         "verdict. Default 1 = single-frame path."
     ),
 )
+@click.option(
+    "--explain",
+    is_flag=True,
+    help=(
+        "After the report, ask a text model to explain failures/warnings and "
+        "suggest concrete changes + copy-pasteable commands (issue #173). "
+        "Read-only and fail-open; element mode only."
+    ),
+)
 @click.pass_context
 def gate(
     ctx: click.Context,
@@ -180,6 +350,7 @@ def gate(
     no_quality: bool,
     judge_model: str | None,
     judge_frames: int,
+    explain: bool,
 ) -> None:
     """Verify a generated element before proceeding (anti-slop/drift gate).
 
@@ -210,6 +381,11 @@ def gate(
         if scene_ref is not None and all_scenes:
             console.print("[red]Use --scene or --all-scenes, not both.[/red]")
             sys.exit(1)
+        if explain:
+            console.print(
+                "[dim]--explain applies to the element gate only; "
+                "showing the plain scene report.[/dim]"
+            )
         _run_scene_gate(root, project_id, scene_ref, all_scenes, no_quality, output)
         return  # unreachable — the helper sys.exit()s
 
@@ -262,10 +438,45 @@ def gate(
         )
     )
 
+    # Issue #173: opt-in failure diagnosis — one text-model call, only when
+    # the flag is set AND there is something to explain. Fail-open: on API
+    # error / malformed JSON the report output stays exactly as it was.
+    explain_diags: list[dict[str, str]] = []
+    explain_error: str | None = None
+    explain_ran = False
+    if explain and (result.issues or result.warnings):
+        explain_ran = True
+        explain_diags, explain_error = _explain_gate(
+            root, project_id, element_path, result
+        )
+
     if output == "json":
-        _print_json(result.to_dict())
+        payload = result.to_dict()
+        if explain:
+            if explain_error:
+                payload["explain_error"] = explain_error
+            else:
+                payload["explain"] = explain_diags
+        _print_json(payload)
     else:
         _print_gate_report(result)
+        if explain:
+            if explain_diags:
+                _print_explanations(explain_diags)
+            elif explain_error:
+                console.print(
+                    f"[dim]Explanation unavailable ({explain_error}) — "
+                    "see the report above.[/dim]"
+                )
+            elif explain_ran:
+                console.print(
+                    "[dim]Model returned no distinct diagnosis for these "
+                    "issues.[/dim]"
+                )
+            else:
+                console.print(
+                    "[dim]Nothing to explain (no issues or warnings).[/dim]"
+                )
 
     exit_code = (
         0

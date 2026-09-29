@@ -406,3 +406,45 @@ defaults; shipped as four TDD PRs behind one release, per
 - NEXT: #154 console-encoding fix; v0.7.1/publish decision
 
 
+### Round 13/256 — Agnes doc-distillation batch: issues #154 + #156–#161 closed (PRs #162–#168)
+
+- [x] Diffed the 3 vault Agnes docs (`raw/Agnes Docs/`, clipped
+  2026-09-29) against the code → findings G1–G6 filed as #156–#161,
+  all `status:ready`; #154 (Round 12 fallout) joined the batch
+- [x] Six fixes merged one at a time, each branch cut from fresh
+  `origin/main`, TDD RED first, CI (`quality` 3.10/3.11/3.12 +
+  `web-quality`) green, squash-merged, issue auto-closed:
+  - **#156** (PR #162) `infer_video_mode` takes `reference_audios`;
+    reference degrades to text mode only when images AND audios are
+    empty — pure-audio inputs stay in reference mode (4 new tests)
+  - **#160** (PR #163) `_validate_flash_create` client-side pre-validation
+    for Flash video: size in {21:9,16:9,4:3,1:1,3:4,9:16}, images ≤5,
+    audios ≤3, no `videos` (5 new tests)
+  - **#157** (PR #164) three stale `agnes-image-2.1-flash` defaults →
+    `DEFAULT_AGNES_IMAGE_MODEL` (image option+help, production
+    `generate_image`, sync provider id; rg-verified: only catalog
+    entries remain)
+  - **#161** (PR #165) `AGNES_IMAGE_RATIOS` (8 supported ratios) +
+    `click.Choice` on `brandly image`/`brandly reference` `--ratio` —
+    unsupported values rejected at parse time; ffmpeg-side crop ratios
+    untouched (3 new tests)
+  - **#158** (PR #166) reference prompts bind media via `<Picture N>`/
+    `<Audio N>` tokens built from actual inputs (1-based, array order;
+    images-only / audios-only / mixed), replacing the unconditional
+    image-only prose hint (5 new tests)
+  - **#159** (PR #167) `agnes-3.0-flash` added to the text-model catalog
+    (512K ctx, 65.5K output, $0); live smoke `agnes-chat --model
+    agnes-3.0-flash` answered, and a tool-call probe returned a
+    well-formed `tool_calls` entry — tool calling VERIFIED; default
+    stays 2.5-flash (flip = separate decision) (3 new tests)
+  - **#154** (PR #168) `ensure_utf8_output()` at package import
+    reconfigures stdout/stderr to UTF-8 + `errors=replace`, replacing
+    the v0.3.13 `cli()`-only, win32-only block that library paths
+    bypassed; issue repro (`✗` on cp1252 stdout) now prints, exit 0
+    (3 new tests)
+- [x] 23 new tests total (RED confirmed before each GREEN); full suite
+  **1038 passed** (from 1015); ruff + mypy clean
+- **Backlog status: 0 open issues, 0 open PRs**
+- NEXT: v0.7.1 release cut / publish decision (decision-gated)
+
+

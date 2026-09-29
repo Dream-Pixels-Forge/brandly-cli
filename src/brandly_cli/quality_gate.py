@@ -93,6 +93,37 @@ _VISION_SYSTEM = (
     "identity_bleed is true, or when the asset is unusable."
 )
 
+_VISION_SYSTEM_MULTI = (
+    "You are a strict QA reviewer for AI-generated video-production assets "
+    "(keyframe videos, storyboards). You are shown N CANDIDATE frames of the "
+    "SAME clip in temporal order; optionally a REFERENCE image that locks the "
+    "identity/style. Analyze the visual content yourself. "
+    "Reply with ONLY a JSON object, no prose, matching this schema:\n"
+    "{"
+    '"frames": [{"frame": 1, "quality_score": 0-100, "slop": 0-10, '
+    '"distortion": 0-10, "drift": 0-10 or null (null if no reference), '
+    '"matte_background": true/false/null, "identity_bleed": true/false, '
+    '"identity_bleed_detail": "string", "issues": ["short concrete problems"], '
+    '"verdict": "pass"|"warn"|"fail", "notes": "one-line summary"}], '
+    '"consistency": {"cross_frame_identity": 0-10 (0 = identity/style locked '
+    'across frames, 10 = completely different between frames), '
+    '"issues": ["cross-frame problems"], "verdict": "pass"|"warn"|"fail", '
+    '"notes": "string"}, '
+    '"notes": "one-line summary"'
+    "}\n"
+    "Return exactly N entries in 'frames' (frame 1..N), in temporal order. "
+    "Judge EACH frame independently with the same standards as a "
+    "single-frame review: 'slop' 0 = crisp professional output, 10 = generic "
+    "AI slop; 'distortion' 0 = clean, 10 = severe artifacts; 'drift' 0 = "
+    "identical to reference identity, 10 = completely different. "
+    "consistency: flag ANY jump between frames — identity/face changes, "
+    "wardrobe or prop swaps, lighting/style shifts, impossible motion. "
+    "Verdict per frame and for consistency: pass when quality_score>=80 and "
+    "no hard issues; warn when 50-79 or minor issues; fail when <50, when "
+    "distortion>=6, when drift>=6, when identity_bleed is true, or when the "
+    "frame/clip is unusable."
+)
+
 
 def _vision_user_prompt(
     description: str,
@@ -479,6 +510,51 @@ def _first_frame(video: Path) -> Path | None:
         return None
 
 
+def _frame_at(video: Path, timestamp: float) -> Path | None:
+    """Extract a single frame at *timestamp* seconds to a temp PNG; None on failure."""
+    try:
+        out = Path(tempfile.mkstemp(suffix=".png")[1])
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y", "-v", "quiet",
+                "-ss", f"{timestamp:.3f}",
+                "-i", str(video),
+                "-frames:v", "1", str(out),
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+        if proc.returncode != 0 or not out.exists() or out.stat().st_size == 0:
+            out.unlink(missing_ok=True)
+            return None
+        return out
+    except Exception:
+        return None
+
+
+def _extra_video_frames(video: Path, count: int) -> list[Path]:
+    """Evenly spaced extra frames for multi-frame judging (issue #171).
+
+    Returns up to *count* temp PNGs at ``t = duration * i / (count + 1)``
+    for i = 1..count (the first frame at t=0 comes from ``_precheck``).
+    Empty when the duration is unknown or every extraction fails.
+    """
+    if count <= 0:
+        return []
+    info = _probe_video(video)
+    if not info:
+        return []
+    duration = float(info.get("duration") or 0)
+    if duration <= 0:
+        return []
+    out: list[Path] = []
+    for i in range(1, count + 1):
+        f = _frame_at(video, duration * i / (count + 1))
+        if f is not None:
+            out.append(f)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Model-based visual analysis
 # ---------------------------------------------------------------------------
@@ -641,6 +717,82 @@ def _apply_ai_verdict(
         )
 
 
+_VERDICT_ORDER = {PASS: 0, WARN: 1, FAIL: 2}
+
+
+def _aggregate_multi_verdict(parsed: Any) -> dict[str, Any]:
+    """Collapse per-frame verdicts into the single-verdict schema (issue #171).
+
+    Worst-case per metric across frames; per-frame and consistency issues are
+    kept with ``frame N:`` / ``consistency:`` prefixes so the report stays
+    traceable; ``frames``/``consistency`` ride along for the report. Returns
+    ``{}`` when the model did not return usable per-frame data — the caller's
+    unparseable-response warning then applies (fail-open, same as single).
+    """
+    if not isinstance(parsed, dict):
+        return {}
+    frames = parsed.get("frames")
+    if not isinstance(frames, list) or not frames:
+        return {}
+    dicts = [f for f in frames if isinstance(f, dict)]
+    if not dicts:
+        return {}
+    qualities = [int(f.get("quality_score", 100) or 100) for f in dicts]
+    slops = [int(f.get("slop", 0) or 0) for f in dicts]
+    distortions = [int(f.get("distortion", 0) or 0) for f in dicts]
+    drifts = [int(f["drift"]) for f in dicts if f.get("drift") is not None]
+
+    issues: list[str] = []
+    for i, f in enumerate(frames, start=1):
+        if not isinstance(f, dict):
+            continue
+        for issue in f.get("issues") or []:
+            if str(issue).strip():
+                issues.append(f"frame {i}: {str(issue).strip()}")
+
+    consistency = parsed.get("consistency")
+    consistency = consistency if isinstance(consistency, dict) else {}
+    for issue in consistency.get("issues") or []:
+        if str(issue).strip():
+            issues.append(f"consistency: {str(issue).strip()}")
+
+    verdicts = [str(f.get("verdict", "")).lower() for f in dicts]
+    if consistency.get("verdict"):
+        verdicts.append(str(consistency.get("verdict")).lower())
+    known = [v for v in verdicts if v in _VERDICT_ORDER]
+    overall = max(known, key=lambda v: _VERDICT_ORDER[v]) if known else ""
+
+    bleed = [f for f in dicts if f.get("identity_bleed") is True]
+    matte = next(
+        (f.get("matte_background") for f in dicts if f.get("matte_background") is not None),
+        None,
+    )
+    if any(f.get("matte_background") is False for f in dicts):
+        matte = False
+
+    notes = f"multi-frame verdict ({len(dicts)} frames"
+    if consistency.get("notes"):
+        notes += f"; consistency: {consistency['notes']}"
+    notes += ")"
+
+    return {
+        "quality_score": min(qualities),
+        "slop": max(slops),
+        "distortion": max(distortions),
+        "drift": max(drifts) if drifts else None,
+        "matte_background": matte,
+        "identity_bleed": bool(bleed),
+        "identity_bleed_detail": str(bleed[0].get("identity_bleed_detail") or "")
+        if bleed
+        else "",
+        "issues": issues,
+        "verdict": overall,
+        "notes": notes,
+        "frames": frames,
+        "consistency": consistency,
+    }
+
+
 async def _run_vision_check(
     frame: Path,
     *,
@@ -702,6 +854,71 @@ async def _run_vision_check(
     return _parse_verdict(text or "")
 
 
+async def _run_vision_check_multi(
+    frames: list[Path],
+    *,
+    reference: Path | None,
+    description: str,
+    expect_matt_background: bool,
+    kind: str,
+    model: str,
+    expected_characters: list[str] | None = None,
+) -> dict[str, Any]:
+    """One multimodal chat completion carrying N labeled frames (issue #171).
+
+    Returns the raw parsed verdict (``frames``/``consistency`` schema);
+    callers run ``_aggregate_multi_verdict`` before applying it.
+    """
+    import base64
+
+    from brandly_cli.agnes_client import chat_completion
+
+    def data_uri(p: Path) -> str:
+        b64 = base64.b64encode(p.read_bytes()).decode()
+        suffix = p.suffix.lower()
+        mime = "image/jpeg" if suffix in (".jpg", ".jpeg") else "image/png"
+        return f"data:{mime};base64,{b64}"
+
+    ref_path = Path(reference) if reference else None
+    has_reference = ref_path is not None and ref_path.exists()
+
+    content: list[dict[str, Any]] = []
+    labels: list[str] = []
+    if has_reference and ref_path is not None:
+        content.append({"type": "image_url", "image_url": {"url": data_uri(ref_path)}})
+        labels.append("IMAGE 1 = REFERENCE (locked identity)")
+    for i, f in enumerate(frames, start=1):
+        content.append({"type": "image_url", "image_url": {"url": data_uri(f)}})
+        labels.append(f"FRAME {i} = CANDIDATE FRAME {i} of {len(frames)} (temporal order)")
+
+    user_text = "\n".join(
+        [
+            _vision_user_prompt(
+                description, expect_matt_background, has_reference, kind,
+                expected_characters=expected_characters,
+            ),
+            f"Multi-frame clip review: judge all {len(frames)} frames plus "
+            "cross-frame consistency.",
+            *labels,
+        ]
+    )
+    user_content: list[dict[str, Any]] = [
+        {"type": "text", "text": user_text},
+        *content,
+    ]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": _VISION_SYSTEM_MULTI},
+        {"role": "user", "content": user_content},
+    ]
+    raw = await chat_completion(
+        messages,
+        model=model,
+        response_format={"type": "json_object"},
+    )
+    text = raw.get("choices", [{}])[0].get("message", {}).get("content", "")
+    return _parse_verdict(text or "")
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -735,6 +952,7 @@ async def verify_element(
     lenient: bool = False,
     write_report: bool = True,
     expected_characters: list[str] | None = None,
+    judge_frames: int = 1,
 ) -> GateResult:
     """Run the quality gate on one element (image or video).
 
@@ -770,20 +988,45 @@ async def verify_element(
             _write_report(result, root, project_id)
         return result
 
+    extra_frames: list[Path] = []
     if use_ai:
         try:
             import os
 
             if os.getenv("AGNES_API_KEY"):
-                verdict = await _run_vision_check(
-                    frame,
-                    reference=Path(reference) if reference else None,
-                    description=description,
-                    expect_matt_background=expect_matt_background,
-                    kind=kind,
-                    model=model,
-                    expected_characters=expected_characters,
-                )
+                if judge_frames > 1 and kind == "video":
+                    # Issue #171: N labeled frames in ONE judge call.
+                    extra_frames = _extra_video_frames(element, judge_frames - 1)
+                    result.record_check(
+                        "video_frames",
+                        bool(extra_frames),
+                        f"{len(extra_frames) + 1} frame(s) in one judge call"
+                        if extra_frames
+                        else "multi-frame requested but only the first frame "
+                        "is available — judging single frame",
+                    )
+                if extra_frames:
+                    verdict = _aggregate_multi_verdict(
+                        await _run_vision_check_multi(
+                            [frame, *extra_frames],
+                            reference=Path(reference) if reference else None,
+                            description=description,
+                            expect_matt_background=expect_matt_background,
+                            kind=kind,
+                            model=model,
+                            expected_characters=expected_characters,
+                        )
+                    )
+                else:
+                    verdict = await _run_vision_check(
+                        frame,
+                        reference=Path(reference) if reference else None,
+                        description=description,
+                        expect_matt_background=expect_matt_background,
+                        kind=kind,
+                        model=model,
+                        expected_characters=expected_characters,
+                    )
                 _apply_ai_verdict(
                     result,
                     verdict,
@@ -805,7 +1048,10 @@ async def verify_element(
                 check="ai",
             )
         finally:
-            # Clean up a temp extracted frame (only ours).
+            # Clean up temp extracted frames (only ours).
+            for f in extra_frames:
+                if f.exists() and str(f).startswith(tempfile.gettempdir()):
+                    _unlink_quietly(f)
             if frame != element and frame.exists() and str(frame).startswith(tempfile.gettempdir()):
                 _unlink_quietly(frame)
     elif frame != element and frame.exists():

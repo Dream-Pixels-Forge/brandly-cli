@@ -27,6 +27,7 @@ from brandly_cli.cli import (
     cli,
     console,
 )
+from brandly_cli.constants import DEFAULT_AGNES_TEXT_MODEL
 from brandly_cli.cost_tracker import (
     NOMINAL_VIDEO_SECONDS_PER_DAY,
     CostTracker,
@@ -139,6 +140,27 @@ def validate(ctx: click.Context, project_id: str, video_path: str | None) -> Non
     is_flag=True,
     help="Scene mode: completeness only — skip the per-clip quality gate.",
 )
+@click.option(
+    "--judge-model",
+    "judge_model",
+    default=None,
+    help=(
+        "Vision-judge model for the AI analysis (issue #170-adjacent: defaults "
+        "to agnes-2.5-flash; use agnes-3.0-flash for the 512K-context judge)."
+    ),
+)
+@click.option(
+    "--judge-frames",
+    "judge_frames",
+    type=int,
+    default=1,
+    show_default=True,
+    help=(
+        "Multi-frame judging for videos (issue #171): send N (2-8) labeled "
+        "frames of the clip in ONE model call with a cross-frame consistency "
+        "verdict. Default 1 = single-frame path."
+    ),
+)
 @click.pass_context
 def gate(
     ctx: click.Context,
@@ -156,6 +178,8 @@ def gate(
     scene_ref: str | None,
     all_scenes: bool,
     no_quality: bool,
+    judge_model: str | None,
+    judge_frames: int,
 ) -> None:
     """Verify a generated element before proceeding (anti-slop/drift gate).
 
@@ -172,6 +196,10 @@ def gate(
     """
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(1)
+
+    if not 1 <= judge_frames <= 8:
+        console.print("[red]--judge-frames must be between 1 and 8.[/red]")
         sys.exit(1)
 
     root = _get_root(ctx)
@@ -224,11 +252,13 @@ def gate(
             description=description,
             expect_matt_background=expect_matt_background,
             use_ai=use_ai,
+            model=judge_model or DEFAULT_AGNES_TEXT_MODEL,
             root=root,
             project_id=project_id,
             strict=strict,
             threshold=threshold,
             lenient=lenient,
+            judge_frames=judge_frames,
         )
     )
 

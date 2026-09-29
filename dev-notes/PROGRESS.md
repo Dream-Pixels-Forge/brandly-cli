@@ -3,10 +3,10 @@
 ## Current State
 - Project: brandly-cli
 - Started: 2026-09-07
-- Version: 0.6.0 (issue backlog CLEAR — all 33 open issues #31–#127 + F9 #97 closed; unreleased — v0.7.0 cut is decision-gated)
+- Version: 0.7.0 (shipped via #147; backlog CLEAR — #148–#152 closed by PR #153; #154 open: Windows console glyph encoding)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
-- Test Count: 976 passed (0 xfail/xpass)
+- Test Count: 1015 passed (0 xfail/xpass)
 - Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
@@ -375,5 +375,34 @@ defaults; shipped as four TDD PRs behind one release, per
 - **Backlog status: 0 open issues, 0 open PRs** — the entire tracked backlog
   (#15–#127 + F9 #97) is closed
 - NEXT: v0.7.0 release cut (decision-gated, manual publish approval)
+
+
+### Round 12/256 — Agnes 503 hardening batch: issues #148–#152 closed (PR #153)
+
+- [x] Filed #148–#152 from live probes against `apihub.agnes-ai.com/v1`
+  (bogus model → 503 `model_not_found`; bad `size=480P` → 400 with
+  top-level `code`; `GET /v1/models` → 200 catalog)
+- [x] TDD RED → GREEN on `fix/agnes-503-hardening`: 39 new tests
+  (`tests/test_issue_148-151.py` + #152 case in `test_issues_19_24.py`),
+  RED confirmed (37 failed / 1 intentional guard), then GREEN
+- [x] PR #153 merged (merge commit `82dd367`, CI `quality` 3.10/3.11/3.12 +
+  `web-quality` all green); the 5 issues auto-closed:
+  - **#148** `_parse_error_body` + `_classify_status` +
+    `GET /v1/models` disambiguation (300s cache, fail-open); permanent
+    messages carry code, request id, available models
+  - **#149** no sleep after the final attempt; `_print_exhausted`
+    reports attempts/elapsed/body/request id; "will retry" promises
+    removed from image/create/status/chat; park line is advice-only
+  - **#150** all docs-`retry later` 5xx retried client-side;
+    `poll_video` survives transient 5xx; monotonic 10/20/40/60 backoff
+  - **#151** create budget 6 → 3 spaced attempts, 60s spacing intact
+  - **#152** batch-variants `--wait` forwards `model_name`
+- [x] Live side-effect-free probes verified both paths (permanent with
+  catalog hint + request id; parsed 400 unchanged) before merge
+- [x] Full suite 1015 passed; ruff + mypy clean
+- [x] Filed #154 from probe fallout: Rich legacy-Windows cp1252 path
+  crashes on `✗`/`⚠` glyphs (33 pre-existing usages; `PYTHONUTF8=1`
+  workaround) — pre-existing, out of this batch's scope
+- NEXT: #154 console-encoding fix; v0.7.1/publish decision
 
 

@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Fixed (Agnes 503 hardening — issues #148–#152)
+- **503 body classification (#148)**: error bodies are parsed in every
+  observed shape (nested `error.code`, top-level `code`, `detail`, int
+  codes) and classified `retry` / `permanent` / `check_catalog`;
+  routing-state 503s ("no available channel for model") are disambiguated
+  against `GET /v1/models` (cached 5 min, **fail-open**) — a wrong model
+  name fails immediately with the available-models list + request id, an
+  outage for a known model retries as transient.
+- **Honest retry exhaustion (#149)**: `_retry_with_backoff` never sleeps
+  after its final attempt (429 / 5xx / timeout / network), the exhaustion
+  line reports attempts, elapsed time, response body and request id, and
+  the misleading "Will retry shortly" caller messages are gone.
+- **Docs-true transient retries (#150)**: every docs-`retry later` 5xx
+  (500/502/504/520/522/524) is retried; `poll_video` survives transient
+  5xx instead of aborting `--wait`/`produce`; poll backoff is monotonic
+  and capped (10/20/40/60s).
+- **Fail-fast create (#151)**: `create_video_task`'s 503 budget drops
+  from 6 to **3 spaced attempts** (60s create spacing preserved); the
+  final guidance points at `--park-after` + `brandly job-resume`.
+- **Batch poll model_name (#152)**: `produce` batch-variants `--wait`
+  forwards `model_name` to `poll_video` (required by Agnes in
+  reference/keyframe mode).
+
 ## [0.7.0] - 2026-09-28
 
 ### Added (production-run hardening — issues #113–#125)

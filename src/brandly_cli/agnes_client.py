@@ -484,16 +484,18 @@ def infer_video_mode(
     first_frame: str | None = None,
     last_frame: str | None = None,
     reference_images: list[str] | None = None,
+    reference_audios: list[str] | None = None,
 ) -> str:
     """Infer the video generation mode from the inputs actually provided.
 
     - ``keyframe``  — a start/first frame (or end/last frame) is provided.
-    - ``reference`` — reference image(s) are provided (character/object consistency).
+    - ``reference`` — reference image(s) and/or audio(s) are provided
+      (character/object consistency; the API accepts either or both).
     - ``text``      — plain text-to-video, no image inputs.
     """
     if first_frame or last_frame:
         return "keyframe"
-    if reference_images:
+    if reference_images or reference_audios:
         return "reference"
     return "text"
 
@@ -557,7 +559,10 @@ async def create_video_task(
     """
     if mode == "auto":
         mode = infer_video_mode(
-            first_frame=first_frame, last_frame=last_frame, reference_images=reference_images
+            first_frame=first_frame,
+            last_frame=last_frame,
+            reference_images=reference_images,
+            reference_audios=reference_audios,
         )
     if mode not in ("text", "keyframe", "reference"):
         console.print(f"[yellow]⚠ Unknown mode '{mode}', falling back to 'text'[/yellow]")
@@ -571,9 +576,9 @@ async def create_video_task(
             "falling back to text mode.[/yellow]"
         )
         mode = "text"
-    elif mode == "reference" and not reference_images:
+    elif mode == "reference" and not reference_images and not reference_audios:
         console.print(
-            "[yellow]⚠ Reference mode needs reference images; "
+            "[yellow]⚠ Reference mode needs reference images or audios; "
             "falling back to text mode.[/yellow]"
         )
         mode = "text"

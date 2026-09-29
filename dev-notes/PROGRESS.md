@@ -6,7 +6,7 @@
 - Version: 0.7.0 (shipped via #147; backlog CLEAR — #148–#152 closed by PR #153; #154 open: Windows console glyph encoding)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
-- Test Count: 1015 passed (0 xfail/xpass)
+- Test Count: 1076 passed (0 xfail/xpass)
 - Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
@@ -446,5 +446,34 @@ defaults; shipped as four TDD PRs behind one release, per
   **1038 passed** (from 1015); ruff + mypy clean
 - **Backlog status: 0 open issues, 0 open PRs**
 - NEXT: v0.7.1 release cut / publish decision (decision-gated)
+
+### Round 14/256 - Agnes text-model enhancement batch: issues #170-#171 closed (PRs #175-#176)
+
+- [x] Filed the post-#159 backlog (tool calling verified on
+  `agnes-3.0-flash`): #170 (opt-in LLM prompt enhancement), #171 (gate
+  `--judge-model` + multi-frame judging), #172 (storyboard-from-brief),
+  #173 (`gate report --explain`), #174 (prompt drift). #170/#171 marked
+  `status:ready` (design clear, cheapest wins); #172-#174 parked in the
+  backlog pending triage
+- [x] **#170** (PR #175) `--llm-enhance` + `--llm-model` on `brandly
+  image`/`brandly video`: new `prompt_enhance.llm_enhance_prompt`
+  rewrites the final prompt through an Agnes text model (cinematography
+  expansion; `<Picture N>`/`<Audio N>` binding tokens preserved);
+  fail-open on API error / malformed reply / lost binding token falls
+  back to the deterministic prompt (19 new tests)
+- [x] **#171** (PR #176) gate judge selection + multi-frame judging:
+  `--judge-model` threads into `chat_completion(model=...)` (default
+  unchanged); `--judge-frames 1..8` validated at parse time; videos with
+  N>1 extract evenly spaced frames (`_extra_video_frames`/`_frame_at`),
+  send them labeled in ONE call (`_run_vision_check_multi` +
+  `_VISION_SYSTEM_MULTI` cross-frame consistency block) and aggregate
+  worst-case (`_aggregate_multi_verdict`) into the single-verdict
+  schema; single-frame stays the default and the fallback; `produce`
+  gate untouched (`use_ai=False` - judge wiring there would be dead)
+  (19 new tests)
+- [x] Full suite **1076 passed** (from 1038); ruff + mypy clean
+- **Backlog status: 0 open issues, 0 open PRs** (#172-#174 parked)
+- NEXT: #172-#174 triage (storyboard-from-brief needs a design pass) /
+  v0.7.1 release cut (decision-gated)
 
 

@@ -1,7 +1,8 @@
 """Async HTTP client for the Agnes AI API (image + video generation).
 
 Features:
-- Exponential backoff retry for 429 (rate limit) and 503 (server error)
+- Backoff retry for transient errors (429 + docs "retry later" 5xx)
+- 503 body classification (permanent vs routing vs transient, issue #148)
 - Clear error messages for different failure modes
 - Graceful fallback suggestions
 """
@@ -133,6 +134,148 @@ def _compute_backoff_delay(
     return delay
 
 
+#: Agnes error codes that are request problems dressed up as a 503 — waiting
+#: never fixes them (docs + observed gateway bodies, issue #148).
+_PERMANENT_503_CODES = frozenset(
+    {"invalid_request", "authentication_error", "permission_error", "billing_error"}
+)
+
+#: 503 bodies that only state gateway ROUTING state ("no available channel
+#: for model"). Live probes (2026-09-29): a WRONG model name and a CHANNEL
+#: OUTAGE for a correct model produce the same body — disambiguate against
+#: GET /v1/models (issue #148).
+_ROUTING_503_CODES = frozenset({"model_not_found"})
+
+#: GET /v1/models cache TTL in seconds.
+_MODEL_CATALOG_TTL_SECONDS = 300.0
+_model_catalog_cache: tuple[float, list[str]] | None = None
+
+
+def _parse_error_body(text: str) -> dict[str, Any]:
+    """Normalize every observed Agnes/gateway error body shape.
+
+    Returns ``{"code": str | None, "message": str, "request_id": str | None}``.
+
+    Observed shapes (live probes, 2026-09-29):
+    - nested:    ``{"error": {"code": "model_not_found", "message": "..."}}``
+    - top level: ``{"code": "invalid_request", "message": "...", "data": {...}}``
+    - FastAPI:   ``{"detail": "..."}`` (no code)
+    - non-JSON gateway pages -> ``code=None``, message = raw text
+
+    ``code`` may arrive as an int (the 404 probe returned ``"code": 404``)
+    and is normalized to a lowercase string so callers can do membership
+    checks without an AttributeError.
+    """
+    import json as _json
+    import re as _re
+
+    if not isinstance(text, str):  # defensive: mock/partial responses
+        text = str(text)
+    code: Any = None
+    message: Any = text
+    request_id: str | None = None
+    try:
+        payload = _json.loads(text)
+    except (ValueError, TypeError):
+        payload = None
+    if isinstance(payload, dict):
+        err = payload.get("error")
+        if isinstance(err, dict):
+            code = err.get("code")
+            message = err.get("message") or message
+        elif "code" in payload:
+            code = payload.get("code")
+            message = payload.get("message") or message
+        elif "detail" in payload:
+            detail = payload.get("detail")
+            message = detail if isinstance(detail, str) else _json.dumps(detail)
+        elif "message" in payload:
+            message = payload.get("message") or message
+    msg = message if isinstance(message, str) else _json.dumps(message)
+    m = _re.search(r"request id:\s*([A-Za-z0-9]+)", msg, _re.IGNORECASE)
+    if m:
+        request_id = m.group(1)
+    return {
+        "code": str(code).lower() if code is not None else None,
+        "message": msg,
+        "request_id": request_id,
+    }
+
+
+async def _model_catalog() -> list[str] | None:
+    """Model ids from ``GET /v1/models``, cached for ~5 minutes.
+
+    Returns ``None`` when the catalog cannot be fetched — callers fail open
+    to "transient" (the docs list "failed to fetch the model list" as a 503
+    cause, so a failed lookup must not itself fail the run).
+    """
+    global _model_catalog_cache
+    import time as _time
+
+    if (
+        _model_catalog_cache is not None
+        and _time.monotonic() - _model_catalog_cache[0] < _MODEL_CATALOG_TTL_SECONDS
+    ):
+        return _model_catalog_cache[1]
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(f"{AGNES_BASE_URL}/models", headers=_headers())
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception:
+        return None  # fail-open by design
+    items = data.get("data") if isinstance(data, dict) else data
+    ids: list[str] = []
+    if isinstance(items, list):
+        ids = [i["id"] for i in items if isinstance(i, dict) and isinstance(i.get("id"), str)]
+    _model_catalog_cache = (_time.monotonic(), ids)
+    return ids
+
+
+def _classify_status(status: int, parsed: dict[str, Any]) -> str:
+    """Route an HTTP error: "retry", "permanent" or "check_catalog".
+
+    - 503 with a semantic request code -> permanent (never retryable).
+    - 503 with routing state (model_not_found / "no available channel" /
+      no code at all) -> verify the model against GET /v1/models.
+    - 429 and every 5xx -> transient "retry later" per the docs (issue #150).
+    - everything else (4xx and below) -> permanent.
+    """
+    if status == 503:
+        code = parsed["code"]
+        if code in _PERMANENT_503_CODES:
+            return "permanent"
+        if (
+            code in _ROUTING_503_CODES
+            or code is None
+            or "no available channel" in parsed["message"].lower()
+        ):
+            return "check_catalog"
+        return "retry"  # unknown 503 code (e.g. service_unavailable)
+    if status == 429 or status >= 500:
+        return "retry"
+    return "permanent"
+
+
+def _print_exhausted(error: Exception, attempts: int, elapsed: float) -> None:
+    """Final line after the budget is spent: attempts, elapsed, body, request id."""
+    if isinstance(error, httpx.HTTPStatusError):
+        resp = error.response
+        body = (resp.text or "").strip()
+        detail = body[:500] if body else "(empty body)"
+        request_id = _parse_error_body(body).get("request_id")
+        rid = f"; request id: {request_id}" if request_id else ""
+        console.print(
+            f"[red]✗ HTTP {resp.status_code}: {detail}{rid} — "
+            f"gave up after {attempts} attempts over {elapsed:.1f}s.[/red]"
+        )
+    else:
+        console.print(
+            f"[red]✗ {error} — gave up after {attempts} attempts "
+            f"over {elapsed:.1f}s.[/red]"
+        )
+
+
 async def _retry_with_backoff(
     request_func,
     *,
@@ -141,138 +284,128 @@ async def _retry_with_backoff(
     max_delay: float = 60.0,
     jitter: bool = True,
     min_429_delay: float = 0.0,
+    model: str | None = None,
 ) -> Any:
-    """Retry an async request with exponential backoff for 429/503 errors.
+    """Retry an async request with exponential backoff for transient errors.
 
-    Non-retryable conditions (4xx with semantic error codes like
-    ``model_not_found``) are raised immediately so the user gets a clear
-    error rather than burning 4 attempts on something that will never work.
+    Retries 429 and every 5xx the docs classify as "retry later"
+    (500/502/503/504/520/522/524). Non-retryable 4xx — and 503 bodies
+    carrying a semantic request error (``invalid_request`` etc.) — raise
+    immediately with the response body surfaced.
 
-    ``min_429_delay`` enforces a floor on the wait time when a 429 is
-    encountered (e.g. 60.0 s for a 1-req/min rate-limited endpoint).
-    Defaults to 0.0 (no floor) so existing callers are unaffected.
+    Routing-class 503s ("no available channel for model") are checked
+    against ``GET /v1/models`` when ``model`` is given: in the catalog =>
+    transient outage (retry), not in the catalog => permanent, with the
+    available models in the message. No model, or a failed catalog fetch =>
+    fail open to transient (issue #148).
 
-    Returns the response on success or raises the last error.
+    Waits only BETWEEN attempts — never after the final one — and the
+    exhaustion line reports attempts, elapsed time, body and request id
+    (issue #149).
+
+    ``min_429_delay`` floors the wait on 429 (e.g. 60.0 for 1 req/min).
     """
     last_error: Exception | None = None
+    attempts = 0
+    import time as _time
+
+    started = _time.monotonic()
 
     for attempt in range(max_retries + 1):
+        attempts = attempt + 1
         try:
             return await request_func()
         except httpx.HTTPStatusError as e:
             last_error = e
             status = e.response.status_code
             body_text = e.response.text or ""
+            parsed = _parse_error_body(body_text)
+            verdict = _classify_status(status, parsed)
 
-            # Agnes quirk: model_not_found / invalid_request / etc. are
-            # returned as 503 with a JSON body containing the real reason.
-            # Detect these and don't waste retries on them.
-            is_permanent = False
-            permanent_hint = ""
-            if status in (400, 403, 404, 422):
-                is_permanent = True
-                permanent_hint = f"HTTP {status}"
-            elif status == 503:
-                # Try to detect "not actually a transient outage" bodies
-                try:
-                    import json as _json
+            if verdict == "check_catalog":
+                if model is None:
+                    verdict = "retry"  # no model to check against -> fail open
+                else:
+                    catalog = await _model_catalog()
+                    if catalog is not None and model not in catalog:
+                        hint = (
+                            f"model {model!r} is not offered by this endpoint "
+                            f"(available: {', '.join(catalog[:12]) or 'none'})"
+                        )
+                        if parsed["request_id"]:
+                            hint += f"; request id: {parsed['request_id']}"
+                        detail = body_text.strip()[:500] or "(empty body)"
+                        console.print(
+                            f"[red]✗ Permanent error ({hint}): {detail} — not retrying.[/red]"
+                        )
+                        raise
+                    verdict = "retry"  # in catalog, or catalog unknown -> transient
 
-                    payload = _json.loads(body_text)
-                    err = payload.get("error", {}) if isinstance(payload, dict) else {}
-                    code = (err.get("code") or "").lower() if isinstance(err, dict) else ""
-                    msg = err.get("message") or "" if isinstance(err, dict) else ""
-                    if code in (
-                        "model_not_found",
-                        "invalid_request",
-                        "authentication_error",
-                        "permission_error",
-                        "billing_error",
-                    ):
-                        is_permanent = True
-                        permanent_hint = f"Agnes error code={code!r}: {msg[:200]}"
-                except (ValueError, AttributeError):
-                    pass
-
-            if is_permanent:
-                # Real semantic error, not a transient outage — surface the API body.
-                detail = body_text.strip()[:500] if body_text.strip() else "(empty body)"
+            if verdict == "permanent":
+                detail = body_text.strip()[:500] or "(empty body)"
+                hint = (
+                    f"Agnes error code={parsed['code']!r}: {parsed['message'][:200]}"
+                    if parsed["code"]
+                    else f"HTTP {status}"
+                )
                 console.print(
-                    f"[red]✗ Permanent error ({permanent_hint}): {detail} — not retrying.[/red]"
+                    f"[red]✗ Permanent error ({hint}): {detail} — not retrying.[/red]"
                 )
                 raise
 
-            # Compute next-wait using shared helper (jitter + Retry-After)
+            # Retryable HTTP status.
             wait_time = _compute_backoff_delay(
-                attempt,
-                base_delay,
-                max_delay,
-                e.response,
-                jitter=jitter,
+                attempt, base_delay, max_delay, e.response, jitter=jitter
             )
-
-            if status == 429:  # Rate limit
-                # Check for Retry-After header (already handled in helper,
-                # but we also print a helpful message)
+            if status == 429:
                 retry_after = e.response.headers.get("retry-after")
                 if retry_after:
                     try:
                         wait_time = float(retry_after)
                     except ValueError:
                         pass
-                # Enforce caller-specified minimum for 429 (e.g. 1 req/min limit)
                 if min_429_delay > 0 and wait_time < min_429_delay:
                     wait_time = min_429_delay
-
-                console.print(
-                    f"[yellow]⚠ Rate limited (429). "
-                    f"Waiting {wait_time:.1f}s before retry "
-                    f"{attempt + 1}/{max_retries}...[/yellow]"
-                )
-                await asyncio.sleep(wait_time)
-
-            elif status == 503:  # Service unavailable (genuine)
-                console.print(
-                    f"[yellow]⚠ Service unavailable (503). "
-                    f"Waiting {wait_time:.1f}s before retry "
-                    f"{attempt + 1}/{max_retries}...[/yellow]"
-                )
-                await asyncio.sleep(wait_time)
-
+                label = "Rate limited (429)"
             else:
-                # Other 5xx, or other status — raise immediately
-                raise
+                label = f"Transient server error (HTTP {status})"
+
+            if attempt >= max_retries:
+                break  # budget spent — never sleep after the final attempt
+            console.print(
+                f"[yellow]⚠ {label}. Waiting {wait_time:.1f}s before retry "
+                f"{attempt + 1}/{max_retries}...[/yellow]"
+            )
+            await asyncio.sleep(wait_time)
 
         except httpx.TimeoutException as e:
             last_error = e
+            if attempt >= max_retries:
+                break
             wait_time = _compute_backoff_delay(
-                attempt,
-                base_delay,
-                max_delay,
-                jitter=jitter,
+                attempt, base_delay, max_delay, jitter=jitter
             )
             console.print(
-                f"[yellow]⚠ Request timeout. "
-                f"Waiting {wait_time:.1f}s before retry "
+                f"[yellow]⚠ Request timeout. Waiting {wait_time:.1f}s before retry "
                 f"{attempt + 1}/{max_retries}...[/yellow]"
             )
             await asyncio.sleep(wait_time)
         except httpx.NetworkError as e:
             last_error = e
+            if attempt >= max_retries:
+                break
             wait_time = _compute_backoff_delay(
-                attempt,
-                base_delay,
-                max_delay,
-                jitter=jitter,
+                attempt, base_delay, max_delay, jitter=jitter
             )
             console.print(
-                f"[yellow]⚠ Network error: {e}. "
-                f"Waiting {wait_time:.1f}s before retry "
+                f"[yellow]⚠ Network error: {e}. Waiting {wait_time:.1f}s before retry "
                 f"{attempt + 1}/{max_retries}...[/yellow]"
             )
             await asyncio.sleep(wait_time)
 
     # All retries exhausted
     if last_error:
+        _print_exhausted(last_error, attempts, _time.monotonic() - started)
         raise last_error
 
 
@@ -318,7 +451,7 @@ async def generate_image(
             return resp.json()
 
     try:
-        data = await _retry_with_backoff(_request)
+        data = await _retry_with_backoff(_request, model=model)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
             console.print(
@@ -328,10 +461,6 @@ async def generate_image(
                 "[dim]Tip: Agnes free keys allow ~10 RPM for 2K images "
                 "(see `brandly rate-limits`). Switch to a smaller size tier "
                 "or wait a minute before retrying.[/dim]"
-            )
-        elif e.response.status_code == 503:
-            console.print(
-                "[red]Error: Agnes API is temporarily unavailable. Please try again later.[/red]"
             )
         raise
 
@@ -512,11 +641,15 @@ async def create_video_task(
     try:
         data = await _retry_with_backoff(
             _request,
-            max_retries=5,          # Video submission: more attempts for GPU backend
+            # Issue #151: fail fast + park — 3 spaced attempts (~3 min max);
+            # long outages are handled by --park-after, not by burning the
+            # whole run inside the client (60s spacing x 6 attempts was 6+ min).
+            max_retries=2,          # => 3 attempts total
             base_delay=2.0,         # Longer initial wait for transient 503 recovery
             max_delay=120.0,        # Cap at 2min per retry attempt
             jitter=True,            # Avoid thundering herd on retries
             min_429_delay=60.0,     # 1 req/min limit on create endpoint
+            model=model,
         )
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
@@ -528,11 +661,12 @@ async def create_video_task(
             )
             raise
         elif e.response.status_code == 503:
+            # Advice only — no claims about attempts (a 503 may be permanent
+            # and fail after a single POST, see issue #148).
             console.print(
-                "[yellow]Warning: Agnes API returned 503 (service unavailable).[/yellow]"
-            )
-            console.print(
-                "[dim]This is usually a transient issue. The retry logic will wait and retry.[/dim]"
+                "[dim]For a long outage, rerun with --continue-on-fail "
+                "--park-after 3: the run parks after 3 consecutive failed shots "
+                "with a resume hint (brandly job-resume).[/dim]"
             )
         raise
 
@@ -573,12 +707,12 @@ async def get_video_status(
             return resp.json()
 
     try:
-        data = await _retry_with_backoff(_request, max_retries=2, base_delay=2.0, max_delay=10.0)
+        data = await _retry_with_backoff(
+            _request, max_retries=2, base_delay=2.0, max_delay=10.0, model=model_name
+        )
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
             console.print("[yellow]⚠ Rate limited while polling. Will retry shortly...[/yellow]")
-        elif e.response.status_code == 503:
-            console.print("[yellow]⚠ Service unavailable. Will retry shortly...[/yellow]")
         raise
 
     error_obj = data.get("error")
@@ -645,9 +779,13 @@ async def poll_video(
             console.print(f"  Progress: {progress}% | Status: {status}")
 
         except httpx.HTTPStatusError as e:
-            if e.response.status_code in (429, 503):
-                # Rate limit or service error - wait and continue
-                wait_time = min(10 * (2 ** (attempts % 3)), 60)
+            # 429 and any 5xx are transient per the docs (issue #150) — a
+            # 500/502/504 mid-poll must not kill --wait/produce while the
+            # async task keeps running server-side.
+            if e.response.status_code == 429 or 500 <= e.response.status_code <= 599:
+                # Monotonic backoff, capped: 10, 20, 40, 60, 60, ... (was a
+                # non-monotonic 10 * 2 ** (attempts % 3) cycle).
+                wait_time = min(10 * (2 ** min(attempts - 1, 3)), 60)
                 console.print(f"[yellow]⚠ API issue, waiting {wait_time}s...[/yellow]")
                 await asyncio.sleep(wait_time)
                 continue
@@ -853,12 +991,10 @@ async def chat_completion(
             return resp.json()
 
     try:
-        return await _retry_with_backoff(_request, max_retries=3, base_delay=1.0)
+        return await _retry_with_backoff(_request, max_retries=3, base_delay=1.0, model=model)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
             console.print("[red]Error: Agnes chat rate limit exceeded. Retry shortly.[/red]")
-        elif e.response.status_code == 503:
-            console.print("[red]Error: Agnes chat API temporarily unavailable.[/red]")
         raise
 
 

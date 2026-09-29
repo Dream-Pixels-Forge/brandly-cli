@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 import time
 from collections.abc import Mapping
@@ -47,6 +48,7 @@ from brandly_cli.cli import (
 from brandly_cli.cmd.generation import _generate_shot, _run_produce_runner
 from brandly_cli.constants import (
     DEFAULT_AGNES_IMAGE_MODEL,
+    DEFAULT_AGNES_TEXT_MODEL,
     DEFAULT_AGNES_VIDEO_MODEL,
     PHASE_ORDER,
     SHOT_COSTS,
@@ -996,6 +998,171 @@ def _print_dry_run_shots(shots: list, done: set[str], progress_name: str) -> Non
     )
 
 
+_BRIEF_SYSTEM = (
+    "You are a commercial storyboard writer for brandly-cli. Turn the "
+    "user's brief into a first-pass shot list as a JSON object.\n"
+    "Reply with ONLY a JSON object, no prose:\n"
+    '{"acts": {"scene-01": {"scene": 1, "shots": [...]}, '
+    '"scene-02": {"scene": 2, "shots": [...]}}}\n'
+    "Each act is one scene; each shot object needs:\n"
+    '- "id": canonical format Scene-XX-Shot-X-Y (XX = scene number '
+    "zero-padded to 2 digits, X = scene number, Y = 1-based shot index "
+    "within the scene), globally unique across the whole list.\n"
+    '- "prompt": one concrete cinematic paragraph - subject, action, '
+    "camera/lens, lighting, environment. Keep character names, style and "
+    "lighting language identical across every shot for continuity. No "
+    "markdown, no settings dumps.\n"
+    '- "duration": integer seconds, 5-10 typical (allowed 1-30).\n'
+    'Optionally add per-shot "style" or "camera" strings.\n'
+    "Rules:\n"
+    "- 3-8 shots total unless the brief says otherwise.\n"
+    "- Respect the requested style/aspect/duration context when provided.\n"
+    "- Never invent ids outside Scene-XX-Shot-X-Y; never repeat an id.\n"
+    'A flat object {"shots": [...]} with the same shot objects is also '
+    "accepted."
+)
+
+_SHOT_ID_RE = re.compile(r"^Scene-\d{2}-Shot-\d+-\d+$")
+
+
+def _validate_generated_shots(data: Any) -> list[str]:
+    """Fail-closed schema check for a model-generated shot list (issue #172).
+
+    Mirrors ``load_shots_file``/``flatten_shots`` structure rules plus the
+    canonical id format, globally-unique ids (#113), non-empty prompts and
+    bounded durations. Returns the list of problems (empty = valid).
+    """
+    errors: list[str] = []
+    entries: list[tuple[str, dict[str, Any]]] = []
+    if isinstance(data, list):
+        if not data:
+            return ["shot list is empty"]
+        for i, item in enumerate(data):
+            if isinstance(item, dict):
+                entries.append((f"shot[{i}]", item))
+            else:
+                errors.append(f"shot[{i}]: must be an object")
+    elif isinstance(data, dict):
+        acts = data.get("acts")
+        if isinstance(acts, dict) and acts:
+            for act_name, act in acts.items():
+                if not isinstance(act, dict):
+                    errors.append(f"act {act_name!r}: must be an object")
+                    continue
+                shots = act.get("shots")
+                if not isinstance(shots, list) or not shots:
+                    errors.append(
+                        f"act {act_name!r}: needs a non-empty 'shots' array"
+                    )
+                    continue
+                for i, item in enumerate(shots):
+                    if isinstance(item, dict):
+                        entries.append((f"act {act_name!r} shot[{i}]", item))
+                    else:
+                        errors.append(
+                            f"act {act_name!r} shot[{i}]: must be an object"
+                        )
+        elif isinstance(data.get("shots"), list):
+            if not data["shots"]:
+                return ["shot list is empty"]
+            for i, item in enumerate(data["shots"]):
+                if isinstance(item, dict):
+                    entries.append((f"shot[{i}]", item))
+                else:
+                    errors.append(f"shot[{i}]: must be an object")
+        else:
+            return ["expected an 'acts' mapping or a 'shots' array"]
+    else:
+        return ["shot list must be a JSON object with 'acts' or 'shots'"]
+
+    seen: set[str] = set()
+    for ctx, shot in entries:
+        sid = shot.get("id")
+        if not isinstance(sid, str) or not sid.strip():
+            errors.append(f"{ctx}: missing 'id'")
+        elif not _SHOT_ID_RE.match(sid):
+            errors.append(f"{ctx}: id {sid!r} must match Scene-XX-Shot-X-Y")
+        elif sid in seen:
+            errors.append(f"{ctx}: duplicate id {sid!r}")
+        else:
+            seen.add(sid)
+        prompt = shot.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            errors.append(f"{ctx}: missing 'prompt'")
+        duration = shot.get("duration")
+        if (
+            isinstance(duration, bool)
+            or not isinstance(duration, int)
+            or not 1 <= duration <= 30
+        ):
+            errors.append(f"{ctx}: 'duration' must be an integer 1-30 seconds")
+    if not entries and not errors:
+        errors.append("no shots found")
+    return errors
+
+
+def _shotlist_from_brief(
+    brief: str,
+    *,
+    model: str,
+    style: str | None,
+    aspect: str | None,
+    duration: int | None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """One text-model call: brief -> schema-validated shot list (issue #172).
+
+    Fail-closed: any API error or schema violation prints a clean error
+    (with the response tail) and exits 2 — no file is ever written here.
+    """
+    from brandly_cli import quality_gate
+    from brandly_cli.agnes_client import chat_completion
+
+    context: dict[str, Any] = {"brief": brief}
+    if style:
+        context["style"] = style
+    if aspect:
+        context["aspect"] = aspect
+    if duration is not None:
+        context["total_duration_seconds"] = duration
+    messages = [
+        {"role": "system", "content": _BRIEF_SYSTEM},
+        {
+            "role": "user",
+            "content": json.dumps(context, ensure_ascii=False),
+        },
+    ]
+    try:
+        raw = asyncio.run(
+            chat_completion(
+                messages,
+                model=model,
+                response_format={"type": "json_object"},
+            )
+        )
+    except Exception as e:  # noqa: BLE001 — fail-open by design (issue #172)
+        console.print(
+            f"[red]Shot-list generation failed: "
+            f"{e.__class__.__name__}: {e}[/red]"
+        )
+        sys.exit(2)
+
+    text = raw.get("choices", [{}])[0].get("message", {}).get("content", "")
+    data = quality_gate._parse_verdict(text or "")
+    errors = _validate_generated_shots(data)
+    if errors:
+        for err in errors:
+            console.print(f"[red]✗ {err}[/red]")
+        if text:
+            console.print("[dim]Response tail:[/dim]")
+            console.print(text[-400:])
+        sys.exit(2)
+    if isinstance(data, dict) and "acts" not in data:
+        # flat {"shots": [...]} wrapper -> normalize to the bare list so
+        # load_shots_file accepts the written file.
+        return list(data.get("shots", []))
+    return data
+
+
 @click.command(name="storyboard")
 @click.argument("project_id")
 @click.option(
@@ -1043,6 +1210,46 @@ def _print_dry_run_shots(shots: list, done: set[str], progress_name: str) -> Non
         "no progress writes (issue #122)."
     ),
 )
+@click.option(
+    "--from-brief",
+    "from_brief",
+    default=None,
+    help=(
+        "Generate the shot list from a one-line brief instead of running "
+        "keyframes: the model's JSON is validated fail-closed and written "
+        "to --shots, then the command stops for review (issue #172)."
+    ),
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="With --from-brief: overwrite an existing shot list at --shots.",
+)
+@click.option(
+    "--brief-model",
+    "brief_model",
+    default=None,
+    help=(
+        "Text model for --from-brief generation "
+        "(default: agnes-2.5-flash; agnes-3.0-flash for 512K ctx)."
+    ),
+)
+@click.option(
+    "--style",
+    default=None,
+    help="Style guidance fed to --from-brief generation.",
+)
+@click.option(
+    "--aspect",
+    default=None,
+    help="Aspect ratio fed to --from-brief generation (e.g. 16:9).",
+)
+@click.option(
+    "--duration",
+    type=int,
+    default=None,
+    help="Target total duration in seconds fed to --from-brief generation.",
+)
 @click.pass_context
 def storyboard(
     ctx: click.Context,
@@ -1054,6 +1261,12 @@ def storyboard(
     no_gate: bool,
     character: str | None,
     dry_run: bool,
+    from_brief: str | None,
+    force: bool,
+    brief_model: str | None,
+    style: str | None,
+    aspect: str | None,
+    duration: int | None,
 ) -> None:
     """Generate storyboard keyframes for each shot before spending video credits.
 
@@ -1072,6 +1285,31 @@ def storyboard(
 
     root = _get_root(ctx)
     path = Path(shots_file)
+    if from_brief is not None:
+        if path.exists() and not force:
+            console.print(
+                f"[red]Shot list already exists: {path} — pass --force to "
+                "overwrite.[/red]"
+            )
+            sys.exit(1)
+        data = _shotlist_from_brief(
+            from_brief,
+            model=brief_model or DEFAULT_AGNES_TEXT_MODEL,
+            style=style,
+            aspect=aspect,
+            duration=duration,
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        console.print(f"[green]✓ Shot list written: {path}[/green]")
+        console.print(
+            "[dim]Review/edit it, then generate keyframes with: "
+            f"brandly storyboard {project_id} --shots {shots_file}[/dim]"
+        )
+        return
     if not path.is_file():
         console.print(f"[red]Shot list not found: {path}[/red]")
         sys.exit(1)

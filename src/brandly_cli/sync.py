@@ -7,6 +7,7 @@ import os
 from collections.abc import Generator
 from pathlib import Path
 
+from brandly_cli.constants import DEFAULT_AGNES_IMAGE_MODEL
 from brandly_cli.utils import write_atomic
 
 # ---------------------------------------------------------------------------
@@ -103,7 +104,7 @@ def _sync_qwen(agnes_key: str | None, minimax_key: str | None) -> list[str]:
     if not agnes_exists:
         openai_providers.append(
             {
-                "id": "agnes-image-2.1-flash",
+                "id": DEFAULT_AGNES_IMAGE_MODEL,
                 "name": "Agnes AI",
                 "baseUrl": os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1"),
                 "envKey": env_key_name,

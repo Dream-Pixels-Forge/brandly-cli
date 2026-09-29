@@ -265,6 +265,11 @@ class TestInferVideoMode:
     def test_reference_when_images(self) -> None:
         assert infer_video_mode(reference_images=["ref.png"]) == "reference"
 
+    def test_reference_when_audios_only(self) -> None:
+        # Issue #156: reference mode accepts audios without images (doc:
+        # "images and audios may be used separately or together").
+        assert infer_video_mode(reference_audios=["ref.mp3"]) == "reference"
+
     def test_text_when_nothing(self) -> None:
         assert infer_video_mode() == "text"
 
@@ -316,6 +321,47 @@ class TestCreateVideoTask:
         with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
             mock_ctx.return_value = _make_mock_client(mock_data)
             result = await create_video_task("test", mode="keyframe")
+
+        assert result["mode"] == "text"
+
+    async def test_auto_mode_resolves_to_reference_audio_only(
+        self, mock_api_key: str
+    ) -> None:
+        # Issue #156: audio-only reference must create a reference task,
+        # not silently degrade to text-to-video.
+        mock_data = {"id": "task-006", "video_id": "vid-006", "status": "pending"}
+        with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
+            mock_ctx.return_value = _make_mock_client(mock_data)
+            result = await create_video_task(
+                "audio reference", reference_audios=["https://x.invalid/a.mp3"]
+            )
+
+        assert result["mode"] == "reference"
+        call_args = mock_ctx.return_value.__aenter__.return_value.post.call_args
+        body = call_args.kwargs.get("json") or call_args[1]["json"]
+        assert body["mode"] == "reference"
+        assert body["audios"] == ["https://x.invalid/a.mp3"]
+        assert "images" not in body
+
+    async def test_explicit_reference_with_audios_only_stays_reference(
+        self, mock_api_key: str
+    ) -> None:
+        mock_data = {"id": "task-007", "video_id": "vid-007", "status": "pending"}
+        with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
+            mock_ctx.return_value = _make_mock_client(mock_data)
+            result = await create_video_task(
+                "test", mode="reference", reference_audios=["https://x.invalid/a.mp3"]
+            )
+
+        assert result["mode"] == "reference"
+
+    async def test_reference_mode_without_media_degrades_to_text(
+        self, mock_api_key: str
+    ) -> None:
+        mock_data = {"id": "task-008", "video_id": "vid-008", "status": "pending"}
+        with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
+            mock_ctx.return_value = _make_mock_client(mock_data)
+            result = await create_video_task("test", mode="reference")
 
         assert result["mode"] == "text"
 

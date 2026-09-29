@@ -491,6 +491,41 @@ class TestBatchRateLimit:
         assert "anamorphic lens" not in captured["prompt"]
         assert "style_preset" not in captured
 
+    def test_batch_wait_forwards_model_name_to_poll(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        """Issue #152: reference-mode tasks must be polled WITH model_name.
+
+        Agnes docs: a video_id query without model_name is valid only for
+        mode "text"; keyframe/reference polls must include model_name —
+        otherwise retrieval is invalid (surfaces as 404/400/503 in --wait).
+        """
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+
+        captured: dict[str, Any] = {}
+
+        async def fake_create(prompt: str, **kwargs: Any) -> dict[str, Any]:
+            return dict(FAKE_TASK)
+
+        async def fake_poll(video_id: str, **kwargs: Any) -> dict[str, Any]:
+            captured["video_id"] = video_id
+            captured.update(kwargs)
+            return {"status": "completed", "url": "https://cdn.example.com/v.mp4"}
+
+        with (
+            patch("brandly_cli.cmd.production.create_video_task", side_effect=fake_create),
+            patch("brandly_cli.cmd.production.poll_video", side_effect=fake_poll),
+            patch("brandly_cli.cmd.production.time.sleep"),
+        ):
+            result = runner.invoke(
+                cli, ["batch", pid, "a cat", "-n", "1", "--wait"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert captured["video_id"] == "vid-1"
+        assert captured.get("model_name") == "agnes-video-2.5-flash"
+
 # (no batch; 1 request per minute Agnes rate limit)
 # ---------------------------------------------------------------------------
 

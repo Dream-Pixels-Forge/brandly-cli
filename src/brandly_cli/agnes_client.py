@@ -971,9 +971,13 @@ async def cancel_job(video_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 # Agnes text models are OpenAI-compatible: same base URL, /v1/chat/completions.
-# The 2.5-flash model is recommended for tool calling / agent workflows
-# (512K context, tool-calling support). 2.0-flash (256K) is the fallback.
+# The 2.5-flash model stays the default for tool calling / agent workflows
+# (512K context, tool-calling support); 3.0-flash (512K context, 65.5K output,
+# $0 pricing, tool calling verified live 2026-09-29) is available via
+# --model but flipping the default is a separate decision. 2.0-flash (256K)
+# is the fallback.
 AGNES_TEXT_MODELS: tuple[str, ...] = (
+    "agnes-3.0-flash",
     "agnes-2.5-flash",
     "agnes-2.0-flash",
     "agnes-1.5-flash",
@@ -988,6 +992,12 @@ def list_text_models() -> list[dict[str, str]]:
     without a network round-trip.
     """
     return [
+        {
+            "id": "agnes-3.0-flash",
+            "context": "512K",
+            "max_output": "65.5K",
+            "use": "long-context chat, image-URL input, large outputs, tool calling (verified 2026-09-29)",
+        },
         {
             "id": "agnes-2.5-flash",
             "context": "512K",

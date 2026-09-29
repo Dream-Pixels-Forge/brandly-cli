@@ -480,7 +480,7 @@ def job_cancel(video_id: str) -> None:
 @click.command(name="agnes-chat")
 @click.argument("prompt")
 @click.option("--model", default="agnes-2.5-flash",
-              help="Agnes text model (2.5-flash, 2.0-flash, 1.5-flash)")
+              help="Agnes text model (3.0-flash, 2.5-flash, 2.0-flash, 1.5-flash)")
 @click.option("--tools", is_flag=True,
               help="Enable built-in tools (projects, jobs, models, image gen)")
 @click.option("--list-models", "list_models_flag", is_flag=True,

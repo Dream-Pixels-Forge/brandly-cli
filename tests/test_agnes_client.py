@@ -377,6 +377,68 @@ class TestCreateVideoTask:
             assert body["seconds"] == "8"
 
 
+class TestFlashCreatePreValidation:
+    """Issue #160: Flash limits fail fast client-side, before the create POST.
+
+    The server validates Flash constraints before task creation/billing, so
+    catching them here never diverges from server truth — and a rejected
+    request never burns a slot in the 1-req/min create window (issue #124).
+    """
+
+    async def test_non_720p_size_fails_before_post(self, mock_api_key: str) -> None:
+        with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
+            mock_ctx.return_value = _make_mock_client({})
+            with pytest.raises(ValueError, match="720P"):
+                await create_video_task("x", size="1080P")
+
+        mock_ctx.return_value.__aenter__.return_value.post.assert_not_called()
+
+    async def test_six_reference_images_rejected_before_post(
+        self, mock_api_key: str
+    ) -> None:
+        images = [f"https://x.invalid/{i}.png" for i in range(6)]
+        with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
+            mock_ctx.return_value = _make_mock_client({})
+            with pytest.raises(ValueError, match="images length must not exceed 5"):
+                await create_video_task("x", reference_images=images)
+
+        mock_ctx.return_value.__aenter__.return_value.post.assert_not_called()
+
+    async def test_four_reference_audios_rejected_before_post(
+        self, mock_api_key: str
+    ) -> None:
+        audios = [f"https://x.invalid/{i}.mp3" for i in range(4)]
+        with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
+            mock_ctx.return_value = _make_mock_client({})
+            with pytest.raises(ValueError, match="audios length must not exceed 3"):
+                await create_video_task("x", reference_audios=audios)
+
+        mock_ctx.return_value.__aenter__.return_value.post.assert_not_called()
+
+    async def test_unsupported_aspect_ratio_rejected_before_post(
+        self, mock_api_key: str
+    ) -> None:
+        with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
+            mock_ctx.return_value = _make_mock_client({})
+            with pytest.raises(ValueError, match="aspect_ratio"):
+                await create_video_task("x", aspect_ratio="4:5")
+
+        mock_ctx.return_value.__aenter__.return_value.post.assert_not_called()
+
+    async def test_boundary_limits_still_post(self, mock_api_key: str) -> None:
+        mock_data = {"id": "task-009", "video_id": "vid-009", "status": "pending"}
+        images = [f"https://x.invalid/{i}.png" for i in range(5)]
+        audios = [f"https://x.invalid/{i}.mp3" for i in range(3)]
+        with patch("brandly_cli.agnes_client.httpx.AsyncClient") as mock_ctx:
+            mock_ctx.return_value = _make_mock_client(mock_data)
+            result = await create_video_task(
+                "x", reference_images=images, reference_audios=audios
+            )
+
+        assert result["video_id"] == "vid-009"
+        mock_ctx.return_value.__aenter__.return_value.post.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # get_video_status
 # ---------------------------------------------------------------------------

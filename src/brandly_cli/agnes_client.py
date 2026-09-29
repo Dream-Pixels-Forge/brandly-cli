@@ -527,6 +527,50 @@ async def _enforce_video_create_spacing(gap: float | None = None) -> None:
     _LAST_VIDEO_CREATE_AT = time.monotonic()
 
 
+#: Issue #160: Flash create constraints (Agnes Video 2.5 Flash docs,
+#: 2026-09-29). The server validates these BEFORE task creation, queueing,
+#: and billing - mirroring them client-side gives a clear error and never
+#: burns a slot in the 1-req/min create window (issue #124).
+AGNES_VIDEO_ASPECT_RATIOS = ("21:9", "16:9", "4:3", "1:1", "3:4", "9:16")
+MAX_REFERENCE_IMAGES = 5
+MAX_REFERENCE_AUDIOS = 3
+
+
+def _validate_flash_create(
+    *,
+    model: str,
+    size: str | None,
+    aspect_ratio: str | None,
+    reference_images: list[str] | None,
+    reference_audios: list[str] | None,
+) -> None:
+    """Raise ``ValueError`` naming the exact violated Flash rule.
+
+    Checks run in the server's documented precedence: size -> images ->
+    audios, then the common aspect_ratio constraint. Non-Flash models are
+    left untouched so future models are not constrained by Flash limits.
+    """
+    if model != "agnes-video-2.5-flash":
+        return
+    if size and size != "720P":
+        raise ValueError(f"size must be 720P (Agnes Video 2.5 Flash got {size!r})")
+    if reference_images and len(reference_images) > MAX_REFERENCE_IMAGES:
+        raise ValueError(
+            f"images length must not exceed {MAX_REFERENCE_IMAGES} "
+            f"(got {len(reference_images)})"
+        )
+    if reference_audios and len(reference_audios) > MAX_REFERENCE_AUDIOS:
+        raise ValueError(
+            f"audios length must not exceed {MAX_REFERENCE_AUDIOS} "
+            f"(got {len(reference_audios)})"
+        )
+    if aspect_ratio and aspect_ratio not in AGNES_VIDEO_ASPECT_RATIOS:
+        raise ValueError(
+            f"aspect_ratio {aspect_ratio!r} is not supported; "
+            f"use one of: {', '.join(AGNES_VIDEO_ASPECT_RATIOS)}"
+        )
+
+
 async def create_video_task(
     prompt: str,
     *,
@@ -557,6 +601,13 @@ async def create_video_task(
     ``"cinematic"`` only when the requested style is cinematic; this provider
     no longer imports the prompt layer.
     """
+    _validate_flash_create(
+        model=model,
+        size=size,
+        aspect_ratio=aspect_ratio,
+        reference_images=reference_images,
+        reference_audios=reference_audios,
+    )
     if mode == "auto":
         mode = infer_video_mode(
             first_frame=first_frame,

@@ -46,6 +46,7 @@ from brandly_cli.cli import (
 )
 from brandly_cli.cmd.generation import _generate_shot, _run_produce_runner
 from brandly_cli.constants import (
+    DEFAULT_AGNES_IMAGE_MODEL,
     DEFAULT_AGNES_VIDEO_MODEL,
     PHASE_ORDER,
     SHOT_COSTS,
@@ -1935,7 +1936,7 @@ class Director:
         project_id: str,
         prompt: str,
         *,
-        model: str = "agnes-image-2.1-flash",
+        model: str = DEFAULT_AGNES_IMAGE_MODEL,
         size: str = "2K",
         ratio: str = "16:9",
         style_preset: StylePreset | None = None,

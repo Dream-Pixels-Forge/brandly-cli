@@ -38,6 +38,7 @@ from brandly_cli.cli import (
     console,
 )
 from brandly_cli.constants import (
+    DEFAULT_AGNES_IMAGE_MODEL,
     STYLE_PRESET_OPTIONS,
 )
 from brandly_cli.project_manager import ProjectManager
@@ -139,8 +140,8 @@ def _print_gate_threshold_summary(gate_scores: dict[str, int], threshold: int) -
 )
 @click.option(
     "--model",
-    default="agnes-image-2.1-flash",
-    help="Agnes image model (2.1-flash default, 2.0-flash for higher quality)",
+    default=DEFAULT_AGNES_IMAGE_MODEL,
+    help="Agnes image model (2.5-flash default; see `brandly chat --list-models`)",
 )
 @click.option(
     "--gate/--no-gate",

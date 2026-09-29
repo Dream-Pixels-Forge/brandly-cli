@@ -877,9 +877,236 @@ def report(
         console.print("[dim]Issue report skipped.[/dim]")
 
 
+_DRIFT_SYSTEM = (
+    "You are a cross-shot consistency analyst for brandly-cli. You receive "
+    "ALL shot prompts of one campaign (plus style/aspect context). Find "
+    "prompt drift: places where a shot would break the campaign's visual "
+    "continuity BEFORE any frames are generated.\n"
+    "Reply with ONLY a JSON object, no prose:\n"
+    '{"drifts": [{"shot_ids": ["..."], "dimension": '
+    '"character|lighting|style|aspect|voice", "evidence": "...", '
+    '"severity": "high|medium|low", "suggested_fix": "..."}]}\n'
+    "Rules:\n"
+    "- dimension: character (name/identity/wardrobe drift), lighting "
+    "(key/fill/mood flips), style (off-preset look), aspect (mixed frame "
+    "geometry), voice (narration/tone shifts).\n"
+    "- severity high = would visibly break continuity for a viewer; "
+    "medium = noticeable inconsistency; low = nitpick.\n"
+    "- evidence quotes or paraphrases the exact prompt text that drifts.\n"
+    "- suggested_fix is a copy-pasteable replacement phrase or sentence.\n"
+    "- shot_ids must reference existing shot ids.\n"
+    '- "drifts" must be a list; use [] when the campaign is consistent.'
+)
+
+
+def _campaign_shots(shots_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """ALL shots + style context from ``<proj>/shots.json`` (read-only).
+
+    Accepts the flat list or the ``acts``-structured object form.
+    Raises ``OSError``/``json.JSONDecodeError``/``ValueError`` on unreadable
+    or structurally-invalid files — the caller turns those into exit 2.
+    """
+    raw = json.loads(shots_path.read_text(encoding="utf-8"))
+    raw_shots: list[dict[str, Any]] = []
+    meta: dict[str, Any] = {}
+    if isinstance(raw, list):
+        raw_shots = [s for s in raw if isinstance(s, dict)]
+    elif isinstance(raw, dict):
+        meta["campaign"] = {k: v for k, v in raw.items() if k != "acts"}
+        acts = raw.get("acts") or {}
+        if isinstance(acts, dict):
+            acts_meta: list[dict[str, Any]] = []
+            for act_name, act in acts.items():
+                if not isinstance(act, dict):
+                    continue
+                acts_meta.append(
+                    {
+                        "name": act_name,
+                        **{
+                            k: act[k]
+                            for k in ("style", "prefix", "folder", "scene")
+                            if k in act
+                        },
+                    }
+                )
+                for s in act.get("shots") or []:
+                    if isinstance(s, dict):
+                        raw_shots.append(s)
+            if acts_meta:
+                meta["acts"] = acts_meta
+    else:
+        raise ValueError("shots.json must be a list or an object")
+
+    shots: list[dict[str, Any]] = []
+    for i, shot in enumerate(raw_shots, start=1):
+        sid = str(shot.get("id") or shot.get("name") or f"shot-{i}")
+        prompt = shot.get("prompt", "")
+        if not isinstance(prompt, str):
+            prompt = json.dumps(prompt, ensure_ascii=False)
+        entry: dict[str, Any] = {"id": sid, "prompt": prompt[:4000]}
+        for key in ("style", "aspect", "aspect_ratio", "camera"):
+            if key in shot:
+                entry[key] = shot[key]
+        shots.append(entry)
+    return shots, meta
+
+
+def _print_drift_report(drifts: list[dict[str, Any]], total: int) -> None:
+    if not drifts:
+        console.print(f"[green]✓ No prompt drift across {total} shots.[/green]")
+        return
+    sev_color = {"high": "red", "medium": "yellow", "low": "dim"}
+    table = Table(
+        title=f"Prompt drift — {len(drifts)} finding(s) across {total} shots"
+    )
+    table.add_column("Shots", style="cyan")
+    table.add_column("Dimension")
+    table.add_column("Severity")
+    table.add_column("Evidence")
+    table.add_column("Suggested fix")
+    for d in drifts:
+        sev = str(d.get("severity", ""))
+        table.add_row(
+            ", ".join(str(s) for s in d.get("shot_ids", [])) or "—",
+            str(d.get("dimension", "")),
+            f"[{sev_color.get(sev, 'white')}]{sev}[/]",
+            str(d.get("evidence", "")),
+            str(d.get("suggested_fix", "")),
+        )
+    console.print(table)
+    console.print(
+        "[dim]Read-only: apply fixes to shots.json yourself, then "
+        "re-generate.[/dim]"
+    )
+
+
+@click.command(name="gate-drift")
+@click.argument("project_id")
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="CI mode: exit 1 when any high-severity drift exists.",
+)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Choice(["text", "json"]),
+    default="text",
+)
+@click.pass_context
+def gate_drift(
+    ctx: click.Context, project_id: str, strict: bool, output: str
+) -> None:
+    """Check ALL shot prompts for cross-shot drift BEFORE generation.
+
+    One text-model call compares every shot against the campaign's
+    character/lighting/style/aspect/voice baseline and prints the drifts
+    as a table (issue #174). Read-only — never edits prompts.
+
+    Exit codes: 0 = report (or none found), 1 = --strict with a
+    high-severity drift, 2 = error (no shots, API failure, bad response).
+    """
+    if not is_valid_project_id(project_id):
+        console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(2)
+
+    from brandly_cli import layout, quality_gate
+
+    root = _get_root(ctx)
+    shots_file = layout.resolve_project_dir(root, project_id) / "shots.json"
+    if not shots_file.is_file():
+        console.print(
+            f"[red]No shots.json for project '{project_id}' "
+            f"({shots_file}).[/red]"
+        )
+        sys.exit(2)
+    try:
+        shots, meta = _campaign_shots(shots_file)
+    except (OSError, json.JSONDecodeError, ValueError) as e:
+        console.print(f"[red]Could not read shots.json: {e}[/red]")
+        sys.exit(2)
+    if not shots:
+        console.print(
+            f"[red]shots.json has no shots for project '{project_id}'.[/red]"
+        )
+        sys.exit(2)
+
+    from brandly_cli.agnes_client import chat_completion
+
+    context: dict[str, Any] = {"project_id": project_id, "shots": shots}
+    context.update(meta)
+    messages = [
+        {"role": "system", "content": _DRIFT_SYSTEM},
+        {
+            "role": "user",
+            "content": json.dumps(context, indent=2, ensure_ascii=False),
+        },
+    ]
+    try:
+        raw = asyncio.run(
+            chat_completion(
+                messages,
+                model=DEFAULT_AGNES_TEXT_MODEL,
+                response_format={"type": "json_object"},
+            )
+        )
+    except Exception as e:  # noqa: BLE001 — fail-open by design (issue #174)
+        console.print(
+            f"[red]Prompt-drift check failed: "
+            f"{e.__class__.__name__}: {e}[/red]"
+        )
+        sys.exit(2)
+
+    text = raw.get("choices", [{}])[0].get("message", {}).get("content", "")
+    parsed = quality_gate._parse_verdict(text or "")
+    drifts = parsed.get("drifts") if isinstance(parsed, dict) else None
+    if not isinstance(drifts, list):
+        console.print(
+            "[red]Prompt-drift check failed: response was not valid "
+            "drift JSON.[/red]"
+        )
+        if text:
+            console.print("[dim]Response tail:[/dim]")
+            console.print(text[-400:])
+        sys.exit(2)
+
+    clean: list[dict[str, Any]] = []
+    for d in drifts:
+        if not isinstance(d, dict):
+            continue
+        clean.append(
+            {
+                "shot_ids": [
+                    str(s) for s in d.get("shot_ids") or [] if s is not None
+                ],
+                "dimension": str(d.get("dimension") or ""),
+                "evidence": str(d.get("evidence") or ""),
+                "severity": str(d.get("severity") or "").lower(),
+                "suggested_fix": str(d.get("suggested_fix") or ""),
+            }
+        )
+
+    high = any(d["severity"] == "high" for d in clean)
+    if output == "json":
+        _print_json(
+            {
+                "project_id": project_id,
+                "shots": len(shots),
+                "drifts": clean,
+                "high": high,
+                "strict": strict,
+            }
+        )
+    else:
+        _print_drift_report(clean, len(shots))
+    if strict and high:
+        sys.exit(1)
+
+
 def register(cli) -> None:
     cli.add_command(validate)
     cli.add_command(gate)
+    cli.add_command(gate_drift)
     cli.add_command(memory)
     cli.add_command(cost)
     cli.add_command(record_cost)

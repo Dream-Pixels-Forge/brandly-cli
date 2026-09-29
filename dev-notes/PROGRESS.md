@@ -6,7 +6,7 @@
 - Version: 0.7.0 (shipped via #147; backlog CLEAR — #148–#152 closed by PR #153; #154 open: Windows console glyph encoding)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
-- Test Count: 1076 passed (0 xfail/xpass)
+- Test Count: 1109 passed (0 xfail/xpass)
 - Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
@@ -475,5 +475,38 @@ defaults; shipped as four TDD PRs behind one release, per
 - **Backlog status: 0 open issues, 0 open PRs** (#172-#174 parked)
 - NEXT: #172-#174 triage (storyboard-from-brief needs a design pass) /
   v0.7.1 release cut (decision-gated)
+
+### Round 15/256 - Gate explain, prompt drift, storyboard from brief: issues #172-#174 closed (PRs #178-#180)
+
+- [x] Triaged the parked #172-#174 trio: translated two subcommand
+  proposals onto the actual command shapes (no `gate` subcommands
+  exist): `gate drift` -> `brandly gate --explain` (#173),
+  `gate report --explain`/drift -> top-level `brandly gate-drift` (#174)
+- [x] **#173** (PR #178) `brandly gate --explain`: after the standard
+  report, ONE extra text-model call diagnoses every failure/warning
+  (element mode, `_EXPLAIN_SYSTEM`, shot prompt + progress context) and
+  prints per-issue explanation, suggested fix and copy-pasteable
+  commands; read-only, fail-open (invalid JSON / API error degrade to a
+  note), zero file writes; `--json` gains `explain`/`explain_error`
+  keys (10 new tests)
+- [x] **#174** (PR #179) `brandly gate-drift <project>`: pre-generation
+  cross-shot audit - all shot prompts in ONE text-model call
+  (`_DRIFT_SYSTEM`; dimensions character|lighting|style|aspect|voice),
+  drifts table with evidence/severity/suggested fix, `-o json`,
+  `--strict` exits 1 on high severity, otherwise 0; exit 2 on invalid
+  project id / missing or empty shots.json / API failure / malformed
+  response (with response tail) (10 new tests)
+- [x] **#172** (PR #180) `brandly storyboard --from-brief "<brief>"`
+  (+ `--force`, `--brief-model`, `--style`, `--aspect`, `--duration`):
+  one text-model call (default `agnes-2.5-flash`) -> validated shot list
+  written to `--shots` -> stop before keyframes (no credits);
+  `_validate_generated_shots` fail-closed on malformed JSON (response
+  tail printed), non-canonical/duplicate ids (#113), missing prompts,
+  durations outside 1-30 -> exit 2, NOTHING written; existing target
+  refused without `--force` (exit 1, before any API call); flag absent
+  = old behavior byte-identical (13 new tests)
+- [x] Full suite **1109 passed** (from 1076); ruff + mypy clean
+- **Backlog status: 0 open issues, 0 open PRs**
+- NEXT: v0.7.1 release cut / publish decision (decision-gated)
 
 

@@ -84,6 +84,34 @@ All notable changes to this project are documented here.
   `consistency:`. Single-frame stays the default and the fallback when
   no extra frame extracts.
 
+### Added (gate explain, prompt drift, storyboard from brief - #172-#174)
+- **Gate explain (`--explain`, #173)**: after the standard `brandly gate`
+  report, one extra text-model call diagnoses every failure/warning
+  (element mode only) with the shot prompt + gate progress as context;
+  per-issue explanation, suggested fix and copy-pasteable commands are
+  printed read-only. Fail-open: API error or malformed reply degrades to
+  a note without touching the report; no file writes.
+- **Campaign prompt drift (`brandly gate-drift`, #174)**: pre-generation
+  consistency audit - ALL shot prompts of a project go through one
+  text-model call (`_DRIFT_SYSTEM`) that reports drifts by dimension
+  (character/lighting/style/aspect/voice) with evidence, severity and
+  suggested fixes as a table (`-o json` for machines). Read-only, never
+  edits prompts; `--strict` exits 1 when any high-severity drift exists
+  (CI mode); missing/empty `shots.json`, API failure or a malformed
+  response exit 2.
+- **Storyboard from brief (`--from-brief`, #172)**: `brandly storyboard
+  <project> --shots shots.json --from-brief "<one-line brief>"` turns a
+  brief (+ optional `--style`/`--aspect`/`--duration` context,
+  `--brief-model`, default `agnes-2.5-flash`) into a schema-valid shot
+  list in ONE text-model call, writes it to `--shots` and stops before
+  keyframe generation for human review. Fail-closed: `_validate_generated_shots`
+  enforces `Scene-XX-Shot-X-Y` ids (globally unique per #113),
+  non-empty prompts and 1-30s durations; malformed JSON, API errors or
+  schema violations print the errors + response tail, exit 2 and write
+  NO file; an existing target is refused without `--force` (exit 1,
+  checked before any API call); without the flag the command is
+  byte-identical to before.
+
 ## [0.7.0] - 2026-09-28
 
 ### Added (production-run hardening — issues #113–#125)

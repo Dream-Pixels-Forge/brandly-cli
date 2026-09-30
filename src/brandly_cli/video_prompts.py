@@ -1094,7 +1094,7 @@ class ShotChain:
         emotional_beat: str | None = None,
         ends_on: str | None = None,
         handoff: str | None = None,
-    ) -> "ShotChain":
+    ) -> ShotChain:
         """Append a clip to the chain.
 
         ``transition`` is assembly metadata only (the join kind

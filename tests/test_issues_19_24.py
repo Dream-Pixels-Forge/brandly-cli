@@ -323,6 +323,106 @@ class TestScopedAutoRefs:
         assert not any("a.png" in r for r in refs)
 
 
+class TestReferenceNoteFlag:
+    """``--reference-note``: per-reference defines/exclude lines surface in
+    the enhanced prompt as a [REFERENCE NOTES] section (clip-chain brief
+    grammar: "@ref defines X. Do not use: Y.")."""
+
+    def _invoke(
+        self,
+        runner: CliRunner,
+        pid: str,
+        *extra: str,
+        capture: dict[str, Any],
+    ) -> Any:
+        async def fake_create(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            capture["prompt"] = args[0]
+            return dict(FAKE_TASK)
+
+        with patch("brandly_cli.cmd.generation.create_video_task", side_effect=fake_create):
+            return runner.invoke(
+                cli,
+                [
+                    "video",
+                    pid,
+                    "-p",
+                    "a cat",
+                    "--no-wait",
+                    "--no-gate",
+                    "--allow-referenceless",
+                    *extra,
+                ],
+            )
+
+    def test_note_with_defines_and_exclude(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+        _ensure_plan(tmp_path, pid)
+        capture: dict[str, Any] = {}
+        result = self._invoke(
+            runner,
+            pid,
+            "--reference-note",
+            "@char_amelie:her face, hair and clothing:the black blazer, the grey studio background",
+            capture=capture,
+        )
+        assert result.exit_code == 0, result.output
+        prompt = capture["prompt"]
+        assert "[REFERENCE NOTES]" in prompt
+        assert "@char_amelie defines her face, hair and clothing." in prompt
+        assert "Do not use: the black blazer, the grey studio background." in prompt
+
+    def test_multiple_notes_emit_in_order(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+        _ensure_plan(tmp_path, pid)
+        capture: dict[str, Any] = {}
+        result = self._invoke(
+            runner,
+            pid,
+            "--reference-note",
+            "@char_amelie:her face, hair and clothing:the black blazer",
+            "--reference-note",
+            "@prop_amelie_phone:her phone:the back of the phone, any logo",
+            capture=capture,
+        )
+        assert result.exit_code == 0, result.output
+        prompt = capture["prompt"]
+        assert prompt.index("@char_amelie") < prompt.index("@prop_amelie_phone")
+
+    def test_note_ref_only_emits_bare_line(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+        _ensure_plan(tmp_path, pid)
+        capture: dict[str, Any] = {}
+        result = self._invoke(
+            runner, pid, "--reference-note", "@loc_bathroom", capture=capture
+        )
+        assert result.exit_code == 0, result.output
+        prompt = capture["prompt"]
+        assert "[REFERENCE NOTES]" in prompt
+        assert "@loc_bathroom" in prompt
+        assert "defines" not in prompt.split("[REFERENCE NOTES]")[1]
+        assert "Do not use" not in prompt
+
+    def test_flag_absent_leaves_prompt_unchanged(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+        _ensure_plan(tmp_path, pid)
+        capture: dict[str, Any] = {}
+        result = self._invoke(runner, pid, capture=capture)
+        assert result.exit_code == 0, result.output
+        assert "[REFERENCE NOTES]" not in capture["prompt"]
+
+
 # ---------------------------------------------------------------------------
 # Issue #23 - import an existing plate as primary_reference
 # ---------------------------------------------------------------------------

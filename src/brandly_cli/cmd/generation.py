@@ -1163,6 +1163,16 @@ def job_poll(
     help="Comma-separated image URLs or local file paths for character/object consistency (reference mode)",
 )
 @click.option(
+    "--reference-note",
+    "reference_notes",
+    default=(),
+    multiple=True,
+    help=(
+        "Per-reference note as REF[:DEFINES[:EXCLUDE]] (repeatable); emitted as a "
+        "[REFERENCE NOTES] line: '@ref defines DEFINES. Do not use: EXCLUDE.'"
+    ),
+)
+@click.option(
     "--character",
     "-c",
     default=None,
@@ -1260,6 +1270,7 @@ def video(
     first_frame: str | None,
     last_frame: str | None,
     reference_images: str | None,
+    reference_notes: tuple[str, ...],
     character: str | None,
     wait: bool,
     max_wait: int,
@@ -1399,8 +1410,29 @@ def video(
     # appended — they would overwrite the shot's correct film direction.
     from brandly_cli.video_prompts import detect_scene_direction
 
+    # Per-reference notes (clip-chain brief grammar): "REF[:DEFINES[:EXCLUDE]]"
+    # becomes a [REFERENCE NOTES] line — "@ref defines DEFINES. Do not use:
+    # EXCLUDE." — so a sheet reference can state what NOT to take from it.
+    note_entries: list[dict[str, str]] = []
+    for note in reference_notes:
+        parts = [p.strip() for p in note.split(":", 2)]
+        ref = parts[0]
+        if not ref:
+            continue
+        entry: dict[str, str] = {"ref": ref}
+        if len(parts) > 1 and parts[1]:
+            entry["defines"] = parts[1]
+        if len(parts) > 2 and parts[2]:
+            entry["exclude"] = parts[2]
+        note_entries.append(entry)
+
     enhanced = build_enhanced_video_prompt(
-        prompt, style, character=character, reference_images=imgs, **detect_scene_direction(prompt)
+        prompt,
+        style,
+        character=character,
+        reference_images=imgs,
+        reference_notes=note_entries or None,
+        **detect_scene_direction(prompt),
     )
 
     # Try to load sheet reference for better prompting

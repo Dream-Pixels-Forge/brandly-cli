@@ -30,7 +30,8 @@ appended — they actively contradict the shot's direction. Pass
 to the builders to opt out of the preset boilerplate.
 
 Structured prompts (issue #31): a shot's ``prompt`` may be a dict using the
-8-layer film direction framework — see :func:`expand_structured_prompt`.
+film direction framework — the 8 base layers plus the clip-chain sections
+(``performance``, ``physics``, ``locks``) — see :func:`expand_structured_prompt`.
 """
 
 from __future__ import annotations
@@ -571,6 +572,10 @@ def build_video_prompt(
       Lighting: ...
       Color grade: ...
       Duration: Ns.
+
+    The master context declares the clip-chain mode: every shot is one
+    unbroken take, and joins between shots happen in post — never inside
+    a generation.
     """
     shot_keys = list(SHOT_SPECS.keys())
     move_keys = list(CAMERA_MOVES.keys())
@@ -618,7 +623,9 @@ def build_video_prompt(
         f"Action: {action}\n"
         f"Environment: {environment}\n"
         f"Style: {style}\n"
-        f"Total shots: {shots}\n\n"
+        f"Total shots: {shots}\n"
+        f"Mode: {shots} unbroken takes, {shots * duration_per_shot}s total — "
+        f"the chain is joined in post; a join never happens inside a generation.\n\n"
     )
 
     if reference_anchor:
@@ -731,6 +738,7 @@ def build_enhanced_video_prompt(
     *,
     character: str | None = None,
     reference_images: list[str] | None = None,
+    reference_notes: list[dict[str, str]] | None = None,
     shot_lighting: str | None = None,
     shot_grade: str | None = None,
     shot_style: str | None = None,
@@ -747,6 +755,12 @@ def build_enhanced_video_prompt(
     ``shot_style`` are given, and skipped entirely when ``no_boilerplate``
     is set (a shot that already carries full film direction must not be
     overwritten with generic "make it look cinematic" text).
+
+    ``reference_notes`` adds a ``[REFERENCE NOTES]`` section: one line per
+    sheet/prop reference stating what it defines and what must NOT be
+    taken from it (e.g. "Do not use: the blazer, the grey studio
+    background") — per-reference exclusions the ``[REFERENCE ANCHOR]``
+    line cannot express.
     """
     style_config = VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS["cinematic"])
     lighting_key = style_config.get("lighting", "studio")
@@ -778,6 +792,23 @@ def build_enhanced_video_prompt(
             "Preserve exact appearance, lighting, and composition from references."
         )
 
+    if reference_notes:
+        note_lines = []
+        for note in reference_notes:
+            ref = str(note.get("ref", "")).strip()
+            if not ref:
+                continue
+            line = ref
+            defines = str(note.get("defines", "")).strip()
+            if defines:
+                line += f" defines {defines}."
+            exclude = str(note.get("exclude", "")).strip()
+            if exclude:
+                line += f" Do not use: {exclude}."
+            note_lines.append(line)
+        if note_lines:
+            sections.append("[REFERENCE NOTES]\n" + "\n".join(note_lines))
+
     # Even fully-directed shots carry the technical ceiling: the model must
     # still respect duration/aspect/model limits (issue #42: technical
     # constraints are always emitted, independent of the boilerplate flag).
@@ -787,7 +818,8 @@ def build_enhanced_video_prompt(
     return "\n".join(sections)
 
 
-#: The 8-layer film direction framework (issue #31).
+#: The film direction framework (issue #31): the original 8 layers plus the
+#: clip-chain sections (``performance``, ``physics``, ``locks``).
 STRUCTURED_PROMPT_KEYS: tuple[str, ...] = (
     "subject",
     "emotion",
@@ -797,6 +829,9 @@ STRUCTURED_PROMPT_KEYS: tuple[str, ...] = (
     "style",
     "audio",
     "continuity",
+    "performance",
+    "physics",
+    "locks",
 )
 
 #: Human-readable labels for each structured layer (block order preserved).
@@ -809,6 +844,9 @@ STRUCTURED_PROMPT_LABELS: dict[str, str] = {
     "style": "[STYLE]",
     "audio": "[AUDIO]",
     "continuity": "[CONTINUITY]",
+    "performance": "[PERFORMANCE]",
+    "physics": "[PHYSICS]",
+    "locks": "[POSITIVE LOCKS]",
 }
 
 
@@ -816,7 +854,7 @@ def detect_scene_direction(prompt: str) -> dict[str, Any]:
     """Scene-aware boilerplate detection (issue #32).
 
     A prompt that already carries explicit ``[LIGHTING]`` / ``[COLOR
-    GRADE]`` / ``[VISUAL STYLE]`` blocks (structured 8-layer prompts, or
+    GRADE]`` / ``[VISUAL STYLE]`` blocks (structured prompts, or
     hand-directed shot text) must NOT have generic style-preset lines
     appended — that used to overwrite correct film direction with "golden
     hour sunlight" on a monitor-lit night scene. Returns keyword overrides
@@ -850,12 +888,13 @@ def expand_structured_prompt(
     duration: int | None = None,
     aspect: str | None = None,
 ) -> str:
-    """Expand a structured 8-layer prompt dict into a directed prompt (issue #31).
+    """Expand a structured prompt dict into a directed prompt (issue #31).
 
     Accepts either a plain string (returned untouched) or a mapping whose
-    keys are a subset of :data:`STRUCTURED_PROMPT_KEYS`. Unknown keys raise
-    :class:`ValueError` naming the valid keys — keyword soup must fail
-    loudly, not silently.
+    keys are a subset of :data:`STRUCTURED_PROMPT_KEYS` (the 8 base layers
+    plus the clip-chain sections ``performance`` / ``physics`` /
+    ``locks``). Unknown keys raise :class:`ValueError` naming the valid
+    keys — keyword soup must fail loudly, not silently.
 
     Emits the layers in canonical order, skips empty layers, then appends
     the identity lock (only when a character is present), the technical
@@ -1015,16 +1054,18 @@ class CharacterAnchorSystem:
 # ---------------------------------------------------------------------------
 
 class ShotChain:
-    """Builds prompts sequentially with continuity hooks."""
+    """Builds prompts sequentially with continuity hooks.
 
-    TRANSITIONS = {
-        "cut": "CUT TO",
-        "dissolve": "DISSOLVE TO",
-        "match_cut": "MATCH CUT TO",
-        "whip_pan": "WHIP PAN TO",
-        "cross_dissolve": "CROSS DISSOLVE TO",
-        "jump_cut": "JUMP CUT TO",
-    }
+    Brandly clip-chain grammar: every shot is one unbroken take (a clip).
+    Between clips, a ``Clip N-1→N handoff: …`` line is emitted when a
+    handoff is declared, and a chain-level ``Carry over across all N
+    clips: …`` line restates the shared elements. No cut tokens are ever
+    emitted — the ``transition`` chosen in :meth:`add_shot` is assembly
+    metadata (the join kind ``brandly stitch`` applies in post), never
+    model-facing text. :meth:`clip_prompt` yields a self-contained prompt
+    for a single clip, with a ``[CONTINUITY]`` suffix on clips after the
+    first.
+    """
 
     def __init__(
         self,
@@ -1032,6 +1073,7 @@ class ShotChain:
         environment: str,
         style: str = "cinematic",
         character_anchor: CharacterAnchorSystem | None = None,
+        carry_over: list[str] | None = None,
     ) -> None:
         self.subject = subject
         self.environment = environment
@@ -1039,6 +1081,7 @@ class ShotChain:
         self.character_anchor = character_anchor
         self._shots: list[dict[str, str]] = []
         self._previous_action: str | None = None
+        self._carry_over: list[str] = carry_over or []
 
     def add_shot(
         self,
@@ -1049,7 +1092,18 @@ class ShotChain:
         duration: int = 4,
         environment_modifier: str | None = None,
         emotional_beat: str | None = None,
+        ends_on: str | None = None,
+        handoff: str | None = None,
     ) -> ShotChain:
+        """Append a clip to the chain.
+
+        ``transition`` is assembly metadata only (the join kind
+        ``brandly stitch`` applies in post) — it is never emitted into
+        model-facing prompts. ``ends_on`` describes how this clip ends
+        (emitted as ``Ends on …``); ``handoff`` describes how the
+        previous clip hands into this one (emitted as
+        ``Clip N-1→N handoff: …`` before this clip's block).
+        """
         shot_index = len(self._shots)
         self._shots.append({
             "index": str(shot_index),
@@ -1060,6 +1114,8 @@ class ShotChain:
             "duration": str(duration),
             "environment_modifier": environment_modifier or "",
             "emotional_beat": emotional_beat or "",
+            "ends_on": ends_on or "",
+            "handoff": handoff or "",
         })
         self._previous_action = action
         return self
@@ -1080,12 +1136,18 @@ class ShotChain:
             "",
         ]
 
+        if self._carry_over:
+            lines.append(
+                f"Carry over across all {len(self._shots)} clips: "
+                f"{', '.join(self._carry_over)}."
+            )
+            lines.append("")
+
         for i, shot in enumerate(self._shots):
             shot_spec = SHOT_SPECS.get(shot["type"], SHOT_SPECS["medium"])
-            transition_word = self.TRANSITIONS.get(shot["transition"], "CUT TO")
 
-            if i > 0:
-                lines.append(f"--- {transition_word} ---")
+            if i > 0 and shot["handoff"]:
+                lines.append(f"Clip {i}→{i + 1} handoff: {shot['handoff']}")
 
             if self.character_anchor:
                 lines.append(self.character_anchor.anchor_for_shot(i))
@@ -1103,6 +1165,9 @@ class ShotChain:
                 f"Duration: {shot['duration']}s.",
             ])
 
+            if shot["ends_on"]:
+                lines.append(f"Ends on {shot['ends_on']}.")
+
             if shot["emotional_beat"]:
                 lines.append(f"Mood: {shot['emotional_beat']}.")
 
@@ -1114,6 +1179,55 @@ class ShotChain:
 
         lines.append("")
         lines.extend(technical_constraints(self.style).split("\n"))
+        lines.append(negative_block(self.style))
+
+        return "\n".join(lines)
+
+    def clip_prompt(self, index: int) -> str:
+        """Build the self-contained prompt for one clip (one generation).
+
+        Agnes sees one clip at a time, so the prompt re-states the shared
+        context and — for clips after the first — a ``[CONTINUITY]``
+        suffix (``Same … . Continuity from Clip N-1.``) carrying the
+        chain. Joins happen in post (``brandly stitch``); a clip prompt
+        never contains a cut.
+        """
+        shot = self.get_shot(index)
+        if shot is None:
+            return ""
+
+        style_config = VIDEO_STYLE_MODELS.get(self.style, VIDEO_STYLE_MODELS["cinematic"])
+        lighting_key = style_config.get("lighting", "studio")
+        shot_spec = SHOT_SPECS.get(shot["type"], SHOT_SPECS["medium"])
+
+        lines = [
+            f"[CLIP {index + 1}]",
+            f"Subject: {self.subject}",
+            f"Environment: {self.environment}",
+            f"Camera: {shot_spec['type']}, {shot_spec['lens']}mm lens, {shot_spec['framing']}",
+            f"Motion: {CAMERA_MOVES.get(shot['camera_move'], 'locked off')}",
+            f"Subject action: {self.subject} {shot['action']}.",
+            f"Lighting: {LIGHTING_PRESETS.get(lighting_key, LIGHTING_PRESETS['studio'])['model_tags']}.",
+            f"Color grade: {GRADE_PRESETS.get(self.style, GRADE_PRESETS['cinematic'])}.",
+            f"Duration: {shot['duration']}s.",
+        ]
+
+        if shot["ends_on"]:
+            lines.append(f"Ends on {shot['ends_on']}.")
+
+        if self.character_anchor:
+            lines.append(self.character_anchor.anchor_for_shot(index).rstrip())
+            lines.append("")
+
+        if index > 0:
+            carry = (
+                ", ".join(self._carry_over)
+                if self._carry_over
+                else "appearance, clothing, lighting"
+            )
+            lines.append(f"[CONTINUITY] Same {carry}. Continuity from Clip {index}.")
+
+        lines.append(technical_constraints(self.style))
         lines.append(negative_block(self.style))
 
         return "\n".join(lines)

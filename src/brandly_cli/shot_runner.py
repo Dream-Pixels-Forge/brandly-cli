@@ -29,9 +29,10 @@ resolved under ``.brandly/<project>/images/<category>/<stem>`` (categories:
 
 Structured prompts (issue #31)
 -------------------------------
-A shot's ``prompt`` may be a plain string OR a dict using the 8-layer film
+A shot's ``prompt`` may be a plain string OR a dict using the film
 direction framework (``subject, emotion, optics, motion, lighting, style,
-audio, continuity``). Dict prompts are expanded via
+audio, continuity`` plus the clip-chain sections ``performance``,
+``physics``, ``locks``). Dict prompts are expanded via
 ``video_prompts.expand_structured_prompt``; unknown keys fail loudly at
 flatten time.
 
@@ -305,7 +306,7 @@ def flatten_shots(
             elif has_character_plate and global_character:
                 character_anchor = str(global_character)
 
-            # Issue #31: structured 8-layer prompt dicts expand to text here.
+            # Issue #31: structured prompt dicts expand to text here.
             raw_prompt = shot.get("prompt", "")
             if isinstance(raw_prompt, Mapping):
                 from brandly_cli.video_prompts import expand_structured_prompt

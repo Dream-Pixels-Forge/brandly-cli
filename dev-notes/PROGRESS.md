@@ -6,7 +6,7 @@
 - Version: 0.8.0 (release cut 2026-09-29; prior 0.7.0 via #147)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
-- Test Count: 1109 passed (0 xfail/xpass)
+- Test Count: 1124 passed (0 xfail/xpass)
 - Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
@@ -509,5 +509,40 @@ defaults; shipped as four TDD PRs behind one release, per
 - **Backlog status: 0 open issues, 0 open PRs**
 - NEXT: v0.8.0 release cut (decided 2026-09-29: minor bump - three
   feature batches since 0.7.0) / publish via tag -> release.yml -> PyPI
+
+### Round 16/256 - Brandly clip-chain prompt grammar (PR #183)
+- Translated cuts-language prompts to brandly language: a clip is ONE
+  unbroken take; joins happen in post (`brandly stitch`) and are never
+  written into a model-facing prompt
+- **ShotChain** (`video_prompts.py`): `carry_over` line ("Carry over
+  across all N clips: …"), per-clip `ends_on` ("Ends on …") + `handoff`
+  ("Clip N-1→N handoff: …") replacing the old `--- CUT TO ---` tokens;
+  new `clip_prompt(index)` = self-contained per-clip prompt with a
+  `[CONTINUITY] Same … . Continuity from Clip N-1.` suffix on clips 2..N;
+  `transition` kept as assembly metadata only (never emitted)
+- **Structured prompts**: 3 new clip-chain layers — `performance` /
+  `physics` / `locks` → `[PERFORMANCE]` / `[PHYSICS]` / `[POSITIVE LOCKS]`
+  (unknown keys still fail loudly; the 8 base layers unchanged)
+- **build_video_prompt**: master context gains a FORMAT MODE line —
+  "Mode: N unbroken takes, Xs total — the chain is joined in post; a
+  join never happens inside a generation."
+- **build_enhanced_video_prompt**: `reference_notes` param →
+  `[REFERENCE NOTES]` section with per-reference "defines / Do not use"
+  exclusions; now exposed on the CLI as repeatable
+  `brandly video --reference-note "REF[:DEFINES[:EXCLUDE]]"` (4 new
+  tests)
+- **Skill**: new "Shot-List Chain — Cut Scenes in Brandly Language"
+  section in `brandly-continuous-action-film` (golden rule, brief
+  structure, per-clip prompt shape, produce→gate→stitch loop)
+- Doc sweep: stale "8-layer" descriptions fixed in `video_prompts.py` /
+  `shot_runner.py` (historical CHANGELOG/dev-notes entries untouched)
+- TDD (RED→GREEN): 15 new tests written first (11 in #183, 4 for the
+  flag), 11 confirmed failing before implementation
+- Full suite **1124 passed** on `feature/clip-chain-prompt-grammar`
+  (1109 on main + 15 new); ruff + mypy clean
+- **Backlog status: PR #183 open, awaiting review** / follow-up still
+  open: CLI command emitting the full human-readable scene brief from a
+  ShotChain (deferred — the skill + structured `produce` path already
+  cover it; reassess before shipping)
 
 

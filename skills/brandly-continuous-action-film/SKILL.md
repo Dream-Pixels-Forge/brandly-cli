@@ -889,6 +889,53 @@ razor-sharp. [Lighting]. [Style]. ~10s.
 
 ---
 
+### Shot-List Chain — Cut Scenes in Brandly Language
+
+**Signature:** A cut scene (multiple angles, dialogue, motivated beats) directed as a *clip chain*: each clip is ONE unbroken take; joins happen in post, never in generation.
+
+**Golden rule: never write a "cut" into a clip prompt.** One Agnes request generates one take — it cannot contain a cut. Cutting is `brandly stitch`'s job. The model-facing language is: `Ends on …`, `Clip N-1→N handoff: match …`, `Continuity from Clip N-1`.
+
+**Scene brief structure (human-readable, one document):**
+
+```
+REFERENCES       one @ref line per sheet: what it defines + "Do not use: …" exclusions
+SCENE CONTEXT    who / where / what, one paragraph
+FORMAT MODE      N clips, total duration; "one unbroken take per clip; the chain is
+                 joined in post — a join never happens inside a generation"
+CLIP 1..N        beat name, camera (locked-off unless motivated), action, dialogue,
+                 "Ends on …"
+PERFORMANCE      acting notes: control, gesture size, when a smile is allowed
+PHYSICS          what must stay physically plausible in every clip
+LIGHTING / AUDIO / STYLE — global blocks; AUDIO is per-clip SFX + music bridged
+                 across the joins
+CONTINUITY CHAIN "Carry over across all N clips: …" + one handoff line per join +
+                 "Prompt suffix (Clip N)" for clips 2..N
+POSITIVE LOCKS   positively stated locks: join points, identity, wardrobe, exact
+                 dialogue lines, "never / no …" rules
+```
+
+**Per-clip prompt as it reaches Agnes (ShotChain.clip_prompt):**
+
+```
+[CLIP 2]
+Subject / Environment / Camera / Motion / Action / Lighting / Grade / Duration
+Ends on the colleague's voice stopping.
+[IDENTITY LOCK — Shot 2: Continuity] same subject, preserve traits, no drift
+[CONTINUITY] Same face, gold hoops, white silk blouse. Continuity from Clip 1.
+[CONSTRAINTS] …
+[NEGATIVE] …
+```
+
+**Execution:** `brandly produce` registers one clip at a time (`Scene-XX-Shot-X-Y`), `brandly gate` checks questionable takes, `brandly stitch` joins at the declared points. Bridge music/SFX across the joins so the chain reads as one scene.
+
+**Key constraints:**
+- One dominant camera move per clip; locked-off is the default for dialogue beats
+- `Ends on` names a CAUSE (finished sentence, cap click, disconnect tone) — never a timecode
+- Every handoff line matches an outgoing state to an incoming state: "…at end of Clip N, …at start of Clip N+1"
+- POSITIVE LOCKS restates the join points and identity; `[NEGATIVE]` keeps the visual exclusions — the two never overlap
+
+---
+
 ### Category 32: Continue Automotive Commercial
 
 **Signature:** Car on epic road, studio turntable, detail craftsmanship, driving dynamics, aspirational lifestyle

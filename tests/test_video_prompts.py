@@ -7,6 +7,7 @@ from brandly_cli.video_prompts import (
     LIGHTING_PRESETS,
     SHOT_TYPES,
     VIDEO_STYLE_TEMPLATES,
+    ShotChain,
     apply_style_to_prompt,
     build_enhanced_video_prompt,
     build_keyframe_prompt,
@@ -231,6 +232,39 @@ class TestBuildEnhancedVideoPrompt:
         assert "simple product" in result
         assert "[SCENE CONTEXT]" in result
 
+    def test_reference_notes_with_exclusions(self) -> None:
+        result = build_enhanced_video_prompt(
+            prompt="Amélie does her makeup",
+            style="cinematic",
+            reference_images=["char_amelie.png", "prop_phone.png"],
+            reference_notes=[
+                {
+                    "ref": "@char_amelie",
+                    "defines": "her face, hair and clothing",
+                    "exclude": "the black blazer, the grey studio background, the handbag",
+                },
+                {
+                    "ref": "@prop_amelie_phone",
+                    "defines": "her phone",
+                    "exclude": "the back of the phone, its camera bump, any logo",
+                },
+            ],
+        )
+        assert "[REFERENCE NOTES]" in result
+        assert "@char_amelie defines her face, hair and clothing" in result
+        assert "Do not use: the black blazer, the grey studio background, the handbag." in result
+        assert "@prop_amelie_phone defines her phone" in result
+        assert "Do not use: the back of the phone, its camera bump, any logo." in result
+
+    def test_reference_notes_absent_by_default(self) -> None:
+        result = build_enhanced_video_prompt(
+            prompt="product showcase",
+            style="luxury",
+            reference_images=["a.png"],
+        )
+        assert "[REFERENCE NOTES]" not in result
+        assert "Do not use:" not in result
+
     def test_unknown_style_falls_back_to_cinematic(self) -> None:
         result = build_enhanced_video_prompt(
             prompt="test",
@@ -286,3 +320,95 @@ class TestConstants:
         assert len(VIDEO_STYLE_TEMPLATES) > 5
         assert "cinematic" in VIDEO_STYLE_TEMPLATES
         assert "commercial" in VIDEO_STYLE_TEMPLATES
+
+
+class TestBuildVideoPromptFormatMode:
+    """Brandly clip-chain grammar: unbroken takes, joins in post, no cut tokens."""
+
+    def test_format_mode_line_declares_unbroken_takes(self) -> None:
+        result = build_video_prompt(
+            "Amélie", "does her makeup", "marble bathroom",
+            shots=5, duration_per_shot=3,
+        )
+        assert "Mode: 5 unbroken takes, 15s total" in result
+        assert "a join never happens inside a generation" in result
+
+    def test_no_cut_tokens_emitted(self) -> None:
+        result = build_video_prompt(
+            "Amélie", "does her makeup", "marble bathroom",
+            shots=3, duration_per_shot=4,
+        )
+        assert "CUT TO" not in result
+        assert "---" not in result
+
+
+class TestShotChainClipChain:
+    """ShotChain speaks brandly language: handoffs, continuity suffix, no cuts words."""
+
+    def _chain(self) -> ShotChain:
+        chain = ShotChain(
+            "Amélie at the bathroom counter",
+            "marble bathroom, warm sun at frame right",
+            carry_over=["Amélie's face", "gold hoops", "white silk blouse"],
+        )
+        chain.add_shot(
+            "medium",
+            "works a brush along her cheekbone",
+            camera_move="locked_off",
+            duration=3,
+            ends_on="the last word of her line",
+        )
+        chain.add_shot(
+            "close_up",
+            "adjusts the lip brush, then withdraws",
+            camera_move="locked_off",
+            duration=2,
+            ends_on="the colleague's voice stopping",
+            handoff="match the finished sentence — Clip 1 ends on the last word, "
+                    "Clip 2 opens on the phone already live",
+        )
+        return chain
+
+    def test_carry_over_emitted_once(self) -> None:
+        prompt = self._chain().build_prompt()
+        assert "Carry over across all 2 clips:" in prompt
+        assert "Amélie's face, gold hoops, white silk blouse" in prompt
+
+    def test_ends_on_lines(self) -> None:
+        prompt = self._chain().build_prompt()
+        assert "Ends on the last word of her line." in prompt
+        assert "Ends on the colleague's voice stopping." in prompt
+
+    def test_handoff_line_uses_brandly_grammar(self) -> None:
+        prompt = self._chain().build_prompt()
+        assert "Clip 1→2 handoff: match the finished sentence" in prompt
+        assert "CUT TO" not in prompt
+        assert "---" not in prompt
+
+    def test_clip_prompt_is_self_contained(self) -> None:
+        clip2 = self._chain().clip_prompt(1)
+        for fragment in (
+            "[CLIP 2]",
+            "adjusts the lip brush",
+            "Ends on the colleague's voice stopping.",
+            "[CONTINUITY] Same Amélie's face, gold hoops, white silk blouse. "
+            "Continuity from Clip 1.",
+            "[CONSTRAINTS]",
+            "[NEGATIVE]",
+        ):
+            assert fragment in clip2, fragment
+        assert "CUT TO" not in clip2
+
+    def test_first_clip_has_no_continuity_suffix(self) -> None:
+        clip1 = self._chain().clip_prompt(0)
+        assert "[CLIP 1]" in clip1
+        assert "[CONTINUITY]" not in clip1
+        assert "CUT TO" not in clip1
+
+    def test_legacy_call_still_builds(self) -> None:
+        chain = ShotChain("subject", "environment")
+        chain.add_shot("medium", "walks", transition="dissolve")
+        prompt = chain.build_prompt()
+        assert "[SHOT 1]" in prompt
+        assert "DISSOLVE TO" not in prompt
+        assert chain.get_shot(0)["transition"] == "dissolve"

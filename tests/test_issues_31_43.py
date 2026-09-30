@@ -150,6 +150,24 @@ def test_expand_structured_prompt_rejects_unknown_keys() -> None:
     assert expand_structured_prompt("plain text") == "plain text"
 
 
+def test_expand_structured_prompt_brandly_sections() -> None:
+    """Clip-chain sections: performance, physics and positive locks (#31 extension)."""
+    prompt = expand_structured_prompt(
+        {
+            "subject": "Amélie at the mirror",
+            "performance": "total control, small exact gestures, a steady voice",
+            "physics": "brush pressure visible on skin, screen light shifting on her face",
+            "locks": "same face and gold hoops in every clip; no blazer; phone back never shown",
+        },
+        duration=5,
+    )
+    for layer in ("[SUBJECT]", "[PERFORMANCE]", "[PHYSICS]", "[POSITIVE LOCKS]"):
+        assert layer in prompt, layer
+    assert "total control" in prompt
+    assert "brush pressure" in prompt
+    assert "same face and gold hoops in every clip" in prompt
+
+
 def test_flatten_shots_expands_dict_prompts(tmp_path: Path) -> None:
     shots = shot_runner.flatten_shots(
         [

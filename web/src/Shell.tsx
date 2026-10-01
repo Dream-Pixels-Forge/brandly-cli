@@ -30,7 +30,14 @@ const PANELS: Record<PanelKind, PanelComponent> = {
     </div>
   ),
   timeline: () => <TimelinePanel />,
-  asset_manifest: () => <ShotListPanel />,
+  asset_manifest: () => (
+    <div className="shot-workspace">
+      <div className="preview-stage-host">
+        <ShotListPanel />
+      </div>
+      <ClipInspectorPanel />
+    </div>
+  ),
   props: () => <PropsInspectorPanel />,
   color: () => <ColorGradingPanel />,
   audio: () => <AudioMixerPanel />,

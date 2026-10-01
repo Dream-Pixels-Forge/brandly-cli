@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAppStore } from '../../store';
 
 const TRANSITIONS = ['fade', 'dissolve', 'wipe'] as const;
@@ -51,6 +52,7 @@ const LABEL: React.CSSProperties = {
 export default function ClipInspectorPanel() {
   const { timeline, selectedClipId, updateClip, regenerateClip } = useAppStore();
   const clip = timeline?.clips.find((c) => c.id === selectedClipId) ?? null;
+  const [tab, setTab] = useState<'overview' | 'prompt' | 'gate'>('overview');
 
   const qc =
     clip?.quality_status === 'pass'
@@ -102,6 +104,51 @@ export default function ClipInspectorPanel() {
         )}
       </div>
 
+      {clip && (
+        <div
+          className="inspector-tabs"
+          role="tablist"
+          aria-label="Inspector sections"
+          style={{
+            display: 'flex',
+            alignItems: 'stretch',
+            gap: 0,
+            height: 32,
+            padding: '0 8px',
+            background: 'var(--md-surface-container-low)',
+            borderBottom: '1px solid var(--md-surface-container-highest)',
+            flexShrink: 0,
+          }}
+        >
+          {([
+            ['overview', 'Overview'],
+            ['prompt', 'Prompt'],
+            ['gate', 'Gate'],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+              style={{
+                padding: '0 12px',
+                fontSize: 11,
+                fontFamily: 'var(--md-font-body-md)',
+                fontWeight: tab === key ? 600 : 400,
+                color: tab === key ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: tab === key ? '2px solid var(--md-primary)' : '2px solid transparent',
+                cursor: 'pointer',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {!clip ? (
         <div
           style={{
@@ -125,6 +172,8 @@ export default function ClipInspectorPanel() {
         </div>
       ) : (
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12 }}>
+          {tab === 'overview' && (
+          <>
           <div style={{ ...LABEL, marginBottom: 8 }}>PROPERTIES</div>
           <div style={{ marginBottom: 14 }}>
             <Row label="Shot" value={clip.shot_id} />
@@ -164,6 +213,10 @@ export default function ClipInspectorPanel() {
             })}
           </div>
 
+          </>
+          )}
+          {tab === 'prompt' && (
+          <>
           <div style={{ ...LABEL, margin: '14px 0 6px' }}>PROMPT</div>
           <div
             style={{
@@ -179,6 +232,32 @@ export default function ClipInspectorPanel() {
           >
             {clip.prompt || '—'}
           </div>
+          </>
+          )}
+          {tab === 'gate' && (
+            <div>
+              <div style={{ ...LABEL, marginBottom: 8 }}>QUALITY</div>
+              <div style={{ marginBottom: 14 }}>
+                <Row
+                  label="Quality"
+                  value={clip.quality_status ? clip.quality_status.toUpperCase() : '—'}
+                  accent={qc}
+                />
+              </div>
+              <div style={{ ...LABEL, marginBottom: 6 }}>GATE SCORE</div>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontFamily: 'var(--md-font-code-inline)',
+                  color: 'var(--md-on-surface-variant)',
+                  lineHeight: 1.5,
+                }}
+              >
+                No gate score on the clip record — gate scores come from the
+                Production Monitor (`brandly gate`).
+              </div>
+            </div>
+          )}
         </div>
       )}
       {clip && (

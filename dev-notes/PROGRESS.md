@@ -465,6 +465,44 @@ defaults; shipped as four TDD PRs behind one release, per
   dnd-kit refactor) and the Shot Inspector tabs (C2). Screens 05/06 blocked on
   their Paper design (empty artboards — design pass pending).
 
+#### Git delivery (PRIDES taxonomy)
+
+- [x] Branches had **diverged** (main +2 docs/version commits, HEAD +2 agnes
+      fixes) — verified **no overlap** with any file touched before switching,
+      so nothing was clobbered.
+- [x] `feature/studio-shell-redesign` created **from `main`** (correct taxonomy:
+      `feature` branches from `main`, merges into `main`).
+- [x] Committed `10c3135` — 28 files, +1643/−102 (pre-existing untracked
+      `region_dump.txt` deliberately excluded).
+- [x] Pushed to `origin` with upstream tracking.
+- [x] **PR #185 opened** — <https://github.com/Dream-Pixels-Forge/brandly-cli/pull/185>
+      (`web-quality` gate **PASS**); `quality` matrix pending, not merged
+      without review.
+
+#### Round 12 continued — Increments C2 + B2
+
+- [x] CI on PR #185: **all four checks pass** (quality 3.10/3.11/3.12 +
+      `web-quality`). Not merged — review required.
+- [x] **Increment C2 (Shot Inspector tabs) — GREEN.** RED
+      `tests/test_web_inspector_tabs.py` (4 failed) → implemented → **4 passed**.
+  - [x] `ClipInspectorPanel.tsx`: an interactive tab row (`role="tablist"` /
+        `role="tab"` + `aria-selected`) with **Overview / Prompt / Gate**.
+  - [x] Gate tab is data-honest: it shows the clip's real `quality_status` and
+        **discloses that no gate score exists on the clip record** (scores come
+        from the Production Monitor / `brandly gate`) — nothing invented.
+  - [x] `Shell.tsx`: the Shot List now sits in a `shot-workspace` row with the
+        Clip Inspector rail, so artboard 02 matches the design.
+- [x] **Increment B2 (3-track timeline) — resolved by inspection, no code change.**
+      `TimelinePanel.tsx` is **already 3-track**: V1 video track + A1 MiniMax VO +
+      A2 BGM 124BPM + ruler, with dnd-kit reordering, trim and playhead drag.
+      The design's remaining delta (a V2 overlay track) would need an
+      overlay-track data model that does not exist in the store or API →
+      **out of scope under the data-honesty rule**, not fabricated.
+- Gates green: contract suites **31 passed** · `npm run lint` **0/0** ·
+  `npm run build` (50 modules, 368.16 kB) refreshed `src/brandly_cli/web/static/`.
+- NEXT: full-suite run in flight; commit + push to PR #185; screens 05/06
+  blocked on their Paper design.
+
 
 
 

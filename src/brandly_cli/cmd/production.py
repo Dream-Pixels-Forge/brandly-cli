@@ -111,7 +111,9 @@ def init(
         console.print("[red]Shots must be between 3 and 10.[/red]")
         sys.exit(1)
 
-    root = _get_root(ctx)
+    # Issue #184: init creates a NEW project, so it must land in the cwd —
+    # never in an ancestor .brandly store (e.g. the user's home).
+    root = _get_root(ctx, create=True)
     pm = ProjectManager(root)
     # Use human-readable ID based on project name
     pid = generate_readable_id(name)

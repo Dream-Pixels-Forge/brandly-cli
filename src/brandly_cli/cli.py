@@ -51,7 +51,18 @@ _write_review_note = write_review_note
 # ---------------------------------------------------------------------------
 
 
-def _get_root(ctx: click.Context) -> Path:
+def _get_root(ctx: click.Context, *, create: bool = False) -> Path:
+    """Resolve the brandly root.
+
+    Order: ``--root`` → ``$ROOT`` → auto-detect (walk up from ``cwd`` looking
+    for a ``.brandly`` marker) → ``cwd``.
+
+    When ``create`` is True (``brandly init``) the walk-up is **skipped** and
+    the root is the current working directory: the marker only matters when
+    *reading* an existing project, never when *creating* a new one. Otherwise
+    ``init`` hijacks the root to the first ancestor that has a store — most
+    notably the user's home, where the persistent global store lives (#184).
+    """
     root = ctx.obj.get("root")
     if root:
         return Path(root)
@@ -59,10 +70,16 @@ def _get_root(ctx: click.Context) -> Path:
     env_root = os.getenv("ROOT")
     if env_root:
         return Path(env_root)
+
+    cwd = Path.cwd()
+    if create:
+        # Issue #184: never hijack the root to an ancestor store.
+        _warn_if_ancestor_store(cwd)
+        return cwd
+
     # Auto-detect: walk up from cwd looking for a .brandly marker.
     # This prevents double-nesting when the user runs brandly from inside
     # .brandly/<project-id>/ (the common case on Windows).
-    cwd = Path.cwd()
     candidate = cwd
     for _ in range(10):  # safety limit
         if (candidate / ".brandly").is_dir():
@@ -72,6 +89,28 @@ def _get_root(ctx: click.Context) -> Path:
             break
         candidate = parent
     return cwd
+
+
+def _warn_if_ancestor_store(cwd: Path) -> bool:
+    """Tell the user when ``init`` skipped an ancestor ``.brandly`` store (#184).
+
+    Returns True when an ancestor store exists (and was skipped). Purely
+    informational: the root is still ``cwd``.
+    """
+    candidate = cwd.parent
+    for _ in range(10):  # safety limit
+        if (candidate / ".brandly").is_dir():
+            console.print(
+                f"[yellow]Note: an ancestor .brandly store exists at {candidate} — "
+                "creating the project here instead. Pass --root to use another "
+                "location.[/yellow]"
+            )
+            return True
+        parent = candidate.parent
+        if parent == candidate:
+            break
+        candidate = parent
+    return False
 
 
 def _load_project_reference(project_id: str, root: Path) -> dict[str, Any] | None:

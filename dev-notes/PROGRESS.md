@@ -475,9 +475,13 @@ defaults; shipped as four TDD PRs behind one release, per
 - [x] Committed `10c3135` — 28 files, +1643/−102 (pre-existing untracked
       `region_dump.txt` deliberately excluded).
 - [x] Pushed to `origin` with upstream tracking.
-- [x] **PR #185 opened** — <https://github.com/Dream-Pixels-Forge/brandly-cli/pull/185>
-      (`web-quality` gate **PASS**); `quality` matrix pending, not merged
-      without review.
+- [x] **PR #185 MERGED** — <https://github.com/Dream-Pixels-Forge/brandly-cli/pull/185>
+      merge commit `ed54983` (2026-10-01T20:58:45Z). Pre-merge verification:
+      all 4 CI checks green, `mergeStateStatus: CLEAN`, **zero** comments /
+      reviews / warnings. `origin/main` carries both feature commits and every
+      new component + test file. Local `main` is checked out in another
+      worktree, so the merge was verified by ref (`origin/main`) — that
+      worktree was left untouched.
 
 #### Round 12 continued — Increments C2 + B2
 

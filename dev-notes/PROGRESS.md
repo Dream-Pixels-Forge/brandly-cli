@@ -507,6 +507,36 @@ defaults; shipped as four TDD PRs behind one release, per
 - NEXT: full-suite run in flight; commit + push to PR #185; screens 05/06
   blocked on their Paper design.
 
+#### Round 12 continued — issue #184 fixed (init root hijack)
+
+- [x] **Issue #184 fixed — `init` now creates the project in the cwd.**
+      `gh issue view 184`: `_get_root` walked UP from cwd and hijacked the root
+      to the first ancestor with a `.brandly` store (the user's home, where the
+      global store lives), so `init` from a subfolder created the project in the
+      ancestor's store and the working directory got nothing.
+  - [x] `cli.py::_get_root(ctx, *, create=False)` — with `create=True` the
+        walk-up is **skipped** and the root is `cwd` (the `.brandly` marker only
+        matters when *reading* an existing project, never when creating).
+  - [x] `cli.py::_warn_if_ancestor_store(cwd)` — when `init` skips a detected
+        ancestor store it tells the user and hints at `--root` (issue option 3).
+  - [x] `cmd/production.py::init` → `_get_root(ctx, create=True)`.
+  - [x] **Deliberately unchanged (surgical):** `web/server.py::_discover_root`
+        (the server only ever *reads* an existing project, so its walk-up is
+        correct); explicit `--root`/`$ROOT` still win; read/resume commands keep
+        the walk-up.
+  - [x] **TDD RED → GREEN:** `tests/test_issue_184_init_root.py` written first
+        (8 failed / 1 passed) → implemented → **9 passed**. Two initial failures
+        were environment-dependent tests (tmp_path sits under the real home, so
+        the walk-up reached it) — made hermetic by nesting past the 10-level
+        walk-up limit.
+  - [x] **Verified on the real machine (e2e):** `init` with no `--root` from
+        `%TEMP%\brandly-e2e-184` created `.brandly\smoke` **in the cwd** and
+        `brandly list` finds it; the ancestor-store hint prints with the `--root`
+        pointer. Temp dirs cleaned up afterwards.
+- Gates green: existing CLI tests **49 passed** · ruff clean ·
+  **mypy clean (92 source files)** · full suite **1164 passed, 0 failures**.
+- NEXT: commit + push + PR for #184.
+
 
 
 

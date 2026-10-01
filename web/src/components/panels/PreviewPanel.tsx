@@ -188,13 +188,15 @@ export default function PreviewPanel() {
                 AGNES AI
               </span>
             </div>
-            {/* Bottom callout */}
-            <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', pointerEvents: 'none' }}>
+            {/* Bottom callout — lifted above the transport overlay (design §7) */}
+            <div style={{ position: 'absolute', bottom: 54, left: 8, right: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', pointerEvents: 'none' }}>
               <div style={{ background: 'rgba(14,14,17,0.85)', border: '1px solid var(--md-surface-container-highest)', padding: '4px 10px', fontSize: 10, fontFamily: 'var(--md-font-code-inline)', color: 'var(--md-on-surface)', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--md-primary)', display: 'inline-block', animation: isPlaying ? 'ping 1s infinite' : 'none' }} />
                 {clip.prompt.substring(0, 60)}{clip.prompt.length > 60 ? '...' : ''}
               </div>
             </div>
+            {/* Transport is an overlay inside the frame — design §7 */}
+            <TransportControls overlay />
           </div>
         ) : (
           <div style={{ textAlign: 'center', color: 'var(--md-on-surface-variant)', opacity: 0.5 }}>
@@ -204,8 +206,6 @@ export default function PreviewPanel() {
         )}
       </div>
 
-      {/* Transport Controls */}
-      <TransportControls />
     </div>
   );
 }

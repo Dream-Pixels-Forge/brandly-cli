@@ -3,9 +3,11 @@ import type { ReactNode } from 'react';
 import { useAppStore, withToken } from './store';
 import type { PanelKind } from './types';
 import Header from './Header';
+import Toolbar from './Toolbar';
 import SidebarNav from './SidebarNav';
+import StatusBar from './StatusBar';
 import PreviewPanel from './components/panels/PreviewPanel';
-import TransportControls from './components/panels/TransportControls';
+import ClipInspectorPanel from './components/panels/ClipInspectorPanel';
 import TimelinePanel from './components/timeline/TimelinePanel';
 import ShotListPanel from './components/panels/ShotListPanel';
 import PropsInspectorPanel from './components/panels/PropsInspectorPanel';
@@ -20,10 +22,12 @@ type PanelComponent = () => ReactNode;
 
 const PANELS: Record<PanelKind, PanelComponent> = {
   preview: () => (
-    <>
-      <PreviewPanel />
-      <TransportControls />
-    </>
+    <div className="preview-workspace">
+      <div className="preview-stage-host">
+        <PreviewPanel />
+      </div>
+      <ClipInspectorPanel />
+    </div>
   ),
   timeline: () => <TimelinePanel />,
   asset_manifest: () => <ShotListPanel />,
@@ -81,16 +85,18 @@ export default function Shell() {
   return (
     <div className="shell-root">
       <Header wsReady={wsReady} wsEvent={wsEvent} />
+      <Toolbar />
       <SidebarNav />
       <main className="main">
         {activeProject ? (
-          <div key={activePanel} style={{ animation: 'panelFade 200ms ease' }}>
+          <div key={activePanel} className="panel-host" style={{ animation: 'panelFade 200ms ease' }}>
             <Panel />
           </div>
         ) : (
           <NoProjectSelected />
         )}
       </main>
+      <StatusBar />
       <SaveToast />
       <style>{`@keyframes panelFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } } @keyframes ping { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.8); } }`}</style>
     </div>

@@ -11,6 +11,8 @@ interface AppState {
   // Timeline
   timeline: ProjectTimeline | null;
   selectedClipId: string | null;
+  /** Multi-select for bulk actions (design §7 — Selection Bar). */
+  selectedClipIds: string[];
   zoomLevel: number;          // frames per 100px (default 100)
   totalFrames: number;
 
@@ -43,6 +45,8 @@ interface AppState {
   selectProject: (id: string) => Promise<void>;
   loadTimeline: () => Promise<void>;
   setSelectedClip: (id: string | null) => void;
+  toggleClipSelected: (id: string) => void;
+  clearSelection: () => void;
   setZoom: (level: number) => void;
   setPanel: (panel: PanelKind) => void;
   updateClip: (clipId: string, updates: Partial<Clip>) => Promise<void>;
@@ -78,6 +82,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   error: null,
   timeline: null,
   selectedClipId: null,
+  selectedClipIds: [],
   zoomLevel: 100,
   totalFrames: 0,
   isPlaying: false,
@@ -134,6 +139,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSelectedClip: (id) => set({ selectedClipId: id }),
   setZoom: (level) => set({ zoomLevel: level }),
+  toggleClipSelected: (id) =>
+    set((s) => ({
+      selectedClipIds: s.selectedClipIds.includes(id)
+        ? s.selectedClipIds.filter((x) => x !== id)
+        : [...s.selectedClipIds, id],
+    })),
+
+  clearSelection: () => set({ selectedClipIds: [] }),
+
   setPanel: (panel) => set({ activePanel: panel }),
   setPlaybackRate: (rate) => set({ playbackRate: rate }),
   setLoop: (loop) => set({ loop }),

@@ -535,7 +535,35 @@ defaults; shipped as four TDD PRs behind one release, per
         pointer. Temp dirs cleaned up afterwards.
 - Gates green: existing CLI tests **49 passed** · ruff clean ·
   **mypy clean (92 source files)** · full suite **1164 passed, 0 failures**.
-- NEXT: commit + push + PR for #184.
+- [x] **PR #187 MERGED** — <https://github.com/Dream-Pixels-Forge/brandly-cli/pull/187>
+      merge commit `1d5d372` (2026-10-01T22:53:20Z). Pre-merge verification: all
+      4 CI checks green (quality 3.10/3.11/3.12 + web-quality), `mergeStateStatus:
+      CLEAN`, zero comments/reviews/warnings. **Issue #184 auto-CLOSED** by
+      `Fixes #184`. Verified on `origin/main` by ref (local `main` lives in
+      another worktree — left untouched).
+
+#### Session ledger — PRIDES end-of-task state
+
+- [x] Tests pass — full suite **1164 passed, 0 failures** (issue #184 branch:
+      1007 + 9 regression tests; CI green on 3.10/3.11/3.12)
+- [x] Committed on the correct taxonomy branches
+      (`feature/studio-shell-redesign`, `chore/process-discipline`,
+      `bug/init-root-hijack-184`) — each branched from `main` after a
+      divergence + overlap check
+- [x] Pushed to origin
+- [x] PRs opened **and merged after review**: #185 (studio shell),
+      #186 (process discipline), #187 (issue #184)
+- [x] Process discipline persisted as strict mandatory:
+      `~/.agents/AGENTS.md` §10 (workspace-wide), `AGENTS.md` (repo root),
+      `dev-notes/CONVENTIONS.md` (full discipline + deferrals ledger)
+- [ ] **Blocked on the Paper design:** screens 05 (Review Queue) and 06
+      (Agnes AI Synthesizer) — Paper artboards `1T8-0` / `1T9-0` are empty and
+      the Paper MCP is rate-limited ("Weekly MCP limit reached. It resets
+      tomorrow"). The scheduled design run fires tomorrow 10:00 +01:00
+      (`sched_34431552-3355-416e-a781-9f463c4114be`); the web-UI PNG export to
+      `assets/` is folded into that run (Paper export is the only way to
+      produce it, and `assets/` currently holds only `banner.png`).
+- [ ] Deferred (data honesty / no design): V2 overlay track (B2).
 
 
 

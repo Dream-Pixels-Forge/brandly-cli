@@ -1,6 +1,18 @@
 /* ========================================================================
    Brandly Studio — Shell Layout
+   Grid metrics from dev-notes/DESIGN-STUDIO-SHELL.md §2:
+   Header 52 · Toolbar 40 · Body(flex) · Status Bar 28
+   Sidebar 248 · Main padding 14 / gap 12
    ======================================================================== */
+
+:root {
+  --studio-header-h: 52px;
+  --studio-toolbar-h: 40px;
+  --studio-status-h: 28px;
+  --studio-sidebar-w: 248px;
+  --studio-shell-top: 92px;      /* 52 + 40 */
+  --studio-shell-bottom: 28px;
+}
 
 .shell-root {
   display: flex;
@@ -17,7 +29,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 3.5rem;
+  height: var(--studio-header-h);
   background: var(--md-surface-container-low);
   border-bottom: 1px solid var(--md-surface-container-highest);
   display: flex;
@@ -30,10 +42,10 @@
 
 .sidebar {
   position: fixed;
-  top: 3.5rem;
+  top: var(--studio-shell-top);
   left: 0;
-  bottom: 0;
-  width: 16rem;
+  bottom: var(--studio-shell-bottom);
+  width: var(--studio-sidebar-w);
   background: var(--md-surface-container-lowest);
   border-right: 1px solid var(--md-surface-container-high);
   display: flex;
@@ -44,14 +56,58 @@
 }
 
 .main {
-  margin-top: 3.5rem;
-  margin-left: 16rem;
-  flex: 1;
-  height: calc(100vh - 3.5rem);
+  position: fixed;
+  top: var(--studio-shell-top);
+  left: var(--studio-sidebar-w);
+  right: 0;
+  bottom: var(--studio-shell-bottom);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  box-sizing: border-box;
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--md-surface);
-  padding: 1rem;
+}
+
+/* The active panel fills the Main column so panels can size to 100%. */
+.panel-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Preview screen — viewport + Clip Inspector rail (design §7).
+   The 16:9 frame sits in the flexible host; the rail is a fixed 300px. */
+.preview-workspace {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+.preview-stage-host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+.preview-stage-host > * {
+  flex: 1;
+  min-width: 0;
+}
+.clip-inspector {
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  min-width: 300px;
+  max-width: 300px;
+  background: var(--md-surface-container);
+  border: 1px solid var(--md-surface-container-highest);
+  border-radius: var(--md-radius-md);
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 /* Panel transition helper */

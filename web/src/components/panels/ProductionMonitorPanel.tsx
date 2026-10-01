@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAppStore, withToken } from '../../store';
+import PhaseStepper from './PhaseStepper';
 import type { MonitorRow, MonitorSnapshot } from '../../types';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -130,6 +131,9 @@ export default function ProductionMonitorPanel() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* Director phase stepper — design §7 (artboard 04) */}
+      <PhaseStepper />
+
       {/* Provider health strip */}
       <div style={{
         padding: '8px 12px',

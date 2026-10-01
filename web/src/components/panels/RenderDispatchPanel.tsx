@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '../../store';
+import PipelineStepper from './PipelineStepper';
 import type { FormatPreset, Codec } from '../../types';
 
 const PRESETS: { key: FormatPreset; label: string; desc: string }[] = [
@@ -81,7 +82,10 @@ export default function RenderDispatchPanel() {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
+      <PipelineStepper />
+
+      {/* Content */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', maxWidth: 440 }}>
         {/* Format preset grid */}
         <FieldLabel>Format Preset</FieldLabel>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 12 }}>
@@ -156,7 +160,7 @@ export default function RenderDispatchPanel() {
       </div>
 
       {/* Render button */}
-      <div style={{ padding: '10px 14px', borderTop: '1px solid var(--md-surface-container-highest)', flexShrink: 0 }}>
+      <div style={{ padding: '10px 14px', borderTop: '1px solid var(--md-surface-container-highest)', flexShrink: 0, maxWidth: 440 }}>
         <button
           onClick={exportProject}
           disabled={exportDone}

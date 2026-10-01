@@ -1,15 +1,17 @@
 import { useAppStore } from './store';
+import { PANEL_SHORTCUTS, PANEL_LABELS } from './panelLabels';
 import type { PanelKind } from './types';
 
-const PANELS: { kind: PanelKind; label: string; icon: string; badge?: string }[] = [
-  { kind: 'preview', label: 'Preview Player', icon: 'videocam' },
-  { kind: 'timeline', label: 'Timeline Sequencer', icon: 'view_timeline' },
-  { kind: 'asset_manifest', label: 'Asset Manifest', icon: 'folder_zip', badge: 'clips' },
-  { kind: 'props', label: 'Props Inspector', icon: 'tune' },
-  { kind: 'render', label: 'Render Queue', icon: 'cloud_sync' },
-  { kind: 'monitor', label: 'Production Monitor', icon: 'monitor_heart' },
-  { kind: 'review', label: 'Review Queue', icon: 'fact_check' },
-  { kind: 'agnes_ai', label: 'Agnes AI Synthesizer', icon: 'auto_awesome' },
+/** `key` is the keyboard-shortcut hint rendered on the row (design §6). */
+const PANELS: { kind: PanelKind; label: string; icon: string; badge?: string; key: string }[] = [
+  { kind: 'preview', label: PANEL_LABELS.preview, icon: 'videocam', key: PANEL_SHORTCUTS.preview },
+  { kind: 'timeline', label: PANEL_LABELS.timeline, icon: 'view_timeline', key: PANEL_SHORTCUTS.timeline },
+  { kind: 'asset_manifest', label: PANEL_LABELS.asset_manifest, icon: 'folder_zip', badge: 'clips', key: PANEL_SHORTCUTS.asset_manifest },
+  { kind: 'props', label: PANEL_LABELS.props, icon: 'tune', key: PANEL_SHORTCUTS.props },
+  { kind: 'render', label: PANEL_LABELS.render, icon: 'cloud_sync', key: PANEL_SHORTCUTS.render },
+  { kind: 'monitor', label: PANEL_LABELS.monitor, icon: 'monitor_heart', key: PANEL_SHORTCUTS.monitor },
+  { kind: 'review', label: PANEL_LABELS.review, icon: 'fact_check', key: PANEL_SHORTCUTS.review },
+  { kind: 'agnes_ai', label: PANEL_LABELS.agnes_ai, icon: 'auto_awesome', key: PANEL_SHORTCUTS.agnes_ai },
 ];
 
 export default function SidebarNav() {
@@ -165,6 +167,20 @@ export default function SidebarNav() {
                 {p.icon}
               </span>
               <span style={{ flex: 1, fontWeight: isActive ? 700 : 400 }}>{p.label}</span>
+              <span
+                title={`${p.label} (${p.key})`}
+                style={{
+                  fontSize: 9,
+                  fontFamily: 'var(--md-font-display-lg)',
+                  color: 'var(--md-outline)',
+                  border: '1px solid var(--md-surface-container-highest)',
+                  borderRadius: 3,
+                  padding: '1px 5px',
+                  flexShrink: 0,
+                }}
+              >
+                {p.key}
+              </span>
               {p.badge && timeline && (
                 <span style={{
                   background: 'var(--md-primary-container)',
@@ -183,59 +199,58 @@ export default function SidebarNav() {
         })}
       </div>
 
-      {/* Bottom: Engine status */}
-      <div style={{
-        padding: '12px',
-        borderTop: '1px solid var(--md-surface-container-high)',
-        background: 'var(--md-surface-container-lowest)',
-      }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: 6,
-        }}>
-          <EngineStatus label="Worker" ok={true} />
-          <EngineStatus label="Mem" ok={true} value="2.1G" />
-          <EngineStatus label="FPS" ok={true} value="24" />
+      {/* Bottom: actions.
+          The Worker/Mem/FPS telemetry block was removed here — the design
+          moves live system state out of the sidebar (design §6). */}
+      <div
+        className="sidebar-footer"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 9,
+          padding: 12,
+          borderTop: '1px solid var(--md-surface-container-high)',
+          background: 'var(--md-surface-container-lowest)',
+          flexShrink: 0,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => void navigator.clipboard?.writeText('brandly init').catch(() => undefined)}
+          title="Create a project with: brandly init"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            background: 'var(--md-primary)',
+            color: 'var(--md-on-primary)',
+            border: 'none',
+            borderRadius: 'var(--md-radius-sm)',
+            padding: '9px 0',
+            cursor: 'pointer',
+            fontFamily: 'var(--md-font-display-lg)',
+            fontSize: 11,
+            fontWeight: 700,
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 14 }} aria-hidden>
+            add
+          </span>
+          New Project
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+          <span style={{ fontSize: 10, fontFamily: 'var(--md-font-body-md)', color: 'var(--md-on-surface-variant)', cursor: 'pointer' }}>
+            Docs
+          </span>
+          <span style={{ fontSize: 10, fontFamily: 'var(--md-font-body-md)', color: 'var(--md-on-surface-variant)', cursor: 'pointer' }}>
+            Shortcuts
+          </span>
+          <span style={{ fontSize: 10, fontFamily: 'var(--md-font-body-md)', color: 'var(--md-on-surface-variant)', cursor: 'pointer' }}>
+            CLI
+          </span>
         </div>
       </div>
     </nav>
-  );
-}
-
-function EngineStatus({ label, ok, value }: { label: string; ok: boolean; value?: string }) {
-  return (
-    <div style={{
-      background: 'var(--md-surface-container)',
-      borderRadius: 'var(--md-radius-sm)',
-      padding: '6px 8px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 2,
-    }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        fontSize: 10,
-        color: 'var(--md-on-surface-variant)',
-        fontFamily: 'var(--md-font-display-lg)',
-      }}>
-        <span style={{
-          width: 5,
-          height: 5,
-          borderRadius: '50%',
-          background: ok ? '#4ade80' : '#f87171',
-          display: 'inline-block',
-          boxShadow: ok ? '0 0 4px #4ade80' : '0 0 4px #f87171',
-        }} />
-        {label}
-      </div>
-      {value && (
-        <div style={{ fontSize: 11, color: 'var(--md-on-surface)', fontFamily: 'var(--md-font-display-lg)', fontWeight: 600 }}>
-          {value}
-        </div>
-      )}
-    </div>
   );
 }

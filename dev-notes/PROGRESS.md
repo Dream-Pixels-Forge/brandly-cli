@@ -376,6 +376,135 @@ defaults; shipped as four TDD PRs behind one release, per
   (#15–#127 + F9 #97) is closed
 - NEXT: v0.7.0 release cut (decision-gated, manual publish approval)
 
+### Round 12/256 — Studio shell shipped from the frozen Paper design (Increment A)
+
+**Current Phase:** Phase 3 (Engineer) — web UI redesign · **Status:** Increment A green
+
+- [x] Loaded `pipeline-orchestrator`; Phase 0 recon on the existing project
+      (Phase 1 skipped — existing project), resumed at Phase 2.
+- [x] Phase 2 governance: `dev-notes/DESIGN-STUDIO-SHELL.md` (frozen spec from
+      Paper file `01M3VWT0PHVWKPN9JSECCES8T4`, page `p-3-0`) +
+      `dev-notes/GOAL-WEB-UI-DESIGN.md` (scope, anti-drift constraints, gates).
+- [x] **Anti-drift decisions recorded:**
+      - Paper MCP was rate-limited (“Weekly MCP limit reached”) → the design was
+        frozen into the spec doc from the authored spec instead of being guessed.
+      - Screens 05 (Review Queue) / 06 (Agnes AI Synthesizer) have **no Paper
+        design** (empty artboards) → declared **out of scope**, not invented.
+      - No JS test runner introduced — the repo’s ratified convention (see
+        `test_web_panels_wired.py`, issue #61) is Python source-contract tests
+        + the `web-quality` CI job. Adding vitest would be new architecture.
+      - No new API/data: Status Bar renders only store-backed values.
+- [x] **TDD RED → GREEN:** `tests/test_web_studio_shell.py` written first
+      (RED: 7 failed / 3 passed) → implemented → **10 passed**.
+- [x] Fixed a latent defect: `--md-radius-sm/-md/-lg`, `--md-transition-fast`
+      and `--md-font-body-md/code-inline/display-lg` were referenced by ~20
+      components but **never defined**, so radii/fonts/transitions silently fell
+      back to browser defaults. Now defined in `web/index.html` `:root`.
+- [x] `Toolbar.tsx` (40px): breadcrumb `project › panel`, ⌘K search,
+      undo/redo (disabled — no store support), Share (copies CLI cmd), help.
+- [x] `StatusBar.tsx` (28px): phase pill, shots/clips, fps/aspect/selection,
+      zoom/frame — all store-backed; gate score, credit budget and worker/RSS
+      telemetry deliberately **omitted** (no data source → not fabricated).
+- [x] `panelLabels.ts`: `PANEL_LABELS` + `PANEL_SHORTCUTS` single source of
+      truth for nav labels, breadcrumb and shortcuts (also clears the
+      `react/only-export-components` lint warning).
+- [x] `SidebarNav.tsx`: telemetry block removed (→ Status Bar), footer
+      `New Project` CTA + Docs/Shortcuts/CLI, per-row shortcut chips (P T A I R M Q G);
+      `loading`/`error` boot contract preserved.
+- [x] `Shell.css`: grid pinned to the frozen metrics — Header 52 / Toolbar 40 /
+      Body / Status Bar 28, sidebar 248, main `padding:14` `gap:12`,
+      `.panel-host` flex-fills so panels can use `height:100%`.
+- Gates green: contract tests **54 passed** (studio shell + panels wired +
+  shell boot + SPA bundle + security) · `npm run lint` **0 warnings / 0 errors**
+  · `npm run build` (tsc -b + vite) emitted `src/brandly_cli/web/static/`.
+- [x] **Increment B (Preview screen) — GREEN.** RED `tests/test_web_preview_rail.py`
+      (4 failed / 1 passed) → implemented → **5 passed**.
+  - [x] `ClipInspectorPanel.tsx` — 300px rail beside the viewport: properties
+        (shot/scene/duration/aspect/style/grade/transition/quality), transition
+        chips (`updateClip` — real action), prompt, Regenerate
+        (`regenerateClip` — real). **Approve disabled** — the store has no
+        review API, so it is *not* faked.
+  - [x] `TransportControls` gained an `overlay` mode (absolute + scrim
+        gradient) rendered **inside** the frame; the separate transport row was
+        removed — it was in fact being rendered **twice** (once from `Shell.tsx`,
+        once from `PreviewPanel.tsx`), a real defect this work caught.
+  - [x] Prompt callout lifted `bottom: 8 → 54` so it clears the overlay.
+  - [x] `Shell.css`: `.preview-workspace` + `.preview-stage-host` +
+        `.clip-inspector` (fixed 300px).
+- Gates green: web suites **79 passed** · `npm run lint` **0/0** ·
+  `npm run build` (48 modules, 360.30 kB) refreshed `src/brandly_cli/web/static/`.
+- **DEFERRED (recorded, not silently skipped):** the 3-track V2/V1/A1 timeline —
+  `TimelinePanel.tsx` is dnd-kit driven and is a high-risk refactor, so it is
+  scheduled as **Increment B2** rather than attempted inside the same pass.
+- [x] **Increment C (Shot List bulk selection) — GREEN.** RED
+      `tests/test_web_shotlist_select.py` (5 failed) → implemented → **5 passed**.
+  - [x] `store.ts`: `selectedClipIds: string[]` + `toggleClipSelected` +
+        `clearSelection`.
+  - [x] `ShotListPanel.tsx`: a `role="checkbox"` button on every row
+        (`stopPropagation` so selecting never jumps to Preview) and a
+        contextual **Selection Bar** that appears only once something is
+        selected, showing `{selectedClipIds.length} SELECTED`.
+  - [x] Data honesty in the bulk bar: **Generate** → real `regenerateClip`;
+        **Approve** disabled (no review API in the store — not faked);
+        **Clear selection** → real.
+- [x] **Increment D (Render + Monitor steppers) — GREEN.** RED
+      `tests/test_web_steppers.py` (6 failed) → implemented → **6 passed**.
+  - [x] `PipelineStepper.tsx` (Render): Plan locked → Rendering → Encode →
+        Publish, derived from `exportDone` only — no invented per-stage progress.
+  - [x] `PhaseStepper.tsx` (Monitor): the PRIDES chain rendered as pipeline
+        context + the project's **real** `current_phase` as a pill. `current_phase`
+        has no guaranteed PRIDES mapping, so the chain is **not** marked with a
+        fabricated "current" step.
+  - [x] `RenderDispatchPanel.tsx`: settings column constrained to **440px**
+        (design §7, artboard 03) so the controls stop stretching full-bleed.
+  - [x] Caught by the build gate: the steppers use default exports — named
+        imports failed `tsc -b` (TS2614) and were corrected.
+- Gates green: contract suites **33 passed** · `npm run lint` **0/0** ·
+  `npm run build` (50 modules, 366.55 kB) refreshed `src/brandly_cli/web/static/`.
+- **Still deferred:** the 3-track V2/V1/A1 timeline (Increment B2, high-risk
+  dnd-kit refactor) and the Shot Inspector tabs (C2). Screens 05/06 blocked on
+  their Paper design (empty artboards — design pass pending).
+
+#### Git delivery (PRIDES taxonomy)
+
+- [x] Branches had **diverged** (main +2 docs/version commits, HEAD +2 agnes
+      fixes) — verified **no overlap** with any file touched before switching,
+      so nothing was clobbered.
+- [x] `feature/studio-shell-redesign` created **from `main`** (correct taxonomy:
+      `feature` branches from `main`, merges into `main`).
+- [x] Committed `10c3135` — 28 files, +1643/−102 (pre-existing untracked
+      `region_dump.txt` deliberately excluded).
+- [x] Pushed to `origin` with upstream tracking.
+- [x] **PR #185 opened** — <https://github.com/Dream-Pixels-Forge/brandly-cli/pull/185>
+      (`web-quality` gate **PASS**); `quality` matrix pending, not merged
+      without review.
+
+#### Round 12 continued — Increments C2 + B2
+
+- [x] CI on PR #185: **all four checks pass** (quality 3.10/3.11/3.12 +
+      `web-quality`). Not merged — review required.
+- [x] **Increment C2 (Shot Inspector tabs) — GREEN.** RED
+      `tests/test_web_inspector_tabs.py` (4 failed) → implemented → **4 passed**.
+  - [x] `ClipInspectorPanel.tsx`: an interactive tab row (`role="tablist"` /
+        `role="tab"` + `aria-selected`) with **Overview / Prompt / Gate**.
+  - [x] Gate tab is data-honest: it shows the clip's real `quality_status` and
+        **discloses that no gate score exists on the clip record** (scores come
+        from the Production Monitor / `brandly gate`) — nothing invented.
+  - [x] `Shell.tsx`: the Shot List now sits in a `shot-workspace` row with the
+        Clip Inspector rail, so artboard 02 matches the design.
+- [x] **Increment B2 (3-track timeline) — resolved by inspection, no code change.**
+      `TimelinePanel.tsx` is **already 3-track**: V1 video track + A1 MiniMax VO +
+      A2 BGM 124BPM + ruler, with dnd-kit reordering, trim and playhead drag.
+      The design's remaining delta (a V2 overlay track) would need an
+      overlay-track data model that does not exist in the store or API →
+      **out of scope under the data-honesty rule**, not fabricated.
+- Gates green: contract suites **31 passed** · `npm run lint` **0/0** ·
+  `npm run build` (50 modules, 368.16 kB) refreshed `src/brandly_cli/web/static/`.
+- NEXT: full-suite run in flight; commit + push to PR #185; screens 05/06
+  blocked on their Paper design.
+
+
+
 
 ### Round 12/256 — Agnes 503 hardening batch: issues #148–#152 closed (PR #153)
 

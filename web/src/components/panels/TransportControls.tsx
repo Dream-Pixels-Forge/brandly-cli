@@ -1,6 +1,6 @@
 import { useAppStore } from '../../store';
 
-export default function TransportControls() {
+export default function TransportControls({ overlay = false }: { overlay?: boolean }) {
   const { isPlaying, currentFrame, totalFrames, playbackRate, loop, volume, togglePlay, stepFrame, setPlayhead, setPlaybackRate, setLoop, setVolume } = useAppStore();
 
   const fmtFrame = (f: number) => {
@@ -16,7 +16,22 @@ export default function TransportControls() {
   };
 
   return (
-    <div style={{
+    <div style={overlay ? {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: 44,
+      padding: '0 12px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+      zIndex: 2,
+      boxSizing: 'border-box',
+      border: 'none',
+      background: 'linear-gradient(to top, rgba(8,9,11,0.94) 0%, rgba(8,9,11,0.6) 55%, rgba(8,9,11,0) 100%)',
+    } : {
       height: 44,
       padding: '0 12px',
       borderBottom: '1px solid var(--md-surface-container-highest)',

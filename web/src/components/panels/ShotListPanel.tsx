@@ -2,7 +2,7 @@ import { useAppStore } from '../../store';
 import type { Clip } from '../../types';
 
 export default function ShotListPanel() {
-  const { timeline, selectedClipId, setSelectedClip, setPanel, regenerateClip, loading } = useAppStore();
+  const { timeline, selectedClipId, setSelectedClip, setPanel, regenerateClip, loading, selectedClipIds, toggleClipSelected, clearSelection } = useAppStore();
 
   if (loading && (!timeline || timeline.clips.length === 0)) {
     return (
@@ -54,6 +54,84 @@ export default function ShotListPanel() {
         </span>
       </div>
 
+      {/* Selection Bar — contextual bulk actions (design §7).
+          Appears only once something is selected. */}
+      {selectedClipIds.length > 0 && (
+        <div
+          className="selection-bar"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '7px 12px',
+            flexShrink: 0,
+            background: 'rgba(76,215,246,0.08)',
+            borderBottom: '1px solid rgba(76,215,246,0.3)',
+          }}
+        >
+          <span
+            style={{ fontFamily: 'var(--md-font-display-lg)', fontSize: 10, fontWeight: 700, color: 'var(--md-primary)' }}
+          >
+            {selectedClipIds.length} SELECTED
+          </span>
+          <span style={{ width: 1, height: 14, background: 'rgba(76,215,246,0.35)' }} />
+          <button
+            type="button"
+            onClick={() => selectedClipIds.forEach((id) => void regenerateClip(id))}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              fontSize: 11,
+              fontFamily: 'var(--md-font-body-md)',
+              color: 'var(--md-on-surface)',
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-primary)' }} aria-hidden>
+              auto_awesome
+            </span>
+            Generate
+          </button>
+          <button
+            type="button"
+            disabled
+            title="Bulk approve requires the review API (not wired yet)"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'not-allowed',
+              opacity: 0.55,
+              fontSize: 11,
+              fontFamily: 'var(--md-font-body-md)',
+              color: 'var(--md-on-surface-variant)',
+            }}
+          >
+            Approve
+          </button>
+          <div style={{ flex: 1 }} />
+          <button
+            type="button"
+            onClick={clearSelection}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              fontSize: 11,
+              fontFamily: 'var(--md-font-body-md)',
+              color: 'var(--md-on-surface-variant)',
+            }}
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {/* Clip list */}
       <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid var(--md-surface-container-highest)' }}>
         {timeline.clips.map((clip: Clip, idx: number) => {
@@ -77,6 +155,36 @@ export default function ShotListPanel() {
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={selectedClipIds.includes(clip.id)}
+                    aria-label={`Select ${clip.shot_id}`}
+                    onClick={(e) => { e.stopPropagation(); toggleClipSelected(clip.id); }}
+                    title="Select for bulk actions"
+                    style={{
+                      width: 14,
+                      height: 14,
+                      flexShrink: 0,
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 3,
+                      cursor: 'pointer',
+                      background: selectedClipIds.includes(clip.id) ? 'var(--md-primary)' : 'transparent',
+                      border: `1.5px solid ${selectedClipIds.includes(clip.id) ? 'var(--md-primary)' : 'var(--md-outline)'}`,
+                    }}
+                  >
+                    {selectedClipIds.includes(clip.id) && (
+                      <span
+                        className="material-symbols-outlined"
+                        style={{ fontSize: 11, lineHeight: 1, color: 'var(--md-on-primary)' }}
+                      >
+                        check
+                      </span>
+                    )}
+                  </button>
                   <span style={{
                     fontFamily: 'var(--md-font-code-inline)',
                     fontSize: 11,

@@ -56,19 +56,6 @@ class TestStudioPreviewPng:
             assert src in body, f"generator must read {src} (no invented layout)"
 
 
-class TestStudioDocsVersion:
-    def test_version_bumped_to_0_9_0_in_both_files(self) -> None:
-        import re
-
-        pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        about = (REPO_ROOT / "src/brandly_cli/__about__.py").read_text(encoding="utf-8")
-        py_ver = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.M)
-        ab_ver = re.search(r'^__version__\s*=\s*"([^"]+)"', about, re.M)
-        assert py_ver and ab_ver, "could not read version from both files"
-        assert py_ver.group(1) == ab_ver.group(1) == "0.9.0", (
-            f"version must be 0.9.0 in both files, got "
-            f"{py_ver.group(1)} / {ab_ver.group(1)}"
-        )
 
     def test_readme_demos_links_producer_videos_and_preview(self) -> None:
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")

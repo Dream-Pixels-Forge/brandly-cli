@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "brandly-cli"
-version = "0.9.0"
+dynamic = ["version"]
 description = "AI product video orchestrator — add image, video, and sound generation to any AI tool"
 readme = "README.md"
 license = "MIT"
@@ -65,6 +65,13 @@ packages = ["src/brandly_cli"]
 # prompt-craft/sheet references that repo users have (see utils.find_skills_directory).
 [tool.hatch.build.targets.wheel.force-include]
 "skills" = "brandly_cli/skills"
+
+# The version is a single source of truth: src/brandly_cli/__about__.py.
+# Hatch reads it at build time (PEP 621 dynamic versioning declared above as
+# `dynamic = ["version"]`), so bumping __about__.py propagates to the
+# wheel/sdist metadata with no second literal to keep in sync.
+[tool.hatch.version]
+path = "src/brandly_cli/__about__.py"
 
 [tool.ruff]
 target-version = "py310"

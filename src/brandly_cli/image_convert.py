@@ -223,7 +223,7 @@ def _write_small_jpg(src: Path, dest: Path, max_dim: int, quality: int) -> bool:
             if scale < 1:
                 img = img.resize(
                     (max(1, int(w * scale)), max(1, int(h * scale))),
-                    Image.LANCZOS,
+                    Image.Resampling.LANCZOS,
                 )
             dest.parent.mkdir(parents=True, exist_ok=True)
             img.save(dest, "JPEG", quality=quality, optimize=True)

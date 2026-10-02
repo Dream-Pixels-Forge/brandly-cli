@@ -124,3 +124,23 @@ class TestOptimizeRefsCommand:
         res = CliRunner().invoke(cli, ["optimize-refs", "p1", "--dry-run"])
         assert res.exit_code == 0, res.output
         assert "char_master.png" in res.output
+
+
+class TestResamplingApiContract:
+    """Guard the Pillow resampling API against the removed bare alias.
+
+    The module-level ``Image.LANCZOS`` alias was dropped from the Pillow>=10
+    type stubs and fails ``mypy`` (the CI ``quality`` "Type check" step), which
+    is not part of the local gate set. The supported form is
+    ``Image.Resampling.LANCZOS`` (already used in ``thumbnails.py``). This
+    source-contract test keeps it pinned so the regression is caught by the
+    standard pytest run, not only by CI.
+    """
+
+    def test_uses_modern_resampling_api(self) -> None:
+        import brandly_cli.image_convert as mod
+
+        src = Path(mod.__file__).read_text(encoding="utf-8")
+        assert "Image.Resampling.LANCZOS" in src, "use the modern Resampling API"
+        assert "Image.LANCZOS" not in src, "the removed bare alias must not be used"
+

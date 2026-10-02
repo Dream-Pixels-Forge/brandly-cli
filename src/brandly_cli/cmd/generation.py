@@ -448,9 +448,12 @@ def reference(
         # Rename to the conventional sheet name:
         #   character -> char_<name>  ·  location -> loc_<name>  ·  object -> prop_<name>
         timestamp = now_iso().replace(":", "-").replace(".", "_")
+        # build_sheet_filename already embeds the extension, so pass the real
+        # (saved) extension in and do NOT append a second one — that produced
+        # doubled names like "char_hunter_....png.png".
         ext = saved.suffix or ".png"
-        stem = layout.build_sheet_filename(subject_type, subject, timestamp)
-        new_path = saved.parent / f"{stem}{ext}"
+        new_name = layout.build_sheet_filename(subject_type, subject, timestamp, ext)
+        new_path = saved.parent / new_name
         try:
             saved.rename(new_path)
         except OSError:

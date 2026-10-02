@@ -6,8 +6,8 @@
 - Version: 0.9.0 (release cut 2026-10-02; prior 0.8.0 cut 2026-09-29; #189)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
-- Test Count: 1214 passed (0 xfail/xpass)
-- Lint: clean (ruff + mypy + import-linter)
+- Test Count: 1215 collected (1214 passed, 1 known env failure: import-linter LiveError)
+- Lint: ruff clean; import-linter gate red in this dev box (rich `LiveError`, pre-existing — see Round 20)
 
 ## Phase Completion
 - [x] Phase 0: Bootstrap (AUDIT.md + GOAL.md)
@@ -783,5 +783,24 @@ defaults; shipped as four TDD PRs behind one release, per
 - Gates: full suite 1214 passed; ruff clean (src/ + tests/).
 - Status: local commit on feature/hq-references-wardrobe-screenplay; push/PR
   pending review sign-off.
+
+### Round 20/256 - reference plate double-extension fix (e.g. `Hunter.png.png`)
+- [x] Root cause: the `brandly reference` command renamed the saved plate to
+  `layout.build_sheet_filename(...)`, which already embeds the file extension,
+  then appended `ext` a second time → `char_Hunter_<ts>.png.png` (doubled `.png`).
+- [x] Fix (`cmd/generation.py`): pass the real (`saved.suffix`) extension into
+  `build_sheet_filename` and stop appending a second one. The plate now carries a
+  single extension, and a `.jpg` artifact keeps its `.jpg` (previously `.png.jpg`).
+  TDD: `tests/test_reference.py::test_reference_plate_has_single_extension`
+  (RED observed on `...png.png`, then GREEN after the fix).
+- [x] Gates: `tests/test_reference.py` 20/20; full suite 1215 collected (1214 passed);
+  ruff clean (src/ + tests/).
+- NOTE (pre-existing, environmental, NOT this round): `tests/test_architecture_contracts.py::test_lint_imports_exits_zero_on_repo_root`
+  fails in this dev box with `rich.errors.LiveError: Only one live display may be
+  active at once`. import-linter's `_build_report` nests a `rich.Progress` and a
+  `rich.Live` on the same console, and the collision is raised *before* any
+  contract is evaluated. Verified unrelated via `git stash` (still fails on the
+  committed 652ee49). Not caused by this fix; import-linter/rich tooling issue.
+- Status: local; pending push/PR sign-off (rides the PR #193 / #195 branch).
 
 

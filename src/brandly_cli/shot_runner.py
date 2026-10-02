@@ -337,6 +337,86 @@ def _ref_entries(shot: dict[str, Any], act: dict[str, Any], data: dict[str, Any]
     return []
 
 
+@dataclass(frozen=True)
+class MissingReference:
+    """A shot-list reference that cannot be resolved on disk.
+
+    ``entry`` is the raw stem the shot declared; ``reason`` is why
+    :func:`resolve_plate` could not find it. Aggregated so a producer sees
+    every miss in one pass instead of discovering them one at a time.
+    """
+
+    shot_id: str
+    act: str
+    scene: int
+    entry: str
+    reason: str
+
+
+def _entry_is_path(entry: str) -> bool:
+    """True when a reference entry is an explicit path/URL, not a bare stem.
+
+    Mirrors the path-vs-stem decision in :func:`flatten_shots` so the
+    pre-flight check and the runner can never disagree about what a shot
+    declared.
+    """
+    basename = entry.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    return (
+        "/" in entry
+        or "\\" in entry
+        or "://" in entry
+        or basename.lower().endswith(_IMAGE_EXTS)
+    )
+
+
+def check_shot_references(
+    data: dict[str, Any] | list[dict[str, Any]],
+    images_dir: Path,
+) -> list[MissingReference]:
+    """Pre-flight: report every shot-list reference that cannot be resolved.
+
+    Walks the shot list exactly as :func:`flatten_shots` does - per-shot
+    ``refs``/``references`` fall back to per-act, then to top-level - and tries
+    to resolve each declared *plate stem*. Explicit path/URL entries are used
+    as-is by the runner and are not resolution targets, so they are not
+    flagged. Returns ALL misses (never aborting on the first) together with the
+    shot, act and scene that declared each one, so a producer fixes every typo
+    in a single pass.
+    """
+    if isinstance(data, list):
+        acts: list[dict[str, Any]] = [{"name": "shots", "shots": data}]
+        top_level: dict[str, Any] = {}
+    else:
+        acts = [
+            {"name": key, **act}
+            for key, act in (data.get("acts") or {}).items()
+        ]
+        top_level = data
+
+    missing: list[MissingReference] = []
+    for act_position, act in enumerate(acts, start=1):
+        act_name = str(act.get("name", act.get("act", "")))
+        act_scene = as_int(act.get("scene"), act_position)
+        for shot in act.get("shots", []):
+            shot_id = str(shot.get("id") or shot.get("name") or "")
+            for entry in _ref_entries(shot, act, top_level):
+                if _entry_is_path(entry):
+                    continue  # runner uses explicit paths/URLs as-is
+                try:
+                    resolve_plate(entry, images_dir)
+                except FileNotFoundError as exc:
+                    missing.append(
+                        MissingReference(
+                            shot_id=shot_id,
+                            act=act_name,
+                            scene=act_scene,
+                            entry=entry,
+                            reason=str(exc),
+                        )
+                    )
+    return missing
+
+
 def flatten_shots(
     data: dict[str, Any] | list[dict[str, Any]],
     images_dir: Path,
@@ -377,13 +457,7 @@ def flatten_shots(
             refs: list[str] = []
             has_character_plate = False
             for entry in entries:
-                basename = entry.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-                if (
-                    "/" in entry
-                    or "\\" in entry
-                    or "://" in entry
-                    or basename.lower().endswith(_IMAGE_EXTS)
-                ):
+                if _entry_is_path(entry):
                     refs.append(entry)  # explicit path or URL, use as-is
                 else:
                     path = resolve_plate(entry, images_dir)

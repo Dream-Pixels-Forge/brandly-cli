@@ -6,7 +6,7 @@
 - Version: 0.9.0 (release cut 2026-10-02; prior 0.8.0 cut 2026-09-29; #189)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
-- Test Count: 1124 passed (0 xfail/xpass)
+- Test Count: 1214 passed (0 xfail/xpass)
 - Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
@@ -766,5 +766,22 @@ defaults; shipped as four TDD PRs behind one release, per
 - Gates on the #117 branch (#194): full suite 1179 passed, ruff clean.
 - Gates on #193: test_auto_ref_scoping.py 14 passed; PR mergeable.
 - NEXT: PR #193 (auto-refs) + PR #194 (#117 layout) pending review/CI, then merge.
+
+### Round 19/256 - shot-side reference enforcement + shot-list reference pre-flight (#195)
+- [x] Honor `wardrobe`/`hq/` layout on the shot side, cap each shot's references
+  to the model's 5-image limit, and never hard-fail `brandly video` on an
+  over-limit payload (`shot_runner.py` + `cmd/generation.py` +
+  `tests/test_shot_references.py`, commit 7b48639).
+- [x] `brandly produce --check` pre-flight: new `shot_runner.check_shot_references`
+  reports EVERY unresolvable shot reference (per shot/act/scene) in one pass
+  instead of aborting on the first miss; non-check `produce` fails fast with the
+  same aggregate (fixes #195). TDD: `tests/test_shot_references_check.py` (10 tests).
+- [x] Refactored `flatten_shots` to reuse the shared `_entry_is_path` helper so the
+  pre-flight check and the runner can never disagree about path-vs-stem.
+- Opened #196 (produce auto-ref scoping — cross-ref'd to in-flight PR #193 /
+  #191/#192) and #197 (`resolve_plate` vs `discover_project_plates` asymmetry).
+- Gates: full suite 1214 passed; ruff clean (src/ + tests/).
+- Status: local commit on feature/hq-references-wardrobe-screenplay; push/PR
+  pending review sign-off.
 
 

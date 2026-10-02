@@ -558,6 +558,29 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
         f"\n[dim]Recommendation: Set budget to at least {total_estimate} credits.[/dim]\n"
     )
 
+def _print_missing_references(
+    missing: list[shot_runner.MissingReference],
+) -> None:
+    """Aggregate pre-flight report of every unresolvable shot-list reference.
+
+    One missing plate used to abort the whole resumable run with a bare
+    traceback; this lists every miss at once so a producer fixes all of them
+    in a single pass.
+    """
+    console.print(f"[red]✗ {len(missing)} reference(s) could not be resolved:[/red]")
+    for m in missing:
+        where = f"shot '{m.shot_id}'"
+        if m.act:
+            where += f"  (act '{m.act}', scene {m.scene})"
+        console.print(
+            f"  [red]•[/red] {where}: plate stem [bold]{m.entry}[/bold]"
+        )
+    console.print(
+        "[dim]Create the missing plate(s) or correct the stems in the shot "
+        "list, then re-run. Validate with `brandly produce … --check`.[/dim]"
+    )
+
+
 @click.command()
 @click.argument("project_id")
 @click.option(
@@ -728,6 +751,16 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
         "(issue #116). Clips are kept; exit code unchanged."
     ),
 )
+@click.option(
+    "--check",
+    is_flag=True,
+    default=False,
+    help=(
+        "Validate that every shot's references resolve on disk and report ALL "
+        "misses in one pass, then exit - no scene manifest, no plans, no "
+        "generation (pre-flight reference check)."
+    ),
+)
 @click.pass_context
 def produce(
     ctx: click.Context,
@@ -750,6 +783,7 @@ def produce(
     open_ui: bool,
     dry_run: bool,
     gate_threshold: int | None,
+    check: bool,
 ) -> None:
     """Generate a multi-shot film shot by shot from the production plan.
 
@@ -796,6 +830,31 @@ def produce(
         shots = shot_runner.load_shots_file(path)
     except ValueError as e:
         console.print(f"[red]Invalid shot list: {e}[/red]")
+        sys.exit(1)
+
+    # Pre-flight reference check: surface EVERY unresolvable reference in the
+    # whole shot list up front. A single missing plate used to abort the run
+    # later (inside build_scenes/flatten_shots) with a bare traceback; here
+    # the full list is shown so every typo is fixed in one pass.
+    images_dir = layout.resolve_media_root(root, project_id, "images")
+    missing_refs = shot_runner.check_shot_references(shots, images_dir)
+    if check:
+        if missing_refs:
+            _print_missing_references(missing_refs)
+            sys.exit(1)
+        console.print(
+            f"[green]✓ All references resolve "
+            f"({len(missing_refs)} missing across the shot list). "
+            f"Nothing to generate.[/green]"
+        )
+        return
+    if missing_refs:
+        _print_missing_references(missing_refs)
+        console.print(
+            "[red]Aborting before generation: create the missing plate(s) "
+            "(`brandly reference <id> --subject-type …`) or fix the stems "
+            "in the shot list, then re-run.[/red]"
+        )
         sys.exit(1)
 
     # Issue #122: dry run resolves + prints everything the real run would

@@ -113,7 +113,7 @@ python -m build
 
 ### Release checklist
 
-1. Bump **both** `pyproject.toml` `version` and `src/brandly_cli/__about__.py` `__version__` to the same value (CI fails on drift).
+1. Bump `src/brandly_cli/__about__.py` `__version__` — the **single source of truth**. `pyproject.toml` derives the version from it (`dynamic = ["version"]` + `[tool.hatch.version]`), so no second edit is needed. Run `python scripts/version_check.py`; it fails if a hardcoded `version = "…"` is reintroduced in `pyproject.toml` (CI fails on drift).
 2. Update `CHANGELOG.md`.
 3. Tag `vX.Y.Z` (must match that version) and publish a GitHub Release — workflow fails on tag/version mismatch.
 4. Workflow hard-verifies `https://pypi.org/pypi/brandly-cli/X.Y.Z/json` lists the files (retries ~3 min).

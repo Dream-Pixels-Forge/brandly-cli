@@ -57,9 +57,9 @@ build: ## build
 	$(PYTHON) -m build
 	$(PYTHON) -m twine check dist/*
 
-## Fail if pyproject.toml and __about__.py versions differ
+## Fast version single-source gate (full invariant in tests/test_warning_free_stack.py)
 version-check: ## version-check
-	$(PYTHON) -c "import pathlib,re,sys; py=re.search(r'^version\\s*=\\s*\"([^\"]+)\"', pathlib.Path('pyproject.toml').read_text(), re.M); ab=re.search(r'^__version__\\s*=\\s*\"([^\"]+)\"', pathlib.Path('src/brandly_cli/__about__.py').read_text(), re.M); sys.exit('version drift: pyproject=%s __about__=%s' % (py.group(1), ab.group(1)) if not py or not ab or py.group(1)!=ab.group(1) else 'version sync OK: %s' % py.group(1))"
+	$(PYTHON) scripts/version_check.py
 
 ## Run all quality gates (lint + type-check + test + build)
 ci: version-check lint type-check test build ## ci

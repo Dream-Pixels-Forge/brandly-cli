@@ -23,32 +23,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Verify tag matches package versions
-        run: |
-          python - <<'PY'
-          import pathlib
-          import re
-          import sys
-
-          tag = "${{ github.event.release.tag_name }}"
-          tag_ver = tag[1:] if tag.startswith("v") else tag
-
-          pyproject = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
-          about = pathlib.Path("src/brandly_cli/__about__.py").read_text(encoding="utf-8")
-          m_py = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.M)
-          m_ab = re.search(r'^__version__\s*=\s*"([^"]+)"', about, re.M)
-          if not m_py or not m_ab:
-              sys.exit("::error::Could not read version from pyproject.toml / __about__.py")
-
-          py_ver, ab_ver = m_py.group(1), m_ab.group(1)
-          print(f"tag={tag_ver} pyproject={py_ver} __about__={ab_ver}")
-          if tag_ver != py_ver or tag_ver != ab_ver:
-              sys.exit(
-                  f"::error::Version mismatch: tag={tag_ver} pyproject={py_ver} "
-                  f"__about__={ab_ver}. Bump both files and re-tag."
-              )
-          print("Version consistency OK")
-          PY
+      - name: Verify tag matches package version
+        run: python scripts/version_check.py --tag "${{ github.event.release.tag_name }}"
 
       - name: Install build dependencies
         run: python -m pip install --upgrade build twine

@@ -85,9 +85,24 @@ from typing import Any
 
 from brandly_cli.io import run_capture
 
-REF_CATEGORIES = ("character", "location", "prop")
+#: Reference categories a shot may resolve bare plate stems against, searched
+#: in priority order. Mirrors the generation-side ``layout.IMAGE_CATEGORIES``
+#: for the categories that carry live consistency references:
+#: ``character`` > ``location`` > ``prop`` > ``wardrobe``. The ``hq/`` master
+#: sub-folder under each category is never searched - only the optimized
+#: working twin sitting directly in the category root is eligible (see
+#: ``resolve_plate`` / ``layout.HQ_DIRNAME``).
+REF_CATEGORIES = ("character", "location", "prop", "wardrobe")
 _PLATE_SUFFIXES = (".opt.jpg", ".opt.png", ".jpg", ".jpeg", ".png")
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp")
+
+#: The strictest reference-image cap across the video models: Agnes Video 2.5
+#: Flash server-validates at most 5 reference images
+#: (``agnes_client.MAX_REFERENCE_IMAGES``) and hard-fails the create call
+#: beyond it. The generator caps every shot's selection to this number so it
+#: respects the model limit instead of erroring, keeping the
+#: highest-priority references first.
+MAX_SHOT_REFERENCE_IMAGES = 5
 DEFAULT_INTERVAL = 60.0  # Agnes: 1 request per minute
 PROGRESS_FILENAME = "produce_progress.txt"  # under <project>/docs/tmp/
 
@@ -153,6 +168,9 @@ class Shot:
     prompt: str
     duration: int
     refs: list[str] = field(default_factory=list)
+    #: References removed to respect ``MAX_SHOT_REFERENCE_IMAGES`` - recorded
+    #: (never silently lost) so the producer can warn which plates were cut.
+    dropped_references: list[str] = field(default_factory=list)
     character: str | None = None
     scene: int = 1
     index_in_scene: int = 1
@@ -273,6 +291,33 @@ def resolve_plate(stem: str, images_dir: Path) -> Path:
     )
 
 
+def cap_reference_selection(
+    refs: Sequence[str], limit: int = MAX_SHOT_REFERENCE_IMAGES
+) -> tuple[list[str], list[str]]:
+    """Order-preserving de-dup + cap of a shot's reference selection.
+
+    Returns ``(kept, dropped)``:
+
+    * ``kept`` — the references that will actually be sent, capped to
+      ``limit`` (the model's reference-image ceiling). Order is preserved so
+      the highest-priority (earliest-declared / primary-first) references
+      always win the slots.
+    * ``dropped`` — the references that were removed to respect the limit,
+      so the caller can warn instead of the create call hard-failing.
+
+    Duplicates are collapsed so the same plate never burns two slots.
+    """
+    unique: list[str] = []
+    seen: set[str] = set()
+    for ref in refs:
+        if ref and ref not in seen:
+            seen.add(ref)
+            unique.append(ref)
+    if limit and len(unique) > limit:
+        return unique[:limit], unique[limit:]
+    return unique, []
+
+
 def _ref_entries(shot: dict[str, Any], act: dict[str, Any], data: dict[str, Any]) -> list[str]:
     """Reference entries: per-shot > per-act > top-level, paths or stems.
 
@@ -345,6 +390,12 @@ def flatten_shots(
                     refs.append(str(path))
                     if path.parent.name == "character":
                         has_character_plate = True
+            # Respect the model's reference-image limit: cap the selection to
+            # MAX_SHOT_REFERENCE_IMAGES, keeping the highest-priority (earliest)
+            # references and recording what was cut (never silently dropped).
+            refs, dropped_refs = cap_reference_selection(
+                refs, MAX_SHOT_REFERENCE_IMAGES
+            )
             character_anchor: str | None = None
             # Issue #38: presence-declared characters win — only those that
             # are actually in the shot go into the identity anchor.
@@ -383,6 +434,7 @@ def flatten_shots(
                     prompt=prefix + str(raw_prompt),
                     duration=int(shot.get("duration", 5)),
                     refs=refs,
+                    dropped_references=dropped_refs,
                     character=character_anchor,
                     scene=as_int(shot.get("scene"), act_scene),
                     index_in_scene=shot_position,
@@ -842,6 +894,13 @@ def run_shots(config: RunnerConfig) -> int:
                 f"rate limit: waiting {config.interval:.0f}s before {shot.id}..."
             )
             time.sleep(config.interval)
+        if shot.dropped_references:
+            config.say(
+                f"{shot.id}: dropped {len(shot.dropped_references)} "
+                f"reference image(s) to respect the "
+                f"{MAX_SHOT_REFERENCE_IMAGES}-image model limit: "
+                f"{', '.join(Path(r).name for r in shot.dropped_references)}"
+            )
         for attempt in range(1, max_attempts + 1):
             before = _clip_snapshot(scenes)
             succeeded, exit_code, note = config.generate_one(shot)

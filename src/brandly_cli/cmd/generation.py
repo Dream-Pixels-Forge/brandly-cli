@@ -1419,6 +1419,20 @@ def video(
         [u.strip() for u in reference_images.split(",") if u.strip()] if reference_images else []
     )
     imgs = ref_paths + user_imgs + auto_refs
+    # Respect the model's reference-image limit (Agnes Video Flash caps at
+    # MAX_SHOT_REFERENCE_IMAGES; the create call hard-fails beyond it). Order is
+    # primary reference -> user-supplied -> auto-detected, so capping keeps the
+    # most-needed references first and only ever trims over-limit auto-refs.
+    imgs, dropped_imgs = shot_runner.cap_reference_selection(
+        imgs, shot_runner.MAX_SHOT_REFERENCE_IMAGES
+    )
+    if dropped_imgs:
+        console.print(
+            f"[yellow]⚠ Capped reference images to "
+            f"{shot_runner.MAX_SHOT_REFERENCE_IMAGES} (the model's limit); dropped "
+            f"{len(dropped_imgs)} lower-priority auto-reference(s): "
+            f"{', '.join(Path(p).name for p in dropped_imgs)}[/yellow]"
+        )
 
     # Parse reference audio URLs
     auds = (

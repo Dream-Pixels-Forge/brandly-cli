@@ -192,6 +192,58 @@ class Shot:
         }
 
 
+def scope_auto_refs(
+    plates: Sequence[str],
+    prompt: str = "",
+    character: str | None = None,
+) -> list[str]:
+    """Scope auto-injected reference plates to ONE shot's relevance.
+
+    Auto-refs follow-up to issues #20/#38: a shot must not receive the whole
+    project images tree — each shot's payload carries only the plates the
+    shot is concerned with:
+
+    - ``character`` plates (under ``images/character/``) are kept only when
+      the shot has a character identity anchor (issue #38: no anchor, no
+      face lock, no character reference).
+    - ``location``/``prop`` plates are kept only when the shot's prompt
+      mentions the plate stem (prefix ``char_``/``loc_``/``prop_`` stripped,
+      case-insensitive, ``_``/``-`` normalized to a space match).
+    - Plates outside a known category (at the ``images`` root) are kept —
+      legacy behavior (e.g. primary-reference style plates).
+
+    The shot's explicit refs are handled upstream (they are never augmented
+    with auto-refs at all), so this filter only applies to referenceless
+    shots.
+    """
+    if not plates:
+        return []
+    prompt_norm = " ".join(str(prompt).lower().replace("_", " ").replace("-", " ").split())
+
+    def _stem_tokens(path_text: str) -> list[str]:
+        stem = Path(path_text).stem.lower()
+        for prefix in ("char", "loc", "prop"):
+            if stem.startswith(f"{prefix}_") or stem.startswith(f"{prefix}-"):
+                stem = stem[len(prefix) + 1:]
+                break
+        return [t for t in stem.replace("_", " ").replace("-", " ").replace(".", " ").split() if t]
+
+    out: list[str] = []
+    for plate in plates:
+        text = str(plate).replace("\\", "/").lower()
+        if "/images/character/" in text:
+            if character:
+                out.append(plate)
+            continue
+        if "/images/location/" in text or "/images/prop/" in text:
+            tokens = _stem_tokens(str(plate))
+            if tokens and any(t in prompt_norm for t in tokens):
+                out.append(plate)
+            continue
+        out.append(plate)
+    return out
+
+
 def resolve_plate(stem: str, images_dir: Path) -> Path:
     """Resolve a bare plate stem to an on-disk image under ``images_dir``.
 
@@ -438,6 +490,11 @@ class RunnerConfig:
     retry_backoff: float = 0.0
     """Seconds to wait between retries of the same shot. Defaults to the
     shot ``interval`` (Agnes 1 request/minute) when left at ``0``."""
+    retry_backoff_factor: float = 1.0
+    """Exponential backoff multiplier (issues #191/#192). Each retry waits
+    ``backoff * factor**(attempt-1)`` — a 60s base with factor 2.0 waits
+    60s, 120s, 240s… ``1.0`` (default) preserves the flat backoff. Meant for
+    degraded providers / ``video_queue_full`` 503s that clear after minutes."""
     on_shot_done: Callable[[Shot, bool], None] | None = None
     """Called after each shot's terminal result as ``(shot, ok)`` — used to
     update production-plan rows and project.json (issues #36/#37). A hook
@@ -811,14 +868,18 @@ def run_shots(config: RunnerConfig) -> int:
                 break
             if attempt < max_attempts:
                 reason = f" {note}" if note else ""
+                # Issues #191/#192: exponential backoff — each retry waits
+                # base * factor**(attempt-1) so a degraded provider / full
+                # queue gets progressively longer breathing room.
+                wait = backoff * (config.retry_backoff_factor ** (attempt - 1))
                 config.progress.record(
-                    shot.id, "RETRY", exit_code, reason, retry=attempt, backoff=backoff,
+                    shot.id, "RETRY", exit_code, reason, retry=attempt, backoff=wait,
                 )
                 config.say(
                     f"{shot.id} RETRY {attempt}/{config.retries} exit={exit_code}{reason} — "
-                    f"backoff {backoff:.0f}s"
+                    f"backoff {wait:.0f}s"
                 )
-                time.sleep(backoff)
+                time.sleep(wait)
                 continue
             # Terminal failure after all attempts.
             reason = f" {note}" if note else ""

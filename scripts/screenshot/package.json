@@ -1,0 +1,10 @@
+{
+  "name": "brandly-studio-screenshot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless browser capture of the Brandly Studio web UI for README docs.",
+  "dependencies": {
+    "playwright-core": "^1.63.0"
+  }
+}

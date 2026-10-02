@@ -716,7 +716,8 @@ def test_publish_phase_exports_platforms(
 ) -> None:
     _stitched_assets(tmp_path, monkeypatch)
     final = layout.resolve_media_root(tmp_path, PID, "videos") / "final.mp4"
-    export_dir = layout.resolve_project_dir(tmp_path, PID) / "export"
+    # Exports now live under the v2 production export dir (issue #117).
+    export_dir = layout.export_dir(tmp_path, PID)
     calls: list[tuple[Path, str, Path]] = []
     _patch_export(monkeypatch, calls)
 
@@ -847,7 +848,7 @@ def test_run_execute_completes_full_pipeline_to_done(
     assert export_calls == ["tiktok", "youtube_standard"]
     final = layout.resolve_media_root(tmp_path, pid, "videos") / "final.mp4"
     assert final.is_file()
-    export_dir = layout.resolve_project_dir(tmp_path, pid) / "export"
+    export_dir = layout.export_dir(tmp_path, pid)
     assert (export_dir / "final_tiktok.mp4").is_file()
     assert (export_dir / "final_youtube_standard.mp4").is_file()
 

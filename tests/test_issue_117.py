@@ -26,7 +26,9 @@ def test_ensure_project_tree_creates_v2_layout(tmp_path: Path) -> None:
     layout.ensure_project_tree(tmp_path, PID)
     assert (tmp_path / ".brandly" / PID / "docs" / "plan").is_dir()
     assert (tmp_path / ".brandly" / PID / "docs" / "tmp").is_dir()
-    assert (tmp_path / ".brandly" / PID / "export").is_dir()
+    # Exports are production outputs (v2 layout) — not project state.
+    assert (tmp_path / "production" / PID / "export").is_dir()
+    assert not (tmp_path / ".brandly" / PID / "export").exists()
     # media trees live in the v2 roots
     assert (tmp_path / "pre-production" / PID / "character").is_dir()
     assert (tmp_path / "pre-production" / PID / "prop").is_dir()

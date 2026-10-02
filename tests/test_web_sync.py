@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from brandly_cli import layout
 from brandly_cli.web.models import Clip
 from brandly_cli.web.server import create_app
 from brandly_cli.web.state import TimelineState
@@ -331,8 +332,9 @@ class TestExportDownload:
         if not _ffmpeg_available():
             pytest.skip("ffmpeg not available")
 
-        # Write a stub stitched file
-        out_dir = project_root / ".brandly" / "my-proj" / "export"
+        # Write a stub stitched file at the v2 production export dir
+        # (issue #117): layout.export_dir = production/<id>/export/.
+        out_dir = layout.export_dir(project_root, "my-proj")
         out_dir.mkdir(parents=True, exist_ok=True)
         out_file = out_dir / "my-proj_stitched.mp4"
         out_file.write_bytes(b"DUMMY-STITCHED-MP4")

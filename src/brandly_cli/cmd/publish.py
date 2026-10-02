@@ -69,13 +69,36 @@ def publish(
         sys.exit(1)
 
     # The video to publish: prefer the per-platform export, then any clip.
+    # v2 layout (issue #117): exports live under production/<id>/export/,
+    # clips under production/<id>/videos/ — the legacy .brandly/<id>/ trees
+    # are dead and only scanned as a fallback.
+    export_candidates = layout.export_dir(root_dir, project_id).glob(
+        f"*_{platform}.mp4"
+    )
     candidates = sorted(
-        (proj_dir / "export").glob(f"*_{platform}.mp4"),
+        export_candidates,
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
     if not candidates:
-        candidates = [p for p in (proj_dir / "videos").rglob("*.mp4") if p.is_file()]
+        candidates = [
+            p
+            for p in layout.resolve_media_root(root_dir, project_id, "videos").rglob(
+                "*.mp4"
+            )
+            if p.is_file()
+        ]
+    if not candidates:
+        # v1 (pre-migration) fallbacks: exports used to live under
+        # .brandly/<id>/export/ and clips under .brandly/<id>/videos/.
+        candidates = [
+            p for p in (proj_dir / "export").glob(f"*_{platform}.mp4")
+            if p.is_file()
+        ]
+    if not candidates:
+        candidates = [
+            p for p in (proj_dir / "videos").rglob("*.mp4") if p.is_file()
+        ]
     if not candidates:
         console.print(
             f"[yellow]No video found for {project_id} — run "

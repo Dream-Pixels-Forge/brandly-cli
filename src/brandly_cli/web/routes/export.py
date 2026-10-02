@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from brandly_cli import layout
 from brandly_cli.web import deps
 from brandly_cli.web.models import ExportResult
 from brandly_cli.web.state import TimelineState
@@ -18,7 +19,8 @@ router = APIRouter(prefix="/api/projects/{project_id}", tags=["export"])
 async def export_project(project_id: str, request: Request) -> dict:
     """Stitch all clips in the timeline into a final video."""
     root = request.app.state.root
-    proj_dir = deps.require_project_dir(root, project_id)
+    # Guard: unknown / invalid project ids raise 404 before any work (issue #117).
+    deps.require_project_dir(root, project_id)
     timeline = TimelineState(project_id, root).load()
 
     if not timeline.clips:
@@ -49,8 +51,8 @@ async def export_project(project_id: str, request: Request) -> dict:
         if t:
             transition = t
 
-    # Export to projects/export/
-    output_dir = proj_dir / "export"
+    # Export to the v2 export dir: production/<id>/export/ (issue #117).
+    output_dir = layout.export_dir(Path(root), project_id)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{project_id}_stitched.mp4"
 
@@ -94,8 +96,12 @@ async def export_project(project_id: str, request: Request) -> dict:
 async def download_export(project_id: str, request: Request) -> FileResponse:
     """Serve the stitched MP4 for download."""
     root = request.app.state.root
-    proj_dir = deps.require_project_dir(root, project_id)
-    output_path = proj_dir / "export" / f"{project_id}_stitched.mp4"
+    # Guard: unknown / invalid project ids raise 404 before any work (issue #117).
+    deps.require_project_dir(root, project_id)
+    # Serve from the v2 production export dir — the same place POST /export writes
+    # (layout.export_dir). A read from the legacy .brandly/<id>/export/ would 404
+    # because the write path no longer targets it (issue #117).
+    output_path = layout.export_dir(Path(root), project_id) / f"{project_id}_stitched.mp4"
     if not output_path.exists():
         raise HTTPException(status_code=404, detail="Export not found — run export first")
     return FileResponse(str(output_path), media_type="video/mp4", filename=f"{project_id}.mp4")

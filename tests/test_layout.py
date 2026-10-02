@@ -161,5 +161,48 @@ class TestLayoutStructure:
         )
 
 
+class TestWardrobeScreenplayAndHqLayout:
+    """Layout additions: wardrobe image category, screenplay docs category,
+    and the hq/ master folder for reference images."""
+
+    def test_image_categories_include_wardrobe(self) -> None:
+        assert "wardrobe" in layout.IMAGE_CATEGORIES
+        assert layout.image_category_for_subject("wardrobe") == "wardrobe"
+
+    def test_docs_categories_include_screenplay(self) -> None:
+        assert "screenplay" in layout.DOC_CATEGORIES
+
+    def test_docs_dir_routes_screenplay(self, tmp_path: Path) -> None:
+        proj = layout.project_dir(tmp_path, "p1")
+        assert layout.docs_dir(proj, "screenplay") == proj / "docs" / "screenplay"
+        # unknown categories still coerce to tmp
+        assert layout.docs_dir(proj, "weird") == proj / "docs" / "tmp"
+
+    def test_ensure_project_tree_creates_wardrobe_and_screenplay(
+        self, tmp_path: Path
+    ) -> None:
+        layout.ensure_project_tree(tmp_path, "p1")
+        wardrobe = tmp_path / "pre-production" / "p1" / "wardrobe"
+        screenplay = tmp_path / ".brandly" / "p1" / "docs" / "screenplay"
+        assert wardrobe.is_dir()
+        assert screenplay.is_dir()
+
+    def test_hq_dir_helper(self, tmp_path: Path) -> None:
+        assert layout.hq_dir(tmp_path, "p1") == (
+            tmp_path / "pre-production" / "p1" / "hq"
+        )
+
+    def test_discover_project_plates_skips_hq(self, tmp_path: Path) -> None:
+        cat = tmp_path / "pre-production" / "p1" / "character"
+        cat.mkdir(parents=True)
+        (cat / "char.png").write_bytes(b"\x89PNG")
+        hq = tmp_path / "pre-production" / "p1" / "hq" / "character"
+        hq.mkdir(parents=True)
+        (hq / "char_master.png").write_bytes(b"\x89PNG")
+        found = {p.name for p in layout.discover_project_plates(tmp_path, "p1")}
+        assert "char.png" in found
+        assert "char_master.png" not in found
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(__import__("pytest").main([__file__, "-v"]))

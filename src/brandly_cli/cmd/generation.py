@@ -264,6 +264,17 @@ def reference(
         dest = target_dir / f"reference_{subject_type}_{stem}{src.suffix or '.png'}"
         shutil.copyfile(src, dest)
         dest = _standardize_reference_format(dest, ref_format)
+        # Automatically split the adopted plate into a small working JPG + an
+        # HQ master under pre-production/<id>/hq/ (disable with BRANDLY_HQ_REFS=off).
+        # Best-effort: never breaks the import.
+        try:
+            from brandly_cli import image_convert
+
+            _images_root = layout.resolve_media_root(root, project_id, "images")
+            _hq_root = layout.hq_dir(root, project_id)
+            image_convert.ensure_hq_split(dest, _hq_root, _images_root)
+        except Exception:
+            pass
         console.print(f"[green]✓ Imported reference plate:[/green] {dest}")
 
         from brandly_cli.utils import write_generation_plan
@@ -2265,6 +2276,63 @@ def _run_produce_runner(
     sys.exit(rc)
 
 
+@click.command(name="optimize-refs")
+@click.argument("project_id")
+@click.option(
+    "--max-dim",
+    default=None,
+    type=int,
+    help="Max long-side pixels for the small JPG (default 1280).",
+)
+@click.option(
+    "--quality",
+    default=None,
+    type=int,
+    help="JPEG quality for the small JPG (default 80).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Report what would change without writing any files.",
+)
+@click.pass_context
+def optimize_refs(
+    ctx: click.Context,
+    project_id: str,
+    max_dim: int | None,
+    quality: int | None,
+    dry_run: bool,
+) -> None:
+    """Split large reference images into a small JPG + an HQ master (hq/).
+
+    Scans the project's reference directory and, for every large reference,
+    archives the high-quality original under
+    ``pre-production/<project>/hq/`` and writes a small down-scaled JPG in its
+    place. Idempotent and non-destructive (masters are only ever copied into
+    ``hq/``, never deleted). Disable automatically with ``BRANDLY_HQ_REFS=off``.
+    """
+    from brandly_cli import image_convert
+
+    root = _get_root(ctx)
+    results = image_convert.optimize_references(
+        root,
+        project_id,
+        max_dim=image_convert.HQ_MAX_DIM if max_dim is None else max_dim,
+        quality=image_convert.HQ_QUALITY if quality is None else quality,
+        dry_run=dry_run,
+    )
+    if not results:
+        console.print("[dim]No large reference images need an HQ split.[/dim]")
+        return
+    tag = "[yellow]would[/yellow] " if dry_run else "[green]✓[/green] "
+    for r in results:
+        console.print(
+            f"{tag}small {Path(r['small']).name}  ←  hq master {Path(r['master']).name}"
+        )
+    suffix = "; dry-run (no files written)" if dry_run else ""
+    console.print(f"[dim]{len(results)} reference(s) processed{suffix}[/dim]")
+
+
 def register(cli) -> None:
     cli.add_command(reference)
     cli.add_command(image)
@@ -2274,3 +2342,4 @@ def register(cli) -> None:
     cli.add_command(music)
     cli.add_command(tts)
     cli.add_command(voices_cmd)
+    cli.add_command(optimize_refs)

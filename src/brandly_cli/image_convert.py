@@ -15,10 +15,13 @@ Related issues: #24 (create timeouts from multi-MB reference plates),
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
 from PIL import Image
+
+from brandly_cli import layout
 
 # Only bother converting when this many bytes (or more) are saved.
 DEFAULT_MIN_SAVE = 10 * 1024
@@ -36,6 +39,12 @@ _FORMAT_BY_EXTENSION = {
     ".tif": "jpeg",
     ".gif": "webp",
 }
+
+# HQ reference split: keep a small working JPG in the category folder and
+# archive the high-quality original under pre-production/<id>/hq/.
+HQ_MAX_DIM = 1280
+HQ_QUALITY = 80
+HQ_MIN_BYTES = 256 * 1024
 
 
 def pick_target_format(src: Path | str) -> str | None:
@@ -173,3 +182,154 @@ def maybe_convert(
         f"saved {saved // 1024}KB)"
     )
     return _encode_data_url(converted)
+
+
+# ---------------------------------------------------------------------------
+# HQ reference split — small working JPG + archived high-quality master
+# ---------------------------------------------------------------------------
+
+
+def _hq_enabled() -> bool:
+    """The HQ reference split is on unless ``BRANDLY_HQ_REFS=off``."""
+    return os.getenv("BRANDLY_HQ_REFS", "").strip().lower() != "off"
+
+
+def _is_large(path: Path, max_dim: int, min_bytes: int) -> bool:
+    """True when the image is big enough to be worth splitting.
+
+    "Large" means either at least ``min_bytes`` on disk, or a long side over
+    ``max_dim`` pixels — either way the small JPG is a meaningful win.
+    """
+    try:
+        if path.stat().st_size >= min_bytes:
+            return True
+        with Image.open(path) as im:
+            w, h = im.size
+        return max(w, h) > max_dim
+    except Exception:
+        return False
+
+
+def _write_small_jpg(src: Path, dest: Path, max_dim: int, quality: int) -> bool:
+    """Write a down-scaled RGB JPG (long side <= ``max_dim``) to ``dest``.
+
+    Returns True on success; never leaves a partial file behind on failure.
+    """
+    try:
+        with Image.open(src) as im:
+            img = im.convert("RGB")
+            w, h = img.size
+            scale = max_dim / max(w, h)
+            if scale < 1:
+                img = img.resize(
+                    (max(1, int(w * scale)), max(1, int(h * scale))),
+                    Image.LANCZOS,
+                )
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            img.save(dest, "JPEG", quality=quality, optimize=True)
+        return True
+    except Exception:
+        try:
+            dest.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+
+def ensure_hq_split(
+    image: Path | str,
+    hq_root: Path | str,
+    images_root: Path | str,
+    *,
+    max_dim: int = HQ_MAX_DIM,
+    quality: int = HQ_QUALITY,
+    min_bytes: int = HQ_MIN_BYTES,
+    dry_run: bool = False,
+) -> dict[str, str] | None:
+    """Split one reference image into a small JPG + an HQ master under ``hq/``.
+
+    * Copies the high-quality original into ``hq_root/<category>/<name>``
+      (the master is never modified or deleted).
+    * Writes a small down-scaled JPG next to the original in the category
+      folder — that small JPG becomes the working reference.
+    * Removes the now-redundant large original from the category folder *only*
+      once it has been safely archived in ``hq/`` and the small JPG written.
+
+    No-op (returns None) when the feature is disabled, the file is missing,
+    already lives under ``hq/``, is not under ``images_root``, or is not
+    large enough to be worth splitting.
+    """
+    if not _hq_enabled():
+        return None
+    image = Path(image)
+    if not image.is_file():
+        return None
+    if not _is_large(image, max_dim, min_bytes):
+        return None
+
+    # Resolve the containing category (top-level folder under the images root).
+    base = Path(images_root).resolve()
+    try:
+        rel = image.resolve().relative_to(base)
+    except ValueError:
+        return None  # not under this images root (e.g. a legacy v1 plate)
+    if not rel.parts or rel.parts[0] == layout.HQ_DIRNAME:
+        return None
+    category = rel.parts[0] if len(rel.parts) > 1 else "general"
+
+    hq_root = Path(hq_root)
+    master = hq_root / category / image.name
+    small = image.parent / (image.stem + ".jpg")
+
+    if not dry_run:
+        master.parent.mkdir(parents=True, exist_ok=True)
+        if not master.exists():
+            shutil.copy2(image, master)
+        wrote_small = _write_small_jpg(image, small, max_dim, quality)
+        if wrote_small and small != image:
+            # Original is preserved in hq/; drop the big source so only the
+            # small JPG remains as the live reference in the category folder.
+            image.unlink(missing_ok=True)
+
+    return {
+        "image": str(image),
+        "master": str(master),
+        "small": str(small),
+        "category": category,
+    }
+
+
+def optimize_references(
+    root: str | Path,
+    project_id: str,
+    *,
+    max_dim: int = HQ_MAX_DIM,
+    quality: int = HQ_QUALITY,
+    min_bytes: int = HQ_MIN_BYTES,
+    dry_run: bool = False,
+) -> list[dict[str, str]]:
+    """Split every large reference image found on the project's directory.
+
+    Walks the reference plates discovered under ``pre-production/<id>/``
+    (the ``hq/`` folder is already excluded by discovery) and applies
+    :func:`ensure_hq_split` to each. Idempotent and non-destructive; returns a
+    summary list (empty when nothing needed splitting or when disabled).
+    """
+    if not _hq_enabled():
+        return []
+    images_root = layout.resolve_media_root(Path(root), project_id, "images")
+    hq_root = layout.hq_dir(Path(root), project_id)
+    results: list[dict[str, str]] = []
+    for img in layout.discover_project_plates(root, project_id):
+        res = ensure_hq_split(
+            img,
+            hq_root,
+            images_root,
+            max_dim=max_dim,
+            quality=quality,
+            min_bytes=min_bytes,
+            dry_run=dry_run,
+        )
+        if res is not None:
+            results.append(res)
+    return results

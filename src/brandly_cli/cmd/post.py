@@ -44,7 +44,7 @@ from brandly_cli.utils import (
     "--output",
     "-o",
     default=None,
-    help="Output directory (default: .brandly/{id}/export/)",
+    help="Output directory (default: production/{id}/export/)",
 )
 @click.pass_context
 def export(ctx: click.Context, project_id: str, output: str | None) -> None:
@@ -60,7 +60,8 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
         sys.exit(1)
 
     proj_dir = layout.resolve_project_dir(root, project_id)
-    out_dir = Path(output) if output else proj_dir / "export"
+    # v2 layout: exports are production outputs — production/<id>/export/.
+    out_dir = Path(output) if output else layout.export_dir(root, project_id)
     out_dir = out_dir.resolve()
     proj_dir_resolved = proj_dir.resolve()
 
@@ -71,7 +72,7 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
         console.print(
             f"[red]Export aborted: output dir ({out_dir}) is the same as or an "
             f"ancestor of the project dir ({proj_dir_resolved}).[/red]\n"
-            f"  Use a sibling or sub-folder, e.g. `--output {proj_dir_resolved.parent / 'export'}`"
+            f"  Use a sibling or sub-folder, e.g. `--output {layout.export_dir(root, project_id).resolve()}`"
         )
         sys.exit(1)
     except ValueError:
@@ -83,13 +84,15 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
     artifact_count = 0
     media_count = 0
     media_exts = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mp3", ".wav", ".mpga"}
-    # User-facing media + docs live in these top folders of the project dir
-    # (reference images are included via their images/ sub-folder).
-    for search_dir in [
-        proj_dir / "images",
-        proj_dir / "videos",
-        proj_dir / "audio",
-        proj_dir / "docs",
+    # User-facing media + docs live in the v2 media roots (issue #117):
+    # images under pre-production/<id>/, videos+audio under production/<id>/,
+    # docs under .brandly/<id>/docs/. The legacy .brandly/<id>/images|videos|
+    # audio trees are dead — nothing resolves them.
+    for top, search_dir in [
+        ("images", layout.resolve_media_root(root, project_id, "images")),
+        ("videos", layout.resolve_media_root(root, project_id, "videos")),
+        ("audio", layout.resolve_media_root(root, project_id, "audio")),
+        ("docs", proj_dir / "docs"),
     ]:
         if not search_dir.exists():
             continue
@@ -103,7 +106,7 @@ def export(ctx: click.Context, project_id: str, output: str | None) -> None:
             except ValueError:
                 pass
             ext = f.suffix.lower()
-            rel = f.relative_to(proj_dir)
+            rel = Path(top) / f.relative_to(search_dir)
             dest = out_dir / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -438,12 +441,13 @@ def export_platforms(project_id, platforms, output, fit, brand_lock, root):
     if not proj_dir.exists():
         console.print(f"[red]Project not found: {project_id}[/red]")
         sys.exit(1)
-    videos_root = proj_dir / "videos"
+    # v2 layout (issue #117): clips live under production/<id>/videos/.
+    videos_root = layout.resolve_media_root(Path(root or "."), project_id, "videos")
     video_file = next((videos_root.rglob("*.mp4")), None)
     if not video_file:
         console.print("[yellow]No video found in project[/yellow]")
         sys.exit(1)
-    out_dir = Path(output) if output else proj_dir / "export"
+    out_dir = Path(output) if output else layout.export_dir(Path(root or "."), project_id)
 
     # G7 PR 2: --brand resolves the project's kit and composites its logo.
     kit_logo: str | None = None
@@ -501,13 +505,14 @@ def thumbnail(project_id: str, count: int, style: str, root: str | None) -> None
     """Generate thumbnails from project video."""
     from brandly_cli.thumbnails import generate_thumbnails
 
-    proj_dir = layout.resolve_project_dir(Path(root or "."), project_id)
-    videos_root = proj_dir / "videos"
+    # v2 layout (issue #117): clips live under production/<id>/videos/.
+    videos_root = layout.resolve_media_root(Path(root or "."), project_id, "videos")
     video_file = next((videos_root.rglob("*.mp4")), None)
     if not video_file:
         console.print(f"[red]No video found in project: {project_id}[/red]")
         sys.exit(1)
-    output_dir = layout.media_dir(proj_dir, "images", "general")
+    # Thumbnails are images — v2 images root (pre-production/<id>/general/).
+    output_dir = layout.resolve_media_root(Path(root or "."), project_id, "images") / "general"
     result = asyncio.run(
         generate_thumbnails(
             video_file,

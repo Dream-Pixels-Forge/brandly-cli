@@ -5,7 +5,8 @@ creates under ``.brandly/``. All other modules (``project_manager``,
 ``cost_tracker``, ``cli``, ``utils``) import from here so the layout is
 defined in exactly one place and stays consistent.
 
-Layout — one folder per project, keyed by the readable project id (slug):
+Layout — v2 (issue #43/#117): project *state* under ``.brandly/<id>/``,
+assets split by pipeline stage in the project workspace:
 
 .. code-block:: text
 
@@ -16,21 +17,18 @@ Layout — one folder per project, keyed by the readable project id (slug):
                 bible/       production bibles
                 storyboard/  storyboards / shot lists
                 tmp/         transient working docs (gen records, fail docs)
-            images/
-                prop/  location/  character/  vehicle/  mecha/  animal/  plant/  general/
-                keyframe/ (start/end frame images used for video keyframe mode,
-                          e.g. start_frame_kitchen.png, end_frame_exterior_house.png)
-                (reference images live in the matching sub-folder —
-                 e.g. an object reference goes to images/prop/)
-            videos/
-                scenes/  insert/  transition/  general/
-            audio/
-                soundtrack/  sfx/  foley/  voiceover/  general/
-            3d-spatial/
-                cameras/  keyframes/  depthmaps/  general/
             project.json
             cost.json
-            export/
+    pre-production/
+        {project}/
+            images categories (prop/ location/ character/ vehicle/ mecha/
+            animal/ plant/ keyframe/ storyboard/ general/) — reference
+            images live in the matching sub-folder
+    production/
+        {project}/
+            videos/    scenes/  insert/  transition/  general/
+            audio/     soundtrack/  sfx/  foley/  voiceover/  general/
+            export/    stitched + per-platform exports
 """
 
 from __future__ import annotations
@@ -268,21 +266,31 @@ def build_sheet_filename(
     return f"{token}_{timestamp}{ext}"
 
 
+def export_dir(root: str | Path, project_id: str) -> Path:
+    """Return the v2 export dir: ``production/{project_id}/export/``.
+
+    Exports are production *outputs* — they live under the production root,
+    not under ``.brandly/<id>/`` (which is project state only: docs/,
+    project.json, cost.json).
+    """
+    return Path(root) / "production" / project_id / "export"
+
+
 def ensure_project_tree(root: str | Path, project_id: str) -> None:
     """Create the v2-aware project tree (issue #117).
 
-    Project *state* lives under ``.brandly/<id>/`` (``docs/`` categories +
-    ``export/``); media trees live in the v2 roots that
-    ``resolve_media_root`` actually reads: image categories under
-    ``pre-production/<id>/`` and video/audio categories under
-    ``production/<id>/videos|audio``. The legacy media tree under
+    Project *state* lives under ``.brandly/<id>/`` (``docs/`` categories);
+    media trees live in the v2 roots that ``resolve_media_root`` actually
+    reads: image categories under ``pre-production/<id>/``, video/audio
+    categories under ``production/<id>/videos|audio``, and platform exports
+    under ``production/<id>/export/``. The legacy media/export tree under
     ``.brandly/<id>/`` is deliberately NOT created - nothing resolves it.
     """
     root_path = Path(root)
     proj_dir = project_dir(root_path, project_id)
     for cat in DOC_CATEGORIES:
         (proj_dir / "docs" / cat).mkdir(parents=True, exist_ok=True)
-    (proj_dir / "export").mkdir(parents=True, exist_ok=True)
+    export_dir(root_path, project_id).mkdir(parents=True, exist_ok=True)
     images_root = resolve_media_root(root_path, project_id, "images")
     for cat in IMAGE_CATEGORIES:
         (images_root / cat).mkdir(parents=True, exist_ok=True)
@@ -295,7 +303,12 @@ def ensure_project_tree(root: str | Path, project_id: str) -> None:
 
 
 def ensure_project_dirs(proj_dir: str | Path) -> None:
-    """Create the full sub-folder tree for a project (idempotent)."""
+    """DEPRECATED (v2): legacy full-tree creator for ``.brandly/<id>/``.
+
+    No production code path calls this — the v2 tree comes from
+    :func:`ensure_project_tree`. Kept only for backward compatibility with
+    out-of-tree callers; do NOT use in new code.
+    """
     proj_dir = Path(proj_dir)
     for cat in DOC_CATEGORIES:
         (proj_dir / "docs" / cat).mkdir(parents=True, exist_ok=True)

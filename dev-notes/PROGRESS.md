@@ -750,4 +750,21 @@ defaults; shipped as four TDD PRs behind one release, per
 - Docs-ledger update only this round; no code or tests
 - NEXT: release path clear (v0.9.0 shipped); next increment TBD
 
+### Round 18/256 - auto-ref scoping + retry backoff (#191/#192) and v2 media/export layout (#117)
+- [x] #191/#192: per-shot auto-reference scoping + exponential retry backoff in
+  the produce runner (TDD: tests/test_auto_ref_scoping.py, 14 tests) -> PR #193
+- [x] #117 (cont.): move media + export under the v2 pre-production/production
+  roots (layout.py + generation/production/publish/post + web export route; new
+  tests/test_v2_media_layout.py) -> PR #194
+- Decision: the #117 layout work first landed on PR #193 by accident. Split it
+  onto its own branch/PR (fix/issue-117-v2-media-export / #194) so #193 stays
+  focused on #191/#192. Verified the layout commit cherry-picks cleanly onto
+  current main and is independent of the auto-refs commit.
+- Note: the older fix/issue-117-v2-tree branch's init/plate-discovery commit is
+  already in main (0-line diff on layout.py + test_issue_117.py) — that branch
+  is superseded and needs no separate PR.
+- Gates on the #117 branch (#194): full suite 1179 passed, ruff clean.
+- Gates on #193: test_auto_ref_scoping.py 14 passed; PR mergeable.
+- NEXT: PR #193 (auto-refs) + PR #194 (#117 layout) pending review/CI, then merge.
+
 

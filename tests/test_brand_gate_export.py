@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from brandly_cli import brand_kit
+from brandly_cli import brand_kit, layout
 from brandly_cli.brand_kit import BrandKit, OverlaySpec
 from brandly_cli.cli import cli
 from brandly_cli.cmd import gate as gate_cmd
@@ -130,9 +130,12 @@ class TestExportBrandOverlay:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         proj = tmp_path / ".brandly" / "p"
-        (proj / "videos").mkdir(parents=True)
-        (proj / "videos" / "scene.mp4").write_bytes(b"\x00")
+        proj.mkdir(parents=True)
         (proj / "project.json").write_text('{"id": "p"}')
+        # v2 layout (issue #117): clips live under production/<id>/videos/.
+        videos_root = layout.resolve_media_root(tmp_path, "p", "videos")
+        videos_root.mkdir(parents=True)
+        (videos_root / "scene.mp4").write_bytes(b"\x00")
         result = CliRunner().invoke(
             cli,
             [

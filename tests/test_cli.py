@@ -299,17 +299,19 @@ def test_export_with_artifacts(runner: CliRunner, project_dir: Path) -> None:
             }
         )
     )
-    # Create a fake image artifact
-    img_dir = project_dir / pid / "images" / "general"
+    # Create a fake image artifact in the v2 layout (pre-production/<id>/)
+    img_dir = project_dir.parent / "pre-production" / pid / "general"
     img_dir.mkdir(parents=True, exist_ok=True)
     img_file = img_dir / "test.png"
     img_file.write_bytes(b"\x89PNG\r\n\x1a\nfake")
     result = runner.invoke(cli, ["export", pid])
     assert result.exit_code == 0
     assert "Exported" in result.output
-    # Manifest should exist in the export directory
-    export_dir = project_dir / pid / "export"
+    # Manifest should exist in the v2 export dir (production/<id>/export/)
+    export_dir = project_dir.parent / "production" / pid / "export"
     assert (export_dir / "export-manifest.json").exists()
+    # The legacy .brandly/<id>/export/ tree is never created
+    assert not (project_dir / pid / "export").exists()
 
 
 def test_run_approve_flow(runner: CliRunner, project_dir: Path) -> None:

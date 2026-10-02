@@ -2677,7 +2677,7 @@ class Director:
                         )
                     }
                 source = found
-            out_dir = layout.resolve_project_dir(root_path, proj.id) / "export"
+            out_dir = layout.export_dir(root_path, proj.id)
             platforms = ("tiktok", "youtube_standard")
             outputs: list[dict[str, Any]] = []
             for platform in platforms:
@@ -2865,7 +2865,7 @@ def scenes_status(ctx: click.Context, project_id: str, as_json: bool) -> None:
     show_default=True,
     help="Color grade applied at assembly.",
 )
-@click.option("-o", "--output", default=None, help="Output path (default: .brandly/<id>/export/final.mp4).")
+@click.option("-o", "--output", default=None, help="Output path (default: production/<id>/export/final.mp4).")
 @click.pass_context
 def assemble(
     ctx: click.Context,
@@ -2917,7 +2917,7 @@ def assemble(
             console.print(f"  --only {sid}")
         sys.exit(1)
 
-    out = Path(output) if output else layout.project_dir(root, project_id) / "export" / "final.mp4"
+    out = Path(output) if output else layout.export_dir(root, project_id) / "final.mp4"
     result = asyncio.run(
         assemble_mod.assemble_project(
             plan,

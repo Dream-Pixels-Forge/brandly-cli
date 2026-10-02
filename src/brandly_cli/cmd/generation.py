@@ -255,7 +255,10 @@ def reference(
 
         root = _get_root(ctx)
         category = layout.image_category_for_subject(subject_type)
-        target_dir = layout.media_dir(layout.project_dir(root, project_id), "images", category)
+        # v2 layout (issue #117): plates live under pre-production/<id>/
+        # (the images root resolve_media_root actually reads), NOT under
+        # .brandly/<id>/images/ — that legacy tree is dead.
+        target_dir = layout.resolve_media_root(root, project_id, "images") / category
         target_dir.mkdir(parents=True, exist_ok=True)
         stem = sanitize_filename(src.stem) or "plate"
         dest = target_dir / f"reference_{subject_type}_{stem}{src.suffix or '.png'}"

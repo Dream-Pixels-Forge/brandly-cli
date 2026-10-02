@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -1286,6 +1287,7 @@ def video(
     llm_enhance: bool,
     llm_model: str | None,
     expected_characters: tuple[str, ...] | None = None,
+    auto_ref_filter: Callable[[list[str]], list[str]] | None = None,
 ) -> None:
     """Generate an AI video via Agnes AI.
 
@@ -1339,6 +1341,11 @@ def video(
                 f"[yellow]⚠ No images found in category '{auto_ref_category}' — "
                 "auto references are empty for this run.[/yellow]"
             )
+    # Per-shot auto-ref scoping: filter the auto-detected plates down to the
+    # ones this shot is concerned with (character anchor presence, prompt
+    # relevance) instead of merging the whole images tree into every shot.
+    if auto_ref_filter is not None:
+        auto_refs = auto_ref_filter(auto_refs)
 
     # Read the project's primary_reference metadata (set by `brandly reference`)
     reference: dict[str, Any] | None = _load_project_reference(project_id, root)
@@ -2017,6 +2024,7 @@ def _generate_shot(
     ctx: click.Context,
     root: Path,
     auto_refs_enabled: bool = True,
+    auto_ref_filter: Callable[[list[str]], list[str]] | None = None,
     allow_referenceless: bool = False,
     max_wait: int = 600,
     scene: int | None = None,
@@ -2047,6 +2055,7 @@ def _generate_shot(
             max_wait=max_wait,
             require_reference=False,
             auto_refs_enabled=auto_refs_enabled,
+            auto_ref_filter=auto_ref_filter,
             allow_referenceless=allow_referenceless,
             scene=scene,
             shot_number=shot_number,
@@ -2074,6 +2083,7 @@ def _run_produce_runner(
     max_shots: int,
     *,
     retries: int = 0,
+    backoff_factor: float = 1.0,
     split_long_shots: bool = False,
     no_plan: bool = False,
     continue_on_fail: bool = False,
@@ -2195,12 +2205,23 @@ def _run_produce_runner(
     gate_scores: dict[str, int] = {}
 
     def generate_one(shot: shot_runner.Shot) -> tuple[bool, int, str]:
+        # Per-shot auto-ref scoping: a shot with explicit refs NEVER gets
+        # auto-injected refs (the shot list is the source of truth); a
+        # referenceless shot gets auto-refs filtered to what the shot is
+        # concerned with instead of the whole project images tree.
+        auto_ref_filter = None
+        if not no_auto_refs and not shot.refs:
+            def auto_ref_filter(plates: list[str]) -> list[str]:
+                return shot_runner.scope_auto_refs(
+                    plates, prompt=shot.prompt, character=shot.character
+                )
         ok = _generate_shot(
             project_id,
             {**shot.to_video_kwargs(), "character": shot.character},
             ctx=ctx,
             root=root,
-            auto_refs_enabled=not no_auto_refs,
+            auto_refs_enabled=not no_auto_refs and not shot.refs,
+            auto_ref_filter=auto_ref_filter,
             allow_referenceless=allow_referenceless,
             max_wait=max_wait,
             # Names the download Scene-XX-Shot-X-Y.mp4 at save time.
@@ -2227,6 +2248,7 @@ def _run_produce_runner(
         max_shots=max_shots,
         say=lambda msg: console.print(f"[dim]{msg}[/dim]"),
         retries=retries,
+        retry_backoff_factor=backoff_factor,
         on_shot_done=_on_shot_done,
         continue_on_fail=continue_on_fail,
         park_after_consecutive_failures=park_after,

@@ -631,6 +631,20 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
     ),
 )
 @click.option(
+    "--backoff-factor",
+    "backoff_factor",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help=(
+        "Exponential backoff multiplier for retries (issues #191/#192). Each "
+        "retry waits base-backoff * factor^(attempt-1) — e.g. --interval 60 "
+        "--backoff-factor 2 waits 60s, 120s, 240s… Meant for degraded "
+        "providers / video_queue_full 503s that clear after minutes. 1.0 "
+        "keeps the flat backoff."
+    ),
+)
+@click.option(
     "--split-long-shots",
     is_flag=True,
     default=False,
@@ -727,6 +741,7 @@ def produce(
     only: tuple[str, ...],
     max_shots: int,
     retries: int,
+    backoff_factor: float,
     split_long_shots: bool,
     continue_on_fail: bool,
     park_after: int,
@@ -834,6 +849,7 @@ def produce(
             only,
             max_shots,
             retries=retries,
+            backoff_factor=backoff_factor,
             split_long_shots=split_long_shots,
             no_plan=no_plan,
             continue_on_fail=continue_on_fail,

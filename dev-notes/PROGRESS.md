@@ -6,8 +6,8 @@
 - Version: 0.9.0 (release cut 2026-10-02; prior 0.8.0 cut 2026-09-29; #189)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
-- Test Count: 1215 collected (1214 passed, 1 known env failure: import-linter LiveError)
-- Lint: ruff clean; import-linter gate red in this dev box (rich `LiveError`, pre-existing — see Round 20)
+- Test Count: 1215 passed (0 xfail/xpass)
+- Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
 - [x] Phase 0: Bootstrap (AUDIT.md + GOAL.md)
@@ -793,14 +793,17 @@ defaults; shipped as four TDD PRs behind one release, per
   single extension, and a `.jpg` artifact keeps its `.jpg` (previously `.png.jpg`).
   TDD: `tests/test_reference.py::test_reference_plate_has_single_extension`
   (RED observed on `...png.png`, then GREEN after the fix).
-- [x] Gates: `tests/test_reference.py` 20/20; full suite 1215 collected (1214 passed);
+- [x] Gates: `tests/test_reference.py` 20/20; full suite 1215 passed / 0 failed;
   ruff clean (src/ + tests/).
-- NOTE (pre-existing, environmental, NOT this round): `tests/test_architecture_contracts.py::test_lint_imports_exits_zero_on_repo_root`
-  fails in this dev box with `rich.errors.LiveError: Only one live display may be
-  active at once`. import-linter's `_build_report` nests a `rich.Progress` and a
-  `rich.Live` on the same console, and the collision is raised *before* any
-  contract is evaluated. Verified unrelated via `git stash` (still fails on the
-  committed 652ee49). Not caused by this fix; import-linter/rich tooling issue.
-- Status: local; pending push/PR sign-off (rides the PR #193 / #195 branch).
+- [x] Also fixed the red `tests/test_architecture_contracts.py::test_lint_imports_exits_zero_on_repo_root`:
+  import-linter 2.15's default display path nests a `rich.Progress` over a `rich.Live`
+  on the same console; rich >= 13.9 raises `LiveError: Only one live display may be
+  active at once` *before* any contract is evaluated, forcing exit 1 even when all
+  contracts are kept. Confirmed in isolation with a minimal repro — the collision only
+  fires when the Progress is enabled; import-linter's `verbose=True` path disables it,
+  so the check runs cleanly and reports "1 kept, 0 broken" -> exit 0. The gate now calls
+  `lint_imports(..., verbose=True)` (display-only change; contract evaluation and its
+  exit-code semantics are unchanged).
+- Status: board clean (all gates green); pushing + opening PR for issue #195.
 
 

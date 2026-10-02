@@ -48,9 +48,18 @@ def test_lint_imports_exits_zero_on_repo_root(
     """lint_imports must exist, pass, and exit 0 on the repo root.
 
     no_cache=True keeps the test hermetic (no .import_linter_cache writes).
+    verbose=True routes import-linter through its line-based progress output
+    instead of the animated rich Progress+Live display. That display path is
+    broken on rich >= 13.9 with import-linter 2.x ("Only one live display
+    may be active at once" -> forced exit 1 even when all contracts are
+    kept), so the flag keeps the gate deterministic without changing what is
+    checked: the contracts are still fully evaluated and "1 kept, 0 broken"
+    is what exit 0 proves.
     """
     monkeypatch.chdir(REPO_ROOT)
-    exit_status = lint_imports(config_filename=".importlinter", no_cache=True)
+    exit_status = lint_imports(
+        config_filename=".importlinter", no_cache=True, verbose=True
+    )
     assert exit_status == 0, (
         f"lint_imports returned {exit_status}: contracts broken or config invalid"
     )

@@ -315,6 +315,61 @@ def test_reference_generates_image_and_saves_metadata(
     assert all(f.stat().st_size > 0 for f in ref_files)
 
 
+def test_reference_plate_has_single_extension(runner: CliRunner, project_dir: Path) -> None:
+    """Regression (double-extension bug): a reference plate must carry ONE extension.
+
+    ``layout.build_sheet_filename`` already embeds the file extension in the name it
+    returns, so the caller must not append a second one. The historical bug produced
+    plates like ``char_Hunter_<ts>.png.png`` (a doubled ``.png`` postfix).
+    """
+    pid = generate_project_id()
+    _write_project(project_dir, pid, name="Single Extension Reference Test")
+
+    fake_result = {"url": "https://example.invalid/reference.png", "id": "reference-task-ext"}
+
+    # _save_artifact tries real network — mock it to return a deterministic path
+    def fake_save(url, project_id, kind, root=None, prompt_hint="", category=None):  # noqa: ANN001
+        target_dir = root / ".brandly" / project_id / "images" / (category or "general")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"images_reference-{prompt_hint.replace(' ', '_')[:30]}.png"
+        target.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        return target
+
+    with (
+        patch("brandly_cli.cmd.generation.generate_image", AsyncMock(return_value=fake_result)),
+        patch("brandly_cli.cmd.generation._save_artifact", side_effect=fake_save),
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "reference",
+                pid,
+                "--subject-type",
+                "character",
+                "--subject",
+                "Hunter",
+                "--style-preset",
+                "cinematic",
+                "--size",
+                "2K",
+                "--ratio",
+                "16:9",
+            ],
+        )
+
+    assert result.exit_code == 0, f"reference failed: {result.output}"
+
+    proj_data = json.loads((project_dir / pid / "project.json").read_text())
+    plate = Path(proj_data["primary_reference"]["image_path"])
+    assert plate.exists(), f"reference plate missing: {plate}"
+    # The plate must carry exactly one extension — never a doubled ".png.png".
+    assert len(plate.suffixes) == 1, f"doubled reference plate extension: {plate.name!r}"
+    # No doubled-extension file may linger in the character category folder.
+    char_dir = project_dir / pid / "images" / "character"
+    doubled = [p.name for p in char_dir.glob("*") if p.is_file() and len(p.suffixes) > 1]
+    assert not doubled, f"doubled-extension plates left behind: {doubled}"
+
+
 def test_reference_image_api_failure_writes_fail_doc(
     runner: CliRunner, project_dir: Path
 ) -> None:

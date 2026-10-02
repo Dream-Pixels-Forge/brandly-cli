@@ -16,14 +16,16 @@ assets split by pipeline stage in the project workspace:
                 plan/        pre-generation plans
                 bible/       production bibles
                 storyboard/  storyboards / shot lists
+                screenplay/  screenplays + beat sheets
                 tmp/         transient working docs (gen records, fail docs)
             project.json
             cost.json
     pre-production/
         {project}/
             images categories (prop/ location/ character/ vehicle/ mecha/
-            animal/ plant/ keyframe/ storyboard/ general/) — reference
-            images live in the matching sub-folder
+            animal/ plant/ keyframe/ storyboard/ wardrobe/ general/) —
+            reference images live in the matching sub-folder; high-quality
+            originals are archived under hq/<category>/
     production/
         {project}/
             videos/    scenes/  insert/  transition/  general/
@@ -40,7 +42,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 #: ``docs/`` sub-folders. All documents live here, never duplicated.
-DOC_CATEGORIES: tuple[str, ...] = ("plan", "bible", "storyboard", "tmp")
+DOC_CATEGORIES: tuple[str, ...] = ("plan", "bible", "storyboard", "screenplay", "tmp")
 
 #: ``images/`` sub-folders, grouped by subject category.
 IMAGE_CATEGORIES: tuple[str, ...] = (
@@ -53,6 +55,7 @@ IMAGE_CATEGORIES: tuple[str, ...] = (
     "plant",
     "keyframe",
     "storyboard",
+    "wardrobe",
     "general",
 )
 
@@ -87,12 +90,18 @@ SUBJECT_TO_IMAGE_CATEGORY: dict[str, str] = {
     "plant": "plant",
     "mecha": "mecha",
     "keyframe": "keyframe",
+    "wardrobe": "wardrobe",
 }
 
 #: Every category across all media folders, for eager creation.
 ALL_MEDIA_CATEGORIES: tuple[str, ...] = (
     IMAGE_CATEGORIES + VIDEO_CATEGORIES + AUDIO_CATEGORIES
 )
+
+#: Per-project folder that archives high-quality reference masters. The small,
+#: fast working JPGs stay in the image category folders; ``hq`` is excluded
+#: from :func:`discover_project_plates` so masters are never re-injected.
+HQ_DIRNAME = "hq"
 
 
 def _check(category: str, allowed: tuple[str, ...], default: str = "general") -> str:
@@ -189,6 +198,18 @@ def v2_media_root(root: str | Path, project_id: str, top: str) -> Path:
 def resolve_media_root(root: str | Path, project_id: str, top: str) -> Path:
     """Return the v2 media root for a project."""
     return v2_media_root(root, project_id, top)
+
+
+def hq_dir(root: str | Path, project_id: str) -> Path:
+    """Return the v2 HQ master dir: ``pre-production/{project_id}/hq/``.
+
+    High-quality reference originals are archived here (one sub-folder per
+    image category) while the small, fast working JPGs stay in the category
+    folders. The ``hq`` folder is excluded from
+    :func:`discover_project_plates` so masters are never re-injected as live
+    references.
+    """
+    return resolve_media_root(root, project_id, "images") / HQ_DIRNAME
 
 
 def image_category_for_subject(subject_type: str) -> str:
@@ -340,14 +361,21 @@ def discover_project_plates(root: str | Path, project_id: str) -> list[Path]:
     """
     root_path = Path(root)
     found: list[Path] = []
-    images_root = resolve_media_root(root_path, project_id, "images")
-    if images_root.is_dir():
+    # v2 media root first, then the legacy .brandly/<id>/images/ tree. The
+    # top-level hq/ master folder under each root is skipped so high-quality
+    # originals are never re-injected as live references.
+    for base in (
+        resolve_media_root(root_path, project_id, "images"),
+        project_dir(root_path, project_id) / "images",
+    ):
+        if not base.is_dir():
+            continue
         for ext in _IMAGE_EXTS:
-            found.extend(images_root.rglob(ext))
-    legacy_root = project_dir(root_path, project_id) / "images"
-    if legacy_root.is_dir():
-        for ext in _IMAGE_EXTS:
-            found.extend(legacy_root.rglob(ext))
+            for p in base.rglob(ext):
+                rel = p.relative_to(base)
+                if rel.parts and rel.parts[0] == HQ_DIRNAME:
+                    continue
+                found.append(p)
     return sorted({p.resolve() for p in found})
 
 

@@ -6,7 +6,7 @@
 - Version: 0.9.0 (release cut 2026-10-02; prior 0.8.0 cut 2026-09-29; #189)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
-- Test Count: 1124 passed (0 xfail/xpass)
+- Test Count: 1215 passed (0 xfail/xpass)
 - Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
@@ -766,5 +766,44 @@ defaults; shipped as four TDD PRs behind one release, per
 - Gates on the #117 branch (#194): full suite 1179 passed, ruff clean.
 - Gates on #193: test_auto_ref_scoping.py 14 passed; PR mergeable.
 - NEXT: PR #193 (auto-refs) + PR #194 (#117 layout) pending review/CI, then merge.
+
+### Round 19/256 - shot-side reference enforcement + shot-list reference pre-flight (#195)
+- [x] Honor `wardrobe`/`hq/` layout on the shot side, cap each shot's references
+  to the model's 5-image limit, and never hard-fail `brandly video` on an
+  over-limit payload (`shot_runner.py` + `cmd/generation.py` +
+  `tests/test_shot_references.py`, commit 7b48639).
+- [x] `brandly produce --check` pre-flight: new `shot_runner.check_shot_references`
+  reports EVERY unresolvable shot reference (per shot/act/scene) in one pass
+  instead of aborting on the first miss; non-check `produce` fails fast with the
+  same aggregate (fixes #195). TDD: `tests/test_shot_references_check.py` (10 tests).
+- [x] Refactored `flatten_shots` to reuse the shared `_entry_is_path` helper so the
+  pre-flight check and the runner can never disagree about path-vs-stem.
+- Opened #196 (produce auto-ref scoping — cross-ref'd to in-flight PR #193 /
+  #191/#192) and #197 (`resolve_plate` vs `discover_project_plates` asymmetry).
+- Gates: full suite 1214 passed; ruff clean (src/ + tests/).
+- Status: local commit on feature/hq-references-wardrobe-screenplay; push/PR
+  pending review sign-off.
+
+### Round 20/256 - reference plate double-extension fix (e.g. `Hunter.png.png`)
+- [x] Root cause: the `brandly reference` command renamed the saved plate to
+  `layout.build_sheet_filename(...)`, which already embeds the file extension,
+  then appended `ext` a second time → `char_Hunter_<ts>.png.png` (doubled `.png`).
+- [x] Fix (`cmd/generation.py`): pass the real (`saved.suffix`) extension into
+  `build_sheet_filename` and stop appending a second one. The plate now carries a
+  single extension, and a `.jpg` artifact keeps its `.jpg` (previously `.png.jpg`).
+  TDD: `tests/test_reference.py::test_reference_plate_has_single_extension`
+  (RED observed on `...png.png`, then GREEN after the fix).
+- [x] Gates: `tests/test_reference.py` 20/20; full suite 1215 passed / 0 failed;
+  ruff clean (src/ + tests/).
+- [x] Also fixed the red `tests/test_architecture_contracts.py::test_lint_imports_exits_zero_on_repo_root`:
+  import-linter 2.15's default display path nests a `rich.Progress` over a `rich.Live`
+  on the same console; rich >= 13.9 raises `LiveError: Only one live display may be
+  active at once` *before* any contract is evaluated, forcing exit 1 even when all
+  contracts are kept. Confirmed in isolation with a minimal repro — the collision only
+  fires when the Progress is enabled; import-linter's `verbose=True` path disables it,
+  so the check runs cleanly and reports "1 kept, 0 broken" -> exit 0. The gate now calls
+  `lint_imports(..., verbose=True)` (display-only change; contract evaluation and its
+  exit-code semantics are unchanged).
+- Status: board clean (all gates green); pushing + opening PR for issue #195.
 
 

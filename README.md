@@ -112,6 +112,23 @@ this section is checked against (CI guard: `tests/test_capabilities.py`).
 
 ---
 
+## Demos
+
+**Brandly Studio** — the web timeline editor for sequencing, inspecting and
+dispatching generated clips:
+
+![Brandly Studio — timeline editor](assets/studio-preview.png)
+
+> Live capture of the Studio web UI (1440×900, populated demo project). Regenerate
+> it any time the frontend changes with `python scripts/make_studio_preview.py`.
+
+**Produced films** (end-to-end Agnes + MiniMax pipeline runs):
+
+- [Full-pipeline producer run](https://youtu.be/F1tr08UeHLs)
+- [Commercial cutdown](https://youtu.be/7lNt1Y8tAzo)
+
+---
+
 ## Installation
 
 ```bash

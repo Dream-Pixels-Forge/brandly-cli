@@ -1,9 +1,9 @@
 # DESIGN — Brandly Studio Shell (Paper-sourced, FROZEN)
 
 > **Source of truth:** Paper file `01M3VWT0PHVWKPN9JSECCES8T4`, page `p-3-0`
-> (“Brandly Studio — Web UI”), artboards `01 · Preview Player` (`8R-0`),
+> (“Brandly Studio — Web UI”), artboards `01 · Timeline Sequencer` (`8R-0`),
 > `02 · Shot List` (`8S-0`), `03 · Render Queue` (`8T-0`),
-> `04 · Production Monitor` (`8U-0`).
+> `04 · Production Monitor` (`8U-0`), `07 · Preview Player` (`2NA-0`).
 > **Status:** FROZEN. Implement exactly this; do not improvise layout.
 
 ## 1. Scope
@@ -12,10 +12,29 @@
 - App shell: **Toolbar** (new) + **Status Bar** (new) + sidebar restructure.
 - Artboards 01–04 structural/UX deltas (below).
 
-**OUT of scope — no design exists, do NOT build**
-- Screen 05 (Review Queue) and 06 (Agnes AI Synthesizer): the Paper
-  artboards are **empty (0 children)**. Their design pass is pending.
+**Out of scope — do NOT build**
 - New API endpoints, new providers, or new data models.
+
+**Screen 05 / 06 (Review Queue / Agnes AI Synthesizer) — now DESIGNED**
+- Paper artboards `05 · Review Queue` (`1T8-0`) and `06 · Agnes AI
+  Synthesizer` (`1T9-0`) are populated with the shared shell; screen
+  deltas are in §7. The SPA code contract tests for these two panels are
+  still pending (no JS test runner in CI; see issue #61) — this pass is
+  design-only; code is a separate TDD increment.
+
+**Screen 01 ↔ 07 split — now DESIGNED (Round 22)**
+- The original `01 · Preview Player` is reframed as `01 · Timeline
+  Sequencer` (`8R-0`): the timeline-heavy editing surface (transport
+  overlay + 300px Clip Inspector rail + 3-track V2/V1/A1 timeline). Its
+  artboard name, toolbar breadcrumb, and active sidebar nav row all moved
+  from “Preview Player” to “Timeline Sequencer”.
+- A new `07 · Preview Player` (`2NA-0`) is a dedicated, **clean** playback
+  surface: a large centered 16:9 stage reusing the exact transport
+  overlay, plus a slim preview control strip — and **no timeline, no
+  Clip Inspector**. The shared sidebar already carries both “Preview
+  Player” and “Timeline Sequencer” nav items, so navigation stays
+  consistent. Design-only this pass; the code contract is a separate
+  increment (issue #61).
 
 ## 2. Shell metrics (1440×900 reference)
 
@@ -84,10 +103,13 @@ an em-dash otherwise. Never fabricate telemetry as if it were live.
 
 | # | Screen | Delta |
 |---|---|---|
-| 01 | Preview Player | transport becomes an **overlay** on the frame; **ClipInspector rail (300px)**; timeline **206px** with V2/V1/A1 |
+| 01 | Timeline Sequencer | sequence-editor view: transport **overlay** on the frame + **300px Clip Inspector rail** + **206px 3-track timeline** (V2/V1/A1) — the timeline-heavy editing surface |
 | 02 | Shot List | Shot Inspector **tabs** (Overview/Prompt/Gate); row **checkboxes** + **Selection Bar** |
 | 03 | Render Queue | **PipelineStepper** (Plan locked → Rendering → Encode → Publish); settings column fixed **440px** |
 | 04 | Monitor | **PhaseStepper** (P R I D E S) |
+| 05 | Review Queue | **status-filter** (All/Awaiting/Passed/Flagged) + 8-item list (thumbnail · provider line · G1–G3 gate bar · cost · status pill · approve/reject) + **300px review-detail rail** (prompt, gate checklist, approve/reject) + summary footer |
+| 06 | Agnes AI | **generation console** (prompt box, style-preset chips, aspect/fit/seed params, credit-budget bar, Synthesize/Queue actions) + **2×2 results grid** (one selected variant) + run-summary footer |
+| 07 | Preview Player | dedicated clean playback: **large centered 16:9 stage** with the transport **overlay** (play/pause · prev/next · scrubber · time · volume · fullscreen) + a **slim preview control strip** (shot name + PREVIEW chip + codec/fps · Loop toggle · “Open in Timeline” action); **no timeline, no Clip Inspector** |
 
 ## 8. Verification gates
 

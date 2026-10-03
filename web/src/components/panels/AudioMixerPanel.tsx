@@ -1,10 +1,8 @@
-import { useState, useEffect } from 'react';
-import { useAppStore } from '../../store';
-import type { Clip } from '../../types';
+import { useState } from 'react';
 
 const PERSONAS = ['Marcus', 'Elena', 'Kaito'] as const;
 
-function VUMeter({ levelLeft, levelRight, peak }: { levelLeft: number; levelRight: number; peak: number }) {
+function VUMeter({ levelLeft, levelRight, peak }: { levelLeft: number; levelRight: number; peak: number | null }) {
   const barH = 80;
   const segments = 20;
 
@@ -49,8 +47,8 @@ function VUMeter({ levelLeft, levelRight, peak }: { levelLeft: number; levelRigh
       </div>
       {/* Peak readout */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 4, minWidth: 40 }}>
-        <span style={{ fontSize: 11, fontFamily: 'var(--md-font-code-inline)', color: peak > 0 ? '#f87171' : 'var(--md-primary)', fontWeight: 700 }}>
-          {peak.toFixed(1)} dB
+        <span style={{ fontSize: 11, fontFamily: 'var(--md-font-code-inline)', color: peak !== null && peak > 0 ? '#f87171' : 'var(--md-primary)', fontWeight: 700 }}>
+          {peak !== null ? `${peak.toFixed(1)} dB` : '—'}
         </span>
         <span style={{ fontSize: 8, color: '#556', marginTop: 2 }}>PEAK</span>
       </div>
@@ -59,24 +57,13 @@ function VUMeter({ levelLeft, levelRight, peak }: { levelLeft: number; levelRigh
 }
 
 export default function AudioMixerPanel() {
-  const { selectedClipId, updateClip, timeline } = useAppStore();
-  const clip = timeline?.clips.find((c: Clip) => c.id === selectedClipId) ?? null;
   const [persona, setPersona] = useState<'Marcus' | 'Elena' | 'Kaito'>(PERSONAS[0]);
   const [studioClarity, setStudioClarity] = useState(false);
-  const [vuL, setVuL] = useState(0.62);
-  const [vuR, setVuR] = useState(0.58);
-  const [peak, setPeak] = useState(-3.2);
-
-  // Simulate VU meter idle movement
-  useEffect(() => {
-    const iv = setInterval(() => {
-      setVuL((v) => Math.max(0.2, Math.min(0.95, v + (Math.random() - 0.5) * 0.15)));
-      setVuR((v) => Math.max(0.2, Math.min(0.95, v + (Math.random() - 0.5) * 0.12)));
-      setPeak((v) => Math.max(-6, Math.min(0, v + (Math.random() - 0.5) * 0.4)));
-    }, 120);
-    return () => clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Data honesty: no live audio metering backend yet, so the VU meter shows an
+  // honest idle state (flat, no peak) instead of simulated random movement.
+  const vuL = 0;
+  const vuR = 0;
+  const peak: number | null = null;
 
   return (
     <div style={{
@@ -109,7 +96,7 @@ export default function AudioMixerPanel() {
         <ControlRow label="Voice Synthesis Persona">
           <select
             value={persona}
-            onChange={(e) => { setPersona(e.target.value as 'Marcus' | 'Elena' | 'Kaito'); if (clip) updateClip(clip.id, { prompt: clip.prompt }); }}
+            onChange={(e) => setPersona(e.target.value as 'Marcus' | 'Elena' | 'Kaito')}
             style={{ width: '100%' }}
           >
             {PERSONAS.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -149,6 +136,7 @@ export default function AudioMixerPanel() {
         <div style={{ marginBottom: 8 }}>
           <FieldLabel>Master Stereo VU</FieldLabel>
           <VUMeter levelLeft={vuL} levelRight={vuR} peak={peak} />
+          <div style={{ marginTop: 4, fontSize: 9, color: '#556', fontFamily: 'var(--md-font-code-inline)' }}>No live metering — idle</div>
         </div>
       </div>
 
@@ -164,15 +152,18 @@ export default function AudioMixerPanel() {
       }}>
         <span style={{ fontSize: 9, color: '#556', fontFamily: 'var(--md-font-code-inline)' }}>48,000 Hz / 24-bit</span>
         <button
-          onClick={() => { if (clip) updateClip(clip.id, { prompt: clip.prompt }); }}
+          type="button"
+          disabled
+          title="No audio audition endpoint yet"
           style={{
-            background: 'var(--md-tertiary)',
-            color: 'var(--md-on-tertiary)',
-            border: 'none',
+            background: 'var(--md-surface-container-highest)',
+            color: 'var(--md-on-surface-variant)',
+            border: '1px solid var(--md-outline)',
             borderRadius: 4,
             fontSize: 10,
             fontWeight: 600,
-            cursor: 'pointer',
+            cursor: 'not-allowed',
+            opacity: 0.6,
             padding: '5px 10px',
             fontFamily: 'var(--md-font-code-inline)',
           }}

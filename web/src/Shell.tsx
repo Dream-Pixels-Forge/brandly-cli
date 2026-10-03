@@ -16,6 +16,7 @@ import AudioMixerPanel from './components/panels/AudioMixerPanel';
 import RenderDispatchPanel from './components/panels/RenderDispatchPanel';
 import ProductionMonitorPanel from './components/panels/ProductionMonitorPanel';
 import ReviewQueuePanel from './components/panels/ReviewQueuePanel';
+import AgnesPanel from './components/panels/AgnesPanel';
 import './Shell.css';
 
 type PanelComponent = () => ReactNode;
@@ -44,7 +45,7 @@ const PANELS: Record<PanelKind, PanelComponent> = {
   render: () => <RenderDispatchPanel />,
   monitor: () => <ProductionMonitorPanel />,
   review: () => <ReviewQueuePanel />,
-  agnes_ai: () => <ShotListPanel />,
+  agnes_ai: () => <AgnesPanel />,
 };
 
 export default function Shell() {

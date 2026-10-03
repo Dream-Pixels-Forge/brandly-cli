@@ -6,7 +6,7 @@
 - Version: 0.9.0 (release cut 2026-10-02; prior 0.8.0 cut 2026-09-29; #189)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
-- Test Count: 1215 passed (0 xfail/xpass)
+- Test Count: 1244 passed (0 xfail/xpass)
 - Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
@@ -805,5 +805,102 @@ defaults; shipped as four TDD PRs behind one release, per
   `lint_imports(..., verbose=True)` (display-only change; contract evaluation and its
   exit-code semantics are unchanged).
 - Status: board clean (all gates green); pushing + opening PR for issue #195.
+
+### Round 21/256 - Design: populated the two empty Studio screens (05 Review Queue, 06 Agnes AI Synthesizer)
+- [x] Paper file `01M3VWT0PHVWKPN9JSECCES8T4` (page `p-3-0`): built out
+  artboards `05 · Review Queue` (`1T8-0`) and `06 · Agnes AI Synthesizer`
+  (`1T9-0`), the only two frames that were empty (0 children).
+- [x] Reused the frozen shell (Header 52 / Toolbar 40 / Body[Sidebar 248 +
+  Main] / Status Bar 28) by cloning artboard-01's shell nodes verbatim —
+  exact MD3/`--studio-*` tokens, Space Mono + Hanken Grotesk, SVG icons.
+  No new token namespace (spec §3). Per-screen deltas: toolbar breadcrumb
+  label + active sidebar nav row + Main content only.
+- [x] **05 delta:** status-filter segmented control (All/Awaiting/Passed/
+  Flagged) + 8-row item list (thumbnail, provider line, G1–G3 gate bar,
+  cost, status pill, approve/reject) + 300px review-detail rail (prompt,
+  gate checklist, approve/reject) + summary footer.
+- [x] **06 delta:** Agnes generation console (prompt box, style-preset
+  chips, aspect/fit/seed params, credit-budget bar, Synthesize/Queue
+  actions) paired with a 2×2 results grid (one selected variant) +
+  run-summary footer.
+- [x] Verified each screen with full-frame + region screenshots (spacing,
+  hierarchy, contrast, alignment, artboard fit).
+- [ ] Code: SPA contract tests (`tests/test_web_*.py`, RED first) for the
+  two new panels are the next increment — OUT of scope for this design
+  pass (no JS test runner in CI; see issue #61). 05/06 remain
+  design-only until that contract exists.
+
+### Round 22/256 - Design: split the Preview Player into a Timeline Sequencer (01) + a clean Preview Player (07)
+- [x] Reframed the original `01 · Preview Player` as `01 · Timeline
+  Sequencer` (`8R-0`): the screen keeps its timeline-heavy editing
+  surface (transport overlay + 300px Clip Inspector rail + 3-track
+  V2/V1/A1 timeline). The artboard name, the toolbar breadcrumb, and the
+  active sidebar nav row all moved from “Preview Player” to “Timeline
+  Sequencer” (row background / left accent bar / label weight+colour /
+  icon strokes flipped on the `--studio-*` tokens — no new namespace).
+- [x] Created a new `07 · Preview Player` (`2NA-0`) — a dedicated,
+  **clean** playback surface with **no timeline and no Clip Inspector**:
+  a large centered 16:9 stage reusing the exact transport overlay
+  (play/pause · prev/next · scrubber · time · volume · fullscreen) + a
+  slim preview control strip (shot name + PREVIEW chip + codec/fps/
+  duration · Loop toggle · “Open in Timeline” primary action). Built by
+  cloning the frozen shell from artboard-01, deleting the cloned
+  `Timeline` + `Clip Inspector` nodes, reflowing the `Viewport Card` to
+  center (852×534), and adding the control strip. Active nav = the
+  “Preview Player” row.
+- [x] The shared sidebar already carries both “Preview Player” and
+  “Timeline Sequencer” nav items, so both screens are navigable and the
+  nav stays consistent across the set.
+- [x] Exported both as 2× PNGs to `C:\Users\Patrick\Downloads`:
+  `01 · Timeline Sequencer@2x.png` + `07 · Preview Player@2x.png`.
+- [ ] Code: SPA contract tests (`tests/test_web_*.py`, RED first) for the
+  clean player + the sequencer reframe are the next increment — OUT of
+  scope for this design pass (no JS test runner in CI; see issue #61).
+- [x] Verified screens 05/06 sidebars this session: they already carry
+  the **identical 9-node WORKSPACE nav** as 01–04/07 (a `WORKSPACE`
+  section header + 8 items: `Preview Player`, `Timeline Sequencer`,
+  `Asset Manifest` [8], `Props Inspector`, `Render Queue`,
+  `Production Monitor`, `Review Queue` [3], `Agnes AI Synthesizer`),
+  with the correct per-screen active row (05 → `Review Queue`, 06 →
+  `Agnes AI`). Confirmed via the nav JSX + layer names
+  (`Nav Review (active)` / `Nav Agnes AI (active)`) + 2× sidebar
+  screenshots. An earlier note that 05/06 used a short 5-item nav was a
+  mis-observation — **no reconciliation is needed**.
+
+### Round 23/256 - Code: made the Studio shell panels production-ready (data-driven, no mocks)
+- [x] **Reframed scope:** audited all 10 shell panels; **9 of 10 were already
+  production-ready** (real store data, honest empty states, no fabricated
+  telemetry). Only two carried mock data and needed de-mocking:
+  - `Agnes AI Synthesizer` — was a `ShotListPanel` stand-in mapped to `agnes_ai`
+  - `AudioMixer` — simulated the master VU meter via `Math.random` + `setInterval`
+- [x] **New `web/src/components/panels/AgnesPanel.tsx`** implementing the frozen
+  06-delta (DESIGN-STUDIO-SHELL §6 / Round 21): generation console (prompt,
+  style-preset chips, aspect/fit/seed, credit-budget bar, Synthesize/Queue)
+  paired with a 2×2 results grid (one selected variant) + run-summary footer.
+  All state from `useAppStore` (clip / media / status / ws events); un-generated
+  variants labelled "not generated"; credit bar stays at 0 with an explicit
+  "no credit data — not wired" note; "Queue" is `disabled` with an honest
+  `title`. No fabricated telemetry.
+- [x] Wired `web/src/Shell.tsx`: `agnes_ai` now maps to `AgnesPanel` (import
+  added; previously a `ShotListPanel` stand-in).
+- [x] **AudioMixer de-mock:** removed the `Math.random`/`setInterval` VU loop —
+  the master meter now renders an honest flat/idle state (null peak → "—")
+  under a "No live metering — idle" label. The "Audition Voice" no-op
+  (`updateClip` write that discarded the result) is now a `disabled` button with
+  `title="No audio audition endpoint yet"`. Dropped the now-dead store coupling
+  (`clip` / `selectedClipId` / `timeline` + the `useAppStore` + `Clip` imports).
+- [x] **TDD RED → GREEN** via Python source-contract tests (no JS runner in CI;
+  issue #61):
+  - new `tests/test_web_agnes_panel.py` (wiring + data-honesty, 8 tests)
+  - new `tests/test_web_audio_honesty.py` (no sim, honest VU label, no no-op
+    audition, honest title, 4 tests)
+  - `tests/test_web_panels_wired.py` now pins `agnes_ai → AgnesPanel`
+- [x] **Gates all green:** frontend `oxlint` 0 warnings / 0 errors;
+  `tsc -b && vite build` clean (bundle `index-CpI8wkTk.js` regenerated +
+  committed); full suite **1244 passed**; `ruff` clean. Preview asset
+  `assets/studio-preview.png` re-verified (PNG 1440×900, 58 KB; referenced by
+  `tests/test_web_studio_preview.py`, not hard-coded in panels).
+- [ ] Push + open PR for this increment (critical step — needs review; AGENTS §7/§8).
+
 
 

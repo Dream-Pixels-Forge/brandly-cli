@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-02
+
+### Changed
+- **Single-source dynamic versioning (#199)**: `pyproject.toml` now
+  derives the package version from `src/brandly_cli/__about__.py` via
+  PEP 621 dynamic versioning (`dynamic = ["version"]` +
+  `[tool.hatch.version]`). `scripts/version_check.py` is the shared
+  version gate for the Makefile, CI, and the release workflow, so
+  bumping `__about__.py` is the only edit needed to move the
+  wheel/sdist metadata, `brandly --version`, the MCP server, and the
+  web config API together — no second literal to keep in sync.
+
 ## [0.8.0] - 2026-09-29
 
 ### Fixed (Agnes 503 hardening — issues #148–#152)

@@ -54,6 +54,7 @@ from brandly_cli.utils import (
 )
 from brandly_cli.video_prompts import (
     build_enhanced_video_prompt,
+    build_shot_fallback_prompt,
     build_single_shot_prompt,
     build_video_prompt,
     list_video_styles,
@@ -2120,6 +2121,9 @@ def _run_produce_runner(
     continue_on_fail: bool = False,
     gate_threshold: int | None = None,
     park_after: int = 0,
+    text_fallback: bool = True,
+    i2v_attempts: int = 5,
+    text_fallback_attempts: int = 1,
 ) -> None:
     """Progress-file runner path for ``brandly produce`` (see produce())."""
     project_dir = layout.resolve_project_dir(root, project_id)
@@ -2236,24 +2240,32 @@ def _run_produce_runner(
     gate_scores: dict[str, int] = {}
 
     def generate_one(shot: shot_runner.Shot) -> tuple[bool, int, str]:
-        # Per-shot auto-ref scoping: a shot with explicit refs NEVER gets
-        # auto-injected refs (the shot list is the source of truth); a
-        # referenceless shot gets auto-refs filtered to what the shot is
-        # concerned with instead of the whole project images tree.
+        # A text-to-video fallback shot (refs dropped by the runner) must NOT
+        # get auto-refs re-injected - that would defeat the i2v -> t2v switch -
+        # and it must be permitted to generate referenceless.
+        is_t2v_fallback = bool(getattr(shot, "text_fallback", False))
+        refs_present = bool(shot.refs)
         auto_ref_filter = None
-        if not no_auto_refs and not shot.refs:
+        if not no_auto_refs and not refs_present and not is_t2v_fallback:
+            # Per-shot auto-ref scoping: a shot with explicit refs NEVER gets
+            # auto-injected refs (the shot list is the source of truth); a
+            # referenceless shot gets auto-refs filtered to what the shot is
+            # concerned with instead of the whole project images tree.
             def auto_ref_filter(plates: list[str]) -> list[str]:
                 return shot_runner.scope_auto_refs(
                     plates, prompt=shot.prompt, character=shot.character
                 )
+
+        auto_refs_enabled = not no_auto_refs and not refs_present and not is_t2v_fallback
+        allow_referenceless_eff = allow_referenceless or is_t2v_fallback
         ok = _generate_shot(
             project_id,
             {**shot.to_video_kwargs(), "character": shot.character},
             ctx=ctx,
             root=root,
-            auto_refs_enabled=not no_auto_refs and not shot.refs,
+            auto_refs_enabled=auto_refs_enabled,
             auto_ref_filter=auto_ref_filter,
-            allow_referenceless=allow_referenceless,
+            allow_referenceless=allow_referenceless_eff,
             max_wait=max_wait,
             # Names the download Scene-XX-Shot-X-Y.mp4 at save time.
             scene=shot.scene,
@@ -2269,6 +2281,26 @@ def _run_produce_runner(
         note = _gate_note(score)
         return ok, 0 if ok else 1, note
 
+    # i2v -> t2v fallback hook: turn a failed reference-bearing shot into a
+    # referenceless text-to-video variant. The prompt re-describes the same
+    # character / environment / film layers so consistency survives the switch.
+    def build_text_fallback_shot(shot: shot_runner.Shot) -> shot_runner.Shot | None:
+        if not shot.refs:
+            return None
+        return shot_runner.Shot(
+            id=shot.id,
+            act=shot.act,
+            style=shot.style,
+            folder=shot.folder,
+            prompt=build_shot_fallback_prompt(shot),
+            duration=shot.duration,
+            refs=[],
+            character=shot.character,
+            scene=shot.scene,
+            index_in_scene=shot.index_in_scene,
+            text_fallback=True,
+        )
+
     config = shot_runner.RunnerConfig(
         shots=shots,
         generate_one=generate_one,
@@ -2283,6 +2315,11 @@ def _run_produce_runner(
         on_shot_done=_on_shot_done,
         continue_on_fail=continue_on_fail,
         park_after_consecutive_failures=park_after,
+        i2v_attempts=i2v_attempts,
+        build_text_fallback_shot=(
+            build_text_fallback_shot if text_fallback else None
+        ),
+        text_fallback_attempts=text_fallback_attempts,
     )
     rc = shot_runner.run_shots(config)
     # Issue #116: below-threshold takes are flagged, clips kept, exit code

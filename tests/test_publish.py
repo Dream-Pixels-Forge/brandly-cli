@@ -109,3 +109,82 @@ class TestPublishCli:
         # The credential itself lives in the user config dir, not the project.
         assert (project / "config" / "credentials.json").is_file()
 
+
+# ---------------------------------------------------------------------------
+# build_social_copy — deterministic description + hashtag composition
+# ---------------------------------------------------------------------------
+
+
+class TestBuildSocialCopy:
+    def test_description_seeded_from_title_when_absent(self) -> None:
+        copy = pub.build_social_copy("My Video", platform="youtube")
+        assert copy["description"] == "My Video"
+        assert copy["hashtags"]  # platform-appropriate tags auto-generated
+
+    def test_caption_combines_description_and_tags(self) -> None:
+        copy = pub.build_social_copy(
+            "Title", description="My desc",
+            hashtags=["#Shorts", "#Trending"], platform="youtube",
+        )
+        assert "My desc" in copy["caption"]
+        assert "#Shorts" in copy["caption"]
+        assert "#Trending" in copy["caption"]
+
+    def test_description_with_tags_is_separate_from_description(self) -> None:
+        copy = pub.build_social_copy("T", description="d", hashtags=["#X"], platform="youtube")
+        assert copy["description"] == "d"
+        assert "#X" in copy["description_with_tags"]
+
+    def test_explicit_empty_hashtags_means_none(self) -> None:
+        copy = pub.build_social_copy("T", description="d", hashtags=[], platform="youtube")
+        assert copy["hashtags"] == []
+        assert "#" not in copy["caption"]
+
+    def test_hashless_input_is_normalized(self) -> None:
+        copy = pub.build_social_copy("T", description="d", hashtags=["Shorts", "Trending"], platform="youtube")
+        assert copy["hashtags"] == ["#Shorts", "#Trending"]
+
+
+class TestPublishSocialCli:
+    def test_dry_run_writes_social_copy_file(
+        self, project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        runner = CliRunner(env={"ROOT": str(project)})
+        result = runner.invoke(
+            cli,
+            ["publish", "test-proj", "--platform", "youtube", "--dry-run"],
+        )
+        assert result.exit_code == 0, result.output
+        # The copy-ready file sits next to the exported video.
+        social = project / ".brandly" / "test-proj" / "export" / "youtube.social.txt"
+        assert social.is_file(), "social copy file was not written"
+        assert "#Shorts" in social.read_text(encoding="utf-8")
+
+    def test_no_hashtags_disables_social_copy(
+        self, project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        runner = CliRunner(env={"ROOT": str(project)})
+        result = runner.invoke(
+            cli,
+            ["publish", "test-proj", "--platform", "youtube", "--dry-run", "--no-hashtags"],
+        )
+        assert result.exit_code == 0, result.output
+        social = project / ".brandly" / "test-proj" / "export" / "youtube.social.txt"
+        assert not social.exists()
+
+    def test_explicit_hashtags_override(
+        self, project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        runner = CliRunner(env={"ROOT": str(project)})
+        result = runner.invoke(
+            cli,
+            ["publish", "test-proj", "--platform", "youtube", "--dry-run",
+             "--hashtags", "#MyTag,#Other"],
+        )
+        assert result.exit_code == 0, result.output
+        social = project / ".brandly" / "test-proj" / "export" / "youtube.social.txt"
+        text = social.read_text(encoding="utf-8")
+        assert "#MyTag" in text and "#Other" in text
+        assert "#Shorts" not in text
+
+

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from brandly_cli.trends import (
     TREND_DATABASE,
+    build_hashtags,
     list_categories,
     research_trends,
 )
@@ -127,3 +128,40 @@ class TestRecommendedFormat:
         result = await research_trends("tech")
         virality_scores = [f["virality"] for f in result["trending_formats"]]
         assert virality_scores == sorted(virality_scores, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# build_hashtags — deterministic, metadata-seeded hashtag bank
+# ---------------------------------------------------------------------------
+
+
+class TestBuildHashtags:
+    def test_known_category_core_tags(self) -> None:
+        tags = build_hashtags("tech")
+        assert all(t.startswith("#") for t in tags)
+        assert "#Tech" in tags
+        assert "#Gadgets" in tags
+
+    def test_platform_defaults_honored(self) -> None:
+        tags = build_hashtags(None, platform="youtube")
+        assert "#Shorts" in tags
+        assert "#Trending" in tags
+
+    def test_style_tags_appended(self) -> None:
+        tags = build_hashtags("beauty", style="cinematic")
+        assert "#Cinematic" in tags
+
+    def test_subject_derived_tags(self) -> None:
+        tags = build_hashtags("tech", subject="wireless earbuds review")
+        assert "#Wireless" in tags
+        assert "#Earbuds" in tags
+
+    def test_no_metadata_returns_empty(self) -> None:
+        assert build_hashtags(None) == []
+        # Unknown category with no other seed: no fabricated category tags.
+        assert build_hashtags("totally_unknown_cat") == []
+
+    def test_dedup_and_limit(self) -> None:
+        tags = build_hashtags("tech", subject="Tech", style="cinematic", platform="youtube", limit=3)
+        assert len(tags) <= 3
+        assert len({t.lower() for t in tags}) == len(tags)

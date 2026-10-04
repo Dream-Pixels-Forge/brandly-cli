@@ -40,6 +40,11 @@ from brandly_cli.io import is_valid_project_id
     help="Publish credential — or store it once with `brandly config set <platform> <token>`",
 )
 @click.option("--root", default=None, help="Working directory")
+@click.option("--hashtags", default=None, help="Comma-separated hashtags to append (e.g. '#Shorts,#Trending'); overrides auto-generation.")
+@click.option("--category", default=None, help="Trend category to seed auto-hashtags (tech/fashion/food/beauty/fitness).")
+@click.option("--style", default=None, help="Style preset to seed auto-hashtags (cinematic/ugc/commercial/luxury).")
+@click.option("--subject", default=None, help="Subject/title seed - a few tags are derived from its words.")
+@click.option("--no-hashtags", "no_hashtags", is_flag=True, default=False, help="Disable social-copy hashtag generation entirely (no auto tags, no .social.txt).")
 @click.pass_context
 def publish(
     ctx: click.Context,
@@ -53,6 +58,11 @@ def publish(
     video_url: str | None,
     token: str | None,
     root: str | None,
+    hashtags: str | None,
+    category: str | None,
+    style: str | None,
+    subject: str | None,
+    no_hashtags: bool,
 ) -> None:
     """Publish a project's exported video to a platform (dry-run first)."""
     from brandly_cli import config_store
@@ -113,11 +123,34 @@ def publish(
         console.print(f"[red]Unsupported platform: {e}[/red]")
         sys.exit(1)
 
+    # Social copy: description + hashtags, folded into the payload and written
+    # to a copy-ready <platform>.social.txt next to the exported video. When
+    # --no-hashtags is set the feature is off: raw description, no file.
+    hashtags_arg = (
+        [t for t in (x.strip() for x in hashtags.split(",")) if t]
+        if hashtags
+        else None
+    )
+    social_copy = None
+    if not no_hashtags:
+        social_copy = pub.build_social_copy(
+            title or project_id,
+            description=description,
+            hashtags=hashtags_arg,
+            platform=platform,
+            subject=subject,
+            style=style,
+            category=category,
+        )
+        effective_description = social_copy["description_with_tags"]
+    else:
+        effective_description = description or ""
+
     try:
         payload = adapter.build_payload(
             video,
             title=title or project_id,
-            description=description or "",
+            description=effective_description,
             schedule_iso=schedule,
             video_url=video_url,
         )
@@ -127,6 +160,11 @@ def publish(
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
+    if social_copy is not None:
+        social_path = video.parent / f"{platform}.social.txt"
+        social_path.parent.mkdir(parents=True, exist_ok=True)
+        social_path.write_text(social_copy["caption"] + "\n", encoding="utf-8")
+
     if dry_run:
         record = {
             "dry_run": True,
@@ -134,6 +172,7 @@ def publish(
             "project_id": project_id,
             "video": str(video),
             "payload": payload,
+            "social_copy": social_copy,
             "note": "dry-run: no request was sent",
         }
         if json_out:

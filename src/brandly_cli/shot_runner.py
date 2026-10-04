@@ -174,6 +174,18 @@ class Shot:
     character: str | None = None
     scene: int = 1
     index_in_scene: int = 1
+    #: Environment/scene context threaded through for the i2v -> t2v fallback,
+    #: so a referenceless t2v pass can re-describe the same world. Data-honest:
+    #: only populated when the shot list declares an ``environment`` key.
+    environment: str | None = None
+    #: The raw structured-prompt dict (issue #31) when the shot was authored as
+    #: a mapping - kept on the Shot so a t2v fallback can re-describe the same
+    #: film layers (optics/lighting/motion/audio/locks) after the refs drop.
+    structured: dict[str, Any] = field(default_factory=dict)
+    #: True when this Shot was produced by the i2v -> t2v fallback (refs
+    #: dropped, prompt re-described in text). Lets ``generate_one`` skip the
+    #: auto-reference re-injection that would otherwise defeat the switch.
+    text_fallback: bool = False
 
     @property
     def clip_name(self) -> str:
@@ -485,6 +497,9 @@ def flatten_shots(
 
             # Issue #31: structured prompt dicts expand to text here.
             raw_prompt = shot.get("prompt", "")
+            # i2v -> t2v fallback: keep the raw structured dict on the Shot so a
+            # referenceless t2v pass can re-describe the same film layers.
+            structured = dict(raw_prompt) if isinstance(raw_prompt, Mapping) else {}
             if isinstance(raw_prompt, Mapping):
                 from brandly_cli.video_prompts import expand_structured_prompt
 
@@ -499,6 +514,14 @@ def flatten_shots(
                         f"shot {shot_id!r}: {exc}"
                     ) from exc
 
+            # i2v -> t2v fallback: thread environment/scene context (data-honest:
+            # only when the shot or its act declares an ``environment`` key).
+            def _env(d: Mapping[str, Any]) -> str | None:
+                value = d.get("environment") or d.get("location")
+                return str(value).strip() if value and str(value).strip() else None
+
+            environment = _env(shot) or _env(act)
+
             shots.append(
                 Shot(
                     id=shot_id,
@@ -512,6 +535,8 @@ def flatten_shots(
                     character=character_anchor,
                     scene=as_int(shot.get("scene"), act_scene),
                     index_in_scene=shot_position,
+                    environment=environment,
+                    structured=structured,
                 )
             )
     # Issue #113: progress logs (storyboard/produce) match by bare shot id, so
@@ -636,6 +661,20 @@ class RunnerConfig:
     while the provider is degraded or the quota is exhausted. The parked
     message points at the same-command resume; completed shots are skipped
     on re-run."""
+    i2v_attempts: int = 0
+    """i2v -> t2v fallback: number of image-to-video submit attempts made for a
+    reference-bearing shot before the text-to-video fallback engages. Only
+    meaningful when ``build_text_fallback_shot`` is set; with no fallback hook
+    the legacy ``retries`` behavior applies unchanged."""
+    build_text_fallback_shot: Callable[[Shot], Shot | None] | None = None
+    """Optional hook that turns a failed reference-bearing shot into a
+    referenceless t2v variant (refs dropped, prompt re-described in text,
+    ``text_fallback=True``). Return None to decline the fallback (e.g. the shot
+    already has no refs). The variant keeps the original shot id/scene so its
+    clip lands in the same canonical slot as the i2v pass would have."""
+    text_fallback_attempts: int = 1
+    """Number of text-to-video submit attempts made after the i2v budget is
+    exhausted and a fallback variant has been produced."""
 
     def move_shot_clips(self, shot: Shot, new_clips: Sequence[Path]) -> list[Path]:
         """After generating ``shot``, relocate its clips when the shot is a
@@ -958,6 +997,12 @@ def run_shots(config: RunnerConfig) -> int:
     parked = False
     backoff = config.retry_backoff or config.interval
     max_attempts = 1 + max(config.retries, 0)
+    # i2v -> t2v fallback: when a hook is set, a reference-bearing shot gets
+    # ``i2v_attempts`` image-to-video submits, then (only if they all failed
+    # and the shot still carries refs) a text-to-video pass via the hook.
+    has_fallback = config.build_text_fallback_shot is not None
+    i2v_attempts = max(1, config.i2v_attempts)
+    t2v_attempts = max(1, config.text_fallback_attempts)
     for i, shot in enumerate(pending):
         if parked:
             # Issue #124: parked on a previous iteration - stop the shot
@@ -975,6 +1020,92 @@ def run_shots(config: RunnerConfig) -> int:
                 f"{MAX_SHOT_REFERENCE_IMAGES}-image model limit: "
                 f"{', '.join(Path(r).name for r in shot.dropped_references)}"
             )
+        if has_fallback:
+            # One submit phase: up to ``attempts`` submits of ``target``,
+            # recording progress under the LOGICAL shot id so a fallback clip
+            # lands in the original shot's canonical slot. Returns
+            # ``(succeeded, last_exit_code, last_note)``.
+            def _phase(logical, target, attempts, tag):
+                last_exit_code, last_note = 0, ""
+                for attempt in range(1, attempts + 1):
+                    before = _clip_snapshot(scenes)
+                    succeeded, exit_code, note = config.generate_one(target)
+                    new_clips = _new_clips(scenes, before)
+                    ok = succeeded or bool(new_clips)
+                    last_exit_code, last_note = exit_code, note
+                    if ok and not succeeded:
+                        note = (note + " " if note else "") + "(clip downloaded; post-gen step failed)"
+                    if ok:
+                        retries_used = attempt - 1
+                        tag_note = f" ({tag})" if tag else ""
+                        config.progress.record(
+                            logical.id, "OK", exit_code,
+                            (f" {note}" if note and retries_used == 0 else "") + tag_note,
+                            retry=retries_used,
+                        )
+                        config.say(
+                            f"{logical.id} OK exit={exit_code}"
+                            + (f" (retry {retries_used})" if retries_used else "")
+                            + tag_note
+                        )
+                        config.move_shot_clips(logical, name_clips(logical, new_clips, config.say))
+                        _fire_hook(config, logical, True)
+                        return True, exit_code, note
+                    if attempt < attempts:
+                        reason = f" {note}" if note else ""
+                        wait = backoff * (config.retry_backoff_factor ** (attempt - 1))
+                        config.progress.record(
+                            logical.id, "RETRY", exit_code,
+                            reason + (f" [{tag}]" if tag else ""),
+                            retry=attempt, backoff=wait,
+                        )
+                        config.say(
+                            f"{logical.id} RETRY {attempt}/{attempts} exit={exit_code}{reason} — "
+                            f"backoff {wait:.0f}s" + (f" [{tag}]" if tag else "")
+                        )
+                        time.sleep(wait)
+                        continue
+                return False, last_exit_code, last_note
+
+            success, fail_code, fail_note = _phase(shot, shot, i2v_attempts, None)
+            total_attempts = i2v_attempts
+            if not success and shot.refs:
+                fallback = config.build_text_fallback_shot(shot)
+                if fallback is not None:
+                    config.say(
+                        f"{shot.id}: i2v failed after {i2v_attempts} attempt(s); "
+                        "falling back to text-to-video"
+                    )
+                    success, fail_code, fail_note = _phase(shot, fallback, t2v_attempts, "fallback t2v")
+                    total_attempts += t2v_attempts
+            if success:
+                consecutive_failures = 0
+                continue
+            reason = f" {fail_note}" if fail_note else ""
+            config.progress.record(shot.id, "FAIL", fail_code, reason, retry=total_attempts)
+            config.say(f"{shot.id} FAIL exit={fail_code}{reason}")
+            _fire_hook(config, shot, False)
+            if not config.continue_on_fail:
+                config.say(
+                    f"STOP: {shot.id} failed after {total_attempts} attempt(s). Fix and "
+                    "re-run to resume (remaining shots stay pending)."
+                )
+                return 1
+            failed.append(shot)
+            consecutive_failures += 1
+            config.say(
+                f"CONTINUE: {shot.id} failed after {total_attempts} attempt(s); "
+                "moving on (--continue-on-fail)."
+            )
+            park_at = config.park_after_consecutive_failures
+            if park_at and consecutive_failures >= park_at:
+                config.say(
+                    f"PARK: {consecutive_failures} consecutive shot failure(s) - "
+                    "provider degraded or quota exhausted. Resume later with "
+                    "the same command (completed shots are skipped)."
+                )
+                parked = True
+            continue
         for attempt in range(1, max_attempts + 1):
             before = _clip_snapshot(scenes)
             succeeded, exit_code, note = config.generate_one(shot)

@@ -31,6 +31,7 @@ Transform a campaign brief into a structured, shot-by-shot visual plan that AI v
 | See shot format templates | `references/shot-formats.md` |
 | Reference pacing and rhythm | `references/pacing-guide.md` |
 | See example full storyboards | `references/examples.md` |
+| Generate a 4x4 grid contact sheet | `references/grid-style-lock.md` **(MANDATORY)** |
 
 ---
 

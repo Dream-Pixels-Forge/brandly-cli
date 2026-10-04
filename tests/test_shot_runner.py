@@ -307,6 +307,55 @@ class TestFlattenShots:
         shots = shot_runner.flatten_shots(data, tmp_path / "pre-production" / "p")
         assert [(s.scene, s.index_in_scene) for s in shots] == [(7, 1), (2, 1), (9, 2)]
 
+    def test_structured_prompt_is_captured_on_the_shot(self, tmp_path: Path) -> None:
+        data = {
+            "acts": {
+                "a": {
+                    "shots": [
+                        {
+                            "id": "s1",
+                            "prompt": {"optics": "wide 24mm", "motion": "slow push-in"},
+                        },
+                    ],
+                },
+            },
+        }
+        (shot,) = shot_runner.flatten_shots(data, tmp_path / "pre-production" / "p")
+        # The raw dict survives on the Shot so a t2v fallback can re-describe
+        # the same layers (i2v -> t2v fallback).
+        assert shot.structured == {"optics": "wide 24mm", "motion": "slow push-in"}
+        # ...and it was still expanded to text for the i2v pass.
+        assert "[OPTICS] wide 24mm" in shot.prompt
+
+    def test_environment_key_is_threaded_onto_the_shot(self, tmp_path: Path) -> None:
+        data = {
+            "acts": {
+                "a": {
+                    "environment": "a misty harbor",
+                    "shots": [{"id": "s1", "prompt": "x"}],
+                },
+            },
+        }
+        (shot,) = shot_runner.flatten_shots(data, tmp_path / "pre-production" / "p")
+        assert shot.environment == "a misty harbor"
+
+    def test_shot_level_environment_wins_over_act_level(self, tmp_path: Path) -> None:
+        data = {
+            "acts": {
+                "a": {
+                    "environment": "act env",
+                    "shots": [{"id": "s1", "prompt": "x", "environment": "shot env"}],
+                },
+            },
+        }
+        (shot,) = shot_runner.flatten_shots(data, tmp_path / "pre-production" / "p")
+        assert shot.environment == "shot env"
+
+    def test_no_environment_key_leaves_none(self, tmp_path: Path) -> None:
+        data = {"acts": {"a": {"shots": [{"id": "s1", "prompt": "x"}]}}}
+        (shot,) = shot_runner.flatten_shots(data, tmp_path / "pre-production" / "p")
+        assert shot.environment is None
+
 
 # ---------------------------------------------------------------------------
 # Generated-clip naming convention
@@ -332,6 +381,10 @@ def _make_config(
     interval: float = 0.0,
     only=None,
     max_shots: int = 0,
+    *,
+    i2v_attempts: int = 0,
+    build_text_fallback_shot=None,
+    text_fallback_attempts: int = 1,
 ) -> shot_runner.RunnerConfig:
     scenes = tmp_path / "videos" / "scenes"
     scenes.mkdir(parents=True, exist_ok=True)
@@ -344,7 +397,21 @@ def _make_config(
         interval=interval,
         only=only,
         max_shots=max_shots,
+        i2v_attempts=i2v_attempts,
+        build_text_fallback_shot=build_text_fallback_shot,
+        text_fallback_attempts=text_fallback_attempts,
     )
+
+
+def _ref_shots(ids: list[str], folder: str = "scenes") -> list[shot_runner.Shot]:
+    """Reference-bearing shots (i2v): each carries a plate stem ref."""
+    return [
+        shot_runner.Shot(
+            id=sid, act="", style="cinematic", folder=folder,
+            prompt=f"p {sid}", duration=5, refs=[f"pre-production/p/{sid}.jpg"],
+        )
+        for sid in ids
+    ]
 
 
 def _shots(ids: list[str], folder: str = "scenes") -> list[shot_runner.Shot]:
@@ -546,6 +613,169 @@ class TestRunShots:
         assert shot_runner.run_shots(config) == 0  # tolerated: the clip is there
         assert old_take.read_bytes() == b"new"
         assert "shot01 OK" in config.progress.path.read_text()
+
+
+# ---------------------------------------------------------------------------
+# i2v -> t2v fallback (5 i2v attempts, then a text-to-video pass)
+# ---------------------------------------------------------------------------
+
+
+class TestRunShotsFallback:
+    def _fallback_hook(self, calls: list[shot_runner.Shot]):
+        def build(shot: shot_runner.Shot) -> shot_runner.Shot | None:
+            if not shot.refs:
+                return None
+            calls.append(shot)
+            return shot_runner.Shot(
+                id=shot.id, act=shot.act, style=shot.style, folder=shot.folder,
+                prompt=shot.prompt + " [t2v]", duration=shot.duration,
+                refs=[], character=shot.character,
+                scene=shot.scene, index_in_scene=shot.index_in_scene,
+                text_fallback=True,
+            )
+
+        return build
+
+    def test_i2v_exhausted_then_t2v_succeeds(self, tmp_path: Path) -> None:
+        scenes = tmp_path / "videos" / "scenes"
+        calls: list[shot_runner.Shot] = []
+
+        def generate_one(shot):
+            calls.append(shot)
+            if shot.refs:
+                return False, 1, "i2v reference rejected"
+            (scenes / f"clip_{shot.id}.mp4").write_bytes(b"x")
+            return True, 0, ""
+
+        config = _make_config(
+            tmp_path,
+            _ref_shots(["shot01"]),
+            generate_one,
+            i2v_attempts=5,
+            build_text_fallback_shot=self._fallback_hook([]),
+            text_fallback_attempts=1,
+        )
+        assert shot_runner.run_shots(config) == 0
+        i2v_calls = [c for c in calls if c.refs]
+        t2v_calls = [c for c in calls if not c.refs]
+        assert len(i2v_calls) == 5
+        assert len(t2v_calls) == 1
+        assert t2v_calls[0].text_fallback is True
+        text = config.progress.path.read_text()
+        assert "shot01 OK" in text
+        assert "fallback t2v" in text
+        # The produced clip is named after the ORIGINAL shot, not the fallback.
+        assert (scenes / "Scene-01-Shot-1-1.mp4").is_file()
+
+    def test_i2v_succeeds_first_attempt_no_fallback(self, tmp_path: Path) -> None:
+        scenes = tmp_path / "videos" / "scenes"
+        calls: list[shot_runner.Shot] = []
+
+        def generate_one(shot):
+            calls.append(shot)
+            (scenes / f"clip_{shot.id}.mp4").write_bytes(b"x")
+            return True, 0, ""
+
+        config = _make_config(
+            tmp_path,
+            _ref_shots(["shot01"]),
+            generate_one,
+            i2v_attempts=5,
+            build_text_fallback_shot=self._fallback_hook([]),
+        )
+        assert shot_runner.run_shots(config) == 0
+        assert len(calls) == 1
+        assert "fallback" not in config.progress.path.read_text()
+
+    def test_all_attempts_fail_marks_fail(self, tmp_path: Path) -> None:
+        calls: list[shot_runner.Shot] = []
+
+        def generate_one(shot):
+            calls.append(shot)
+            return False, 1, "provider down"
+
+        config = _make_config(
+            tmp_path,
+            _ref_shots(["shot01"]),
+            generate_one,
+            i2v_attempts=5,
+            build_text_fallback_shot=self._fallback_hook([]),
+            text_fallback_attempts=2,
+        )
+        assert shot_runner.run_shots(config) == 1
+        # 5 i2v + 2 t2v = 7 attempts
+        assert len(calls) == 7
+        text = config.progress.path.read_text()
+        assert "shot01 FAIL" in text
+
+    def test_referenceless_shot_never_falls_back(self, tmp_path: Path) -> None:
+        calls: list[shot_runner.Shot] = []
+
+        def generate_one(shot):
+            calls.append(shot)
+            return False, 1, "provider down"
+
+        def build(shot):
+            # A referenceless shot has no refs to switch away from - the hook
+            # must not even be consulted; calling it is a bug.
+            raise AssertionError("fallback hook consulted for a referenceless shot")
+
+        shots = [
+            shot_runner.Shot(
+                id="s", act="", style="cinematic", folder="scenes",
+                prompt="p", duration=5, refs=[],
+            )
+        ]
+        config = _make_config(
+            tmp_path,
+            shots,
+            generate_one,
+            i2v_attempts=1,
+            build_text_fallback_shot=build,
+        )
+        assert shot_runner.run_shots(config) == 1
+        assert len(calls) == 1  # the single i2v pass; no t2v fallback attempt
+        assert "s FAIL" in config.progress.path.read_text()
+
+    def test_fallback_uses_structured_prompt_from_shot(self, tmp_path: Path) -> None:
+        """The t2v variant's prompt is the shot's structured direction."""
+        scenes = tmp_path / "videos" / "scenes"
+        calls: list[shot_runner.Shot] = []
+
+        shot = shot_runner.Shot(
+            id="s1", act="", style="cinematic", folder="scenes",
+            prompt="[OPTICS] wide\n[MOON] x", duration=5, refs=["pre-production/p/s1.jpg"],
+            character="a woman", environment="a harbor",
+            structured={"optics": "wide 24mm", "locks": "no extras"},
+        )
+
+        def generate_one(s):
+            calls.append(s)
+            if s.refs:
+                return False, 1, "i2v rejected"
+            (scenes / f"clip_{s.id}.mp4").write_bytes(b"x")
+            return True, 0, ""
+
+        def build(s):
+            from brandly_cli.video_prompts import build_shot_fallback_prompt
+
+            if not s.refs:
+                return None
+            return shot_runner.Shot(
+                id=s.id, act=s.act, style=s.style, folder=s.folder,
+                prompt=build_shot_fallback_prompt(s), duration=s.duration,
+                refs=[], character=s.character, scene=s.scene,
+                index_in_scene=s.index_in_scene, text_fallback=True,
+            )
+
+        config = _make_config(
+            tmp_path, [shot], generate_one,
+            i2v_attempts=2, build_text_fallback_shot=build,
+        )
+        assert shot_runner.run_shots(config) == 0
+        t2v = [c for c in calls if not c.refs]
+        assert len(t2v) == 1
+        assert t2v[0].prompt == "a woman, a harbor, wide 24mm, no extras"
 
 
 # ---------------------------------------------------------------------------
@@ -757,6 +987,47 @@ class TestProduceRunnerRouting:
         # ...and NOT through the runner progress file.
         progress = project_dir / pid / "docs" / "tmp" / "produce_progress.txt"
         assert not progress.exists()
+
+    def _produce_config(self, runner, project_dir, tmp_path, extra_args):
+        pid = generate_project_id()
+        _write_project(project_dir, pid)
+        _add_plate(project_dir, pid, "character", "char_a.opt.jpg")
+        _ensure_plan(tmp_path, pid)
+        shots = _write_shots_file(
+            tmp_path,
+            [{"name": "shot-1", "prompt": "establishing", "duration": 5, "refs": ["char_a"]}],
+        )
+        captured: dict[str, Any] = {}
+
+        def fake_run_shots(config):
+            captured["config"] = config
+            return 0
+
+        with patch("brandly_cli.shot_runner.run_shots", fake_run_shots):
+            result = runner.invoke(
+                cli,
+                [
+                    "produce", pid, "--shots", str(shots),
+                    "--no-auto-refs", "--interval", "0",
+                ] + extra_args,
+            )
+        assert result.exit_code == 0, result.output
+        return captured["config"]
+
+    def test_text_fallback_wired_into_runner_config(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        cfg = self._produce_config(runner, project_dir, tmp_path, [])
+        # The i2v -> t2v fallback is on by default for the runner path.
+        assert cfg.build_text_fallback_shot is not None
+        assert cfg.i2v_attempts == 5
+        assert cfg.text_fallback_attempts == 1
+
+    def test_no_text_fallback_disables_the_hook(
+        self, runner: CliRunner, project_dir: Path, tmp_path: Path
+    ) -> None:
+        cfg = self._produce_config(runner, project_dir, tmp_path, ["--no-text-fallback"])
+        assert cfg.build_text_fallback_shot is None
 
 
 # ---------------------------------------------------------------------------

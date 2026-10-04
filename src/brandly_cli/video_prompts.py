@@ -36,7 +36,7 @@ film direction framework — the 8 base layers plus the clip-chain sections
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -929,6 +929,80 @@ def expand_structured_prompt(
     lines.extend(technical_constraints(model=model, duration=duration, aspect=aspect).split("\n"))
     lines.append(negative_block())
     return "\n".join(lines)
+
+
+def build_text_fallback_prompt(
+    character: str | None = None,
+    *,
+    characters: Sequence[str] | None = None,
+    environment: str | None = None,
+    direction: str | None = None,
+    camera: str | None = None,
+    lighting: str | None = None,
+    motion: str | None = None,
+    audio: str | None = None,
+    sfx: str | None = None,
+    positive_constraint: str | None = None,
+) -> str:
+    """Compose the text-to-video fallback prompt for the i2v -> t2v switch.
+
+    When every image-to-video attempt of a reference-bearing shot has failed,
+    the reference image is dropped and the shot must be re-described in text so
+    consistency survives the switch. The line keeps a fixed, consistency-first
+    order: N character descriptions, environment, direction, then the film
+    layers (camera, lighting, motion, audio, sfx, positive constraint). Empty
+    segments are omitted; the result is a single comma-joined descriptor.
+    """
+    parts: list[str] = []
+    primary = str(character).strip() if character else ""
+    if primary:
+        parts.append(primary)
+    for entry in characters or []:
+        cleaned = str(entry).strip()
+        if cleaned and cleaned not in parts:
+            parts.append(cleaned)
+    for segment in (environment, direction, camera, lighting, motion, audio, sfx, positive_constraint):
+        if segment and str(segment).strip():
+            parts.append(str(segment).strip())
+    return ", ".join(parts)
+
+
+def build_shot_fallback_prompt(shot: Any) -> str:
+    """Build the t2v fallback prompt for a flattened ``shot_runner.Shot``.
+
+    Uses the shot's own ``character`` / ``environment`` and, when the shot was
+    authored as a structured prompt, its structured layers (``optics`` ->
+    camera, ``lighting``, ``motion``, ``audio``, ``sfx``, ``locks`` ->
+    positive constraint). When there is no structure, the raw ``prompt`` is
+    carried as the direction so the shot's specific intent is not lost. Only
+    data the shot actually has is emitted — nothing is fabricated.
+    """
+    character = getattr(shot, "character", None)
+    environment = getattr(shot, "environment", None)
+    structured = getattr(shot, "structured", None) or {}
+    prompt = getattr(shot, "prompt", "")
+
+    def layer(key: str) -> str | None:
+        value = structured.get(key)
+        return str(value).strip() if value and str(value).strip() else None
+
+    if structured:
+        return build_text_fallback_prompt(
+            character,
+            environment=environment,
+            camera=layer("optics"),
+            lighting=layer("lighting"),
+            motion=layer("motion"),
+            audio=layer("audio"),
+            sfx=layer("sfx"),
+            positive_constraint=layer("locks"),
+        )
+    # No structure: carry the raw prompt as the direction segment.
+    return build_text_fallback_prompt(
+        character,
+        environment=environment,
+        direction=prompt if prompt and str(prompt).strip() else None,
+    )
 
 
 # ---------------------------------------------------------------------------

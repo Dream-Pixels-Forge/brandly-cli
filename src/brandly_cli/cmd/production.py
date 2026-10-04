@@ -761,6 +761,33 @@ def _print_missing_references(
         "generation (pre-flight reference check)."
     ),
 )
+@click.option(
+    "--i2v-attempts",
+    type=int,
+    default=5,
+    help=(
+        "Image-to-video submit budget per reference-bearing shot before the "
+        "text-to-video fallback engages (i2v -> t2v fallback). 0 = a single "
+        "i2v attempt."
+    ),
+)
+@click.option(
+    "--text-fallback-attempts",
+    type=int,
+    default=1,
+    help=(
+        "Text-to-video submit attempts made after the i2v budget is exhausted "
+        "(i2v -> t2v fallback). The t2v prompt re-describes the shot's own "
+        "character / environment / film layers for consistency."
+    ),
+)
+@click.option(
+    "--no-text-fallback",
+    "no_text_fallback",
+    is_flag=True,
+    default=False,
+    help="Disable the automatic text-to-video fallback when image-to-video fails.",
+)
 @click.pass_context
 def produce(
     ctx: click.Context,
@@ -784,6 +811,9 @@ def produce(
     dry_run: bool,
     gate_threshold: int | None,
     check: bool,
+    i2v_attempts: int,
+    text_fallback_attempts: int,
+    no_text_fallback: bool,
 ) -> None:
     """Generate a multi-shot film shot by shot from the production plan.
 
@@ -914,6 +944,9 @@ def produce(
             continue_on_fail=continue_on_fail,
             gate_threshold=gate_threshold,
             park_after=park_after,
+            text_fallback=not no_text_fallback,
+            i2v_attempts=i2v_attempts,
+            text_fallback_attempts=text_fallback_attempts,
         )
         return
 
@@ -2594,6 +2627,7 @@ class Director:
                     (),  # only
                     0,  # max_shots
                     retries=0,
+                    text_fallback=False,  # internal surface keeps legacy behavior
                 )
                 rc = 0
             except SystemExit as exc:

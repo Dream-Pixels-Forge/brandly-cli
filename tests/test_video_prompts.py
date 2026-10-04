@@ -12,7 +12,9 @@ from brandly_cli.video_prompts import (
     build_enhanced_video_prompt,
     build_keyframe_prompt,
     build_product_showcase_prompt,
+    build_shot_fallback_prompt,
     build_single_shot_prompt,
+    build_text_fallback_prompt,
     build_video_prompt,
     list_camera_moves,
     list_lighting_presets,
@@ -412,3 +414,141 @@ class TestShotChainClipChain:
         assert "[SHOT 1]" in prompt
         assert "DISSOLVE TO" not in prompt
         assert chain.get_shot(0)["transition"] == "dissolve"
+
+
+# ---------------------------------------------------------------------------
+# i2v -> t2v fallback prompt (issue: text-to-video fallback with a
+# consistency-preserving structured prompt)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildTextFallbackPrompt:
+    """The pinned t2v fallback format:
+
+    ``[character(s)], [environment], [direction], [camera], [lighting],
+    [motion], [audio], [sfx], [positive constraint]`` — comma-joined, empty
+    segments omitted.
+    """
+
+    def test_full_template_in_order(self) -> None:
+        result = build_text_fallback_prompt(
+            character="natural afro, ink-wash woman, 30s, red floral dress",
+            environment="an ink-wash village at dusk",
+            direction="she walks along the canal",
+            camera="wide 24mm, slow push-in",
+            lighting="golden hour, volumetric haze",
+            motion="gentle forward dolly",
+            audio="ambient water, soft footsteps",
+            sfx="drums on a distant drum",
+            positive_constraint="lock costume, lock hair, no extra figures",
+        )
+        expected = ", ".join(
+            [
+                "natural afro, ink-wash woman, 30s, red floral dress",
+                "an ink-wash village at dusk",
+                "she walks along the canal",
+                "wide 24mm, slow push-in",
+                "golden hour, volumetric haze",
+                "gentle forward dolly",
+                "ambient water, soft footsteps",
+                "drums on a distant drum",
+                "lock costume, lock hair, no extra figures",
+            ]
+        )
+        assert result == expected
+
+    def test_subset_preserves_order_and_omits_empty(self) -> None:
+        result = build_text_fallback_prompt(
+            character="blonde woman, 30s, red dress",
+            environment="sunlit park",
+            camera="medium 50mm",
+            # lighting / motion / audio / sfx / positive_constraint omitted
+        )
+        assert result == "blonde woman, 30s, red dress, sunlit park, medium 50mm"
+
+    def test_multiple_characters_lead_the_line(self) -> None:
+        result = build_text_fallback_prompt(
+            character="amélie",
+            characters=["the janitor", "amélie", "a red bus"],
+            environment="a rainy Parisian street",
+        )
+        # amélie deduped, order: primary character first, then the rest
+        assert result == "amélie, the janitor, a red bus, a rainy Parisian street"
+
+    def test_all_empty_returns_empty_string(self) -> None:
+        assert build_text_fallback_prompt() == ""
+
+    def test_no_double_or_edge_commas(self) -> None:
+        result = build_text_fallback_prompt(
+            character="a cat",
+            # environment omitted
+            lighting="studio",
+            # motion / audio omitted
+            sfx="purr",
+        )
+        assert result == "a cat, studio, purr"
+        assert ", ," not in result
+        assert not result.startswith(",")
+        assert not result.endswith(",")
+
+
+class TestBuildShotFallbackPrompt:
+    """``build_shot_fallback_prompt`` maps a flattened ``Shot`` onto the same
+    format, using the shot's ``character`` / ``environment`` and its structured
+    layers (or the raw prompt as the direction when no structure exists)."""
+
+    def test_structured_layers_win_over_raw_prompt(self) -> None:
+        from brandly_cli import shot_runner
+
+        shot = shot_runner.Shot(
+            id="s1",
+            act="",
+            style="cinematic",
+            folder="scenes",
+            prompt="[OPTICS] wide\n[MOON] x",  # raw i2v direction, should be ignored
+            duration=5,
+            character="a natural-afro woman",
+            environment="an ink-wash village",
+            structured={
+                "optics": "wide 24mm",
+                "lighting": "golden hour",
+                "motion": "slow push-in",
+                "audio": "rain",
+                "locks": "no extra figures",
+            },
+        )
+        result = build_shot_fallback_prompt(shot)
+        assert result == (
+            "a natural-afro woman, an ink-wash village, wide 24mm, "
+            "golden hour, slow push-in, rain, no extra figures"
+        )
+
+    def test_plain_prompt_becomes_direction(self) -> None:
+        from brandly_cli import shot_runner
+
+        shot = shot_runner.Shot(
+            id="s2",
+            act="",
+            style="cinematic",
+            folder="scenes",
+            prompt="she walks along the canal",
+            duration=5,
+            character="a woman",
+            environment="a misty harbor",
+        )
+        result = build_shot_fallback_prompt(shot)
+        assert result == "a woman, a misty harbor, she walks along the canal"
+
+    def test_only_character_is_honest_minimal(self) -> None:
+        from brandly_cli import shot_runner
+
+        shot = shot_runner.Shot(
+            id="s3",
+            act="",
+            style="cinematic",
+            folder="scenes",
+            prompt="",  # no direction, no structure, no environment
+            duration=5,
+            character="a lone lighthouse keeper",
+        )
+        assert build_shot_fallback_prompt(shot) == "a lone lighthouse keeper"

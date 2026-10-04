@@ -241,3 +241,64 @@ def youtube_payload(
     return ADAPTERS["youtube"].build_payload(
         video, title=title, description=description, schedule_iso=schedule_iso
     )
+
+
+def build_social_copy(
+    title: str,
+    *,
+    description: str = "",
+    hashtags: list[str] | None = None,
+    platform: str | None = None,
+    subject: str | None = None,
+    style: str | None = None,
+    category: str | None = None,
+    limit: int = 8,
+) -> dict[str, Any]:
+    """Compose copy-ready social text for a platform: description + hashtags.
+
+    * ``description`` is seeded from ``subject``/``title`` when absent - only
+      known metadata is used, nothing is fabricated.
+    * ``hashtags``: an explicit list wins (hash-prefixed, de-whitened);
+      ``None`` auto-generates from ``category``/``subject``/``style``/``platform``
+      via :func:`brandly_cli.trends.build_hashtags`; an explicit empty list
+      means "no hashtags".
+    * ``caption`` is a single copy-paste block (title, description, hashtags);
+      ``description_with_tags`` is what feeds the platform payload's
+      description/caption field (hashtags appended to the description).
+    """
+    from brandly_cli import trends
+
+    base_desc = (description or "").strip()
+    if not base_desc:
+        base_desc = (subject or title or "").strip()
+
+    tags: list[str]
+    if hashtags is None:
+        tags = trends.build_hashtags(
+            category, subject=subject, style=style, platform=platform, limit=limit
+        )
+    else:
+        tags = []
+        for raw in hashtags:
+            cleaned = str(raw).strip()
+            if not cleaned:
+                continue
+            if not cleaned.startswith("#"):
+                cleaned = f"#{cleaned}"
+            tags.append(cleaned)
+
+    tag_line = " ".join(tags)
+    description_with_tags = (
+        f"{base_desc}\n\n{tag_line}".strip() if tag_line else base_desc
+    )
+    caption = "\n\n".join(part for part in (title.strip(), description_with_tags) if part)
+
+    return {
+        "platform": platform,
+        "title": title,
+        "subject": subject,
+        "description": base_desc,
+        "hashtags": tags,
+        "description_with_tags": description_with_tags,
+        "caption": caption,
+    }

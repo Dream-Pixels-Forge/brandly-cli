@@ -180,3 +180,147 @@ def list_categories() -> list[str]:
         Sorted list of category names from the trend database.
     """
     return sorted(TREND_DATABASE.keys())
+
+
+# ---------------------------------------------------------------------------
+# Hashtag bank (issue: social copy + hashtags) - deterministic, seeded from
+# project metadata. Everything is curated data; nothing is invented per call.
+# ---------------------------------------------------------------------------
+
+#: Per-category tag bank: a "core" set plus per-platform tags.
+HASHTAG_BANK: dict[str, dict[str, Any]] = {
+    "tech": {
+        "core": ["Tech", "Gadgets", "Unboxing", "TechReview"],
+        "platforms": {
+            "tiktok": ["TikTokMadeMeBuyIt"],
+            "instagram": ["Reels"],
+            "youtube": ["TechYouTube"],
+            "twitter": ["Tech"],
+        },
+    },
+    "fashion": {
+        "core": ["Fashion", "OOTD", "Style", "GRWM"],
+        "platforms": {
+            "tiktok": ["FashionTikTok"],
+            "instagram": ["Reels", "StyleReels"],
+            "youtube": ["Lookbook"],
+            "twitter": ["Style"],
+        },
+    },
+    "food": {
+        "core": ["Food", "Foodie", "Recipe", "Cooking"],
+        "platforms": {
+            "tiktok": ["FoodTok"],
+            "instagram": ["FoodGram"],
+            "youtube": ["Cooking"],
+            "twitter": ["Food"],
+        },
+    },
+    "beauty": {
+        "core": ["Beauty", "GlowUp", "Skincare", "Makeup"],
+        "platforms": {
+            "tiktok": ["BeautyTok"],
+            "instagram": ["Reels"],
+            "youtube": ["Beauty"],
+            "twitter": ["GlowUp"],
+        },
+    },
+    "fitness": {
+        "core": ["Fitness", "Workout", "Gym", "Transformation"],
+        "platforms": {
+            "tiktok": ["FitnessTok"],
+            "instagram": ["Fit"],
+            "youtube": ["Workout"],
+            "twitter": ["Fitness"],
+        },
+    },
+}
+
+#: Generic, platform-appropriate video tags (e.g. YouTube -> #Shorts #Trending).
+PLATFORM_DEFAULT_HASHTAGS: dict[str, list[str]] = {
+    "youtube": ["Shorts", "Trending"],
+    "instagram": ["Reels", "Explore"],
+    "tiktok": ["FYP", "ForYou"],
+    "twitter": ["Video", "Trending"],
+}
+
+#: Style presets -> short tags.
+STYLE_HASHTAGS: dict[str, list[str]] = {
+    "cinematic": ["Cinematic", "4K"],
+    "ugc": ["RealVibes"],
+    "commercial": ["Ad"],
+    "luxury": ["Luxury"],
+}
+
+#: Words never promoted to a tag when deriving subject-derived hashtags.
+_HASHTAG_STOPWORDS = {
+    "the", "a", "an", "and", "or", "of", "for", "to", "in", "on", "at",
+    "with", "my", "your", "our", "is", "are", "vs",
+}
+
+
+def _subject_tags(subject: str, max_tags: int = 3) -> list[str]:
+    """Derive a few CamelCase tags from the user's own subject/title words.
+
+    Only significant words (length >= 3, not a stopword) are used - this is a
+    transformation of user-supplied data, not fabricated marketing copy.
+    """
+    import re
+
+    out: list[str] = []
+    for word in re.findall(r"[A-Za-z0-9]+", subject or ""):
+        if word.lower() in _HASHTAG_STOPWORDS or len(word) < 3:
+            continue
+        out.append(word.capitalize())
+        if len(out) >= max_tags:
+            break
+    return out
+
+
+def build_hashtags(
+    category: str | None,
+    *,
+    subject: str | None = None,
+    style: str | None = None,
+    platform: str | None = None,
+    limit: int = 8,
+) -> list[str]:
+    """Build a deterministic, order-stable hashtag list from project metadata.
+
+    Order (strongest first): category core tags, style tags, subject-derived
+    tags, then platform tags (category-specific first, then the generic
+    platform video tags). Result is deduplicated case-insensitively, capped at
+    ``limit``, and each entry is prefixed with ``#``. An unknown category
+    contributes no category tags (no fabrication); with no metadata at all the
+    result is an empty list.
+    """
+    chosen: list[str] = []
+    cat = (category or "").lower().strip()
+    bank = HASHTAG_BANK.get(cat)
+    if bank is not None:
+        chosen.extend(bank.get("core", []))
+    style_key = (style or "").lower().strip()
+    if style_key in STYLE_HASHTAGS:
+        chosen.extend(STYLE_HASHTAGS[style_key])
+    if subject:
+        chosen.extend(_subject_tags(subject))
+    plat = (platform or "").lower().strip()
+    if plat:
+        if bank is not None:
+            chosen.extend(bank.get("platforms", {}).get(plat, []))
+        chosen.extend(PLATFORM_DEFAULT_HASHTAGS.get(plat, []))
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for tag in chosen:
+        cleaned = str(tag).strip()
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(f"#{cleaned}")
+        if len(out) >= max(1, limit):
+            break
+    return out

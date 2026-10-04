@@ -935,3 +935,21 @@ defaults; shipped as four TDD PRs behind one release, per
 - NEXT: #196 (produce auto-ref scoping — needs a product decision) + #192
   (Agnes 503: backoff / queue-status / clearer error handling); #191 closed
   as a dup of #192.
+
+### Round 25/256 - Bug: discover_project_plates skips nested hq/ segments (issue #208)
+- [x] RED first: `tests/test_issue_208.py` (5 cases) — 4 failed on main: a
+  nested master (`character/hq/x.jpg`) was discovered, auto-injected by
+  `brandly video`, found in the legacy tree, and even re-split by
+  `optimize_references` (writing a small JPG inside `character/hq/`). 1
+  guard (top-level master still skipped) green before and after.
+- [x] Fix: the top-level-only guard `rel.parts[0] == HQ_DIRNAME` became
+  `HQ_DIRNAME in rel.parts` — any `hq/` segment under either scanned base
+  (v2 root + legacy `.brandly/<id>/images/`) is skipped, matching the
+  documented contract and the shot-side resolver's rule (#117, #207).
+- [x] GREEN: 33 passed (new + test_layout + test_hq_references); full suite
+  1290 passed (was 1285); ruff clean; mypy clean (92 files); version-check
+  OK (0.10.1); web/static untouched.
+- [x] PR #209 (`bug/discover-plates-nested-hq`, commit `f5d33c9`) squash-merged
+  to main; #208 auto-closed.
+- NEXT: #196 (produce auto-ref scoping — needs a product decision) + #192
+  (Agnes 503: backoff / queue-status / clearer error handling).

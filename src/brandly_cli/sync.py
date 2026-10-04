@@ -8,7 +8,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 from brandly_cli.constants import DEFAULT_AGNES_IMAGE_MODEL
-from brandly_cli.utils import write_atomic
+from brandly_cli.io import write_atomic
 
 # ---------------------------------------------------------------------------
 # Constants

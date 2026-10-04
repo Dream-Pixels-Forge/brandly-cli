@@ -21,11 +21,11 @@ from brandly_cli.cli import (
     _ffprobe_available,
     console,
 )
-from brandly_cli.sync import SYNC_HANDLERS, TOOLS, detect_tools, sync_keys
-from brandly_cli.utils import (
+from brandly_cli.planning import (
     _read_production_plan_rows,
     production_plan_path,
 )
+from brandly_cli.sync import SYNC_HANDLERS, TOOLS, detect_tools, sync_keys
 
 
 @click.command()

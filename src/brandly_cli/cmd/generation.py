@@ -43,15 +43,15 @@ from brandly_cli.constants import (
     DEFAULT_AGNES_IMAGE_MODEL,
     STYLE_PRESET_OPTIONS,
 )
-from brandly_cli.project_manager import ProjectManager
-from brandly_cli.style_presets import apply_style_preset
-from brandly_cli.utils import (
-    get_reference_image_urls,
+from brandly_cli.io import (
     is_valid_project_id,
     load_sheet_reference,
     now_iso,
     sanitize_filename,
 )
+from brandly_cli.planning import get_reference_image_urls
+from brandly_cli.project_manager import ProjectManager
+from brandly_cli.style_presets import apply_style_preset
 from brandly_cli.video_prompts import (
     build_enhanced_video_prompt,
     build_shot_fallback_prompt,
@@ -278,7 +278,7 @@ def reference(
             pass
         console.print(f"[green]✓ Imported reference plate:[/green] {dest}")
 
-        from brandly_cli.utils import write_generation_plan
+        from brandly_cli.planning import write_generation_plan
 
         plan, plan_reused = write_generation_plan(
             project_id,
@@ -331,7 +331,7 @@ def reference(
             sys.exit(1)
         console.print("[green]✓ Human gate passed — reference approved.[/green]")
 
-        from brandly_cli.utils import write_generation_doc
+        from brandly_cli.planning import write_generation_doc
 
         write_generation_doc(
             project_id,
@@ -375,7 +375,7 @@ def reference(
             prompt += f"\n\n[Reference skill: {subject_skill}]\n{prompt_variants[:500]}"
 
     # Write pre-generation plan
-    from brandly_cli.utils import write_generation_plan
+    from brandly_cli.planning import write_generation_plan
 
     plan, plan_reused = write_generation_plan(
         project_id,
@@ -416,7 +416,7 @@ def reference(
                 f"**Subject:** {subject}\n\n**Status:** FAILED\n",
                 encoding="utf-8",
             )
-            from brandly_cli.utils import upsert_production_plan
+            from brandly_cli.planning import upsert_production_plan
 
             upsert_production_plan(
                 project_id,
@@ -434,7 +434,7 @@ def reference(
         console.print("[yellow]Reference generated (base64 returned) — no URL to save[/yellow]")
         sys.exit(1)
 
-    from brandly_cli.utils import write_generation_doc
+    from brandly_cli.planning import write_generation_doc
 
     # Primary references live in images/<category>/ — the matching sub-folder.
     saved = _save_artifact(
@@ -682,7 +682,7 @@ def image(
     # Write pre-generation plan BEFORE API call
     plan_file_ref: str | None = None
     if project_id:
-        from brandly_cli.utils import write_generation_plan
+        from brandly_cli.planning import write_generation_plan
 
         plan, plan_reused = write_generation_plan(
             project_id,
@@ -749,7 +749,7 @@ def image(
         console.print(f"[red]Error generating image: {e}[/red]")
         if project_id:
             # Update plan to show failure
-            from brandly_cli.utils import write_generation_doc
+            from brandly_cli.planning import write_generation_doc
 
             docs_dir = layout.docs_dir(layout.project_dir(root, project_id), "tmp")
             docs_dir.mkdir(parents=True, exist_ok=True)
@@ -759,7 +759,7 @@ def image(
                 f"**Error:** {e}\n\n**Prompt:** {prompt}\n\n**Status:** FAILED\n",
                 encoding="utf-8",
             )
-            from brandly_cli.utils import upsert_production_plan
+            from brandly_cli.planning import upsert_production_plan
 
             if plan_file_ref:
                 upsert_production_plan(
@@ -853,7 +853,7 @@ def image(
         if not json_out:
             console.print(f"[green]✓ Image written to: {saved}[/green]")
         if project_id:
-            from brandly_cli.utils import write_generation_doc
+            from brandly_cli.planning import write_generation_doc
 
             write_generation_doc(
                 project_id,
@@ -876,7 +876,7 @@ def image(
                 fmt, width, height = _probe_image(saved)
                 console.print(f"  Saved → {saved}")
                 # Write generation document
-                from brandly_cli.utils import write_generation_doc
+                from brandly_cli.planning import write_generation_doc
 
                 write_generation_doc(
                     project_id,
@@ -944,7 +944,7 @@ def image(
                     {**job, "status": "failed", "error": f"could not capture base64 result: {e}"}
                 )
         if project_id:
-            from brandly_cli.utils import write_generation_doc
+            from brandly_cli.planning import write_generation_doc
 
             write_generation_doc(
                 project_id,
@@ -1506,7 +1506,7 @@ def video(
         console.print(f"[dim]Loaded sheet reference: {loaded_skill}[/dim]")
 
     # Write pre-generation plan BEFORE API call
-    from brandly_cli.utils import write_generation_plan
+    from brandly_cli.planning import write_generation_plan
 
     plan, plan_reused = write_generation_plan(
         project_id,
@@ -1586,7 +1586,7 @@ def video(
             "references are now auto-converted to smaller webp/jpeg copies; use "
             "--no-auto-refs / --auto-ref-category to slim the request further.[/dim]"
         )
-        from brandly_cli.utils import upsert_production_plan
+        from brandly_cli.planning import upsert_production_plan
 
         upsert_production_plan(
             project_id,
@@ -1617,7 +1617,7 @@ def video(
                 f"'brandly job-resume {video_id} --project-id {project_id}' to poll later.[/dim]"
             )
             # Update plan to show timeout
-            from brandly_cli.utils import (
+            from brandly_cli.planning import (
                 upsert_production_plan,
                 write_generation_doc,
             )
@@ -1752,7 +1752,7 @@ def video(
 
         # Only after approval: write the generation doc and flip the plan to
         # COMPLETED in the production plan.
-        from brandly_cli.utils import write_generation_doc
+        from brandly_cli.planning import write_generation_doc
 
         write_generation_doc(
             project_id,
@@ -2195,7 +2195,7 @@ def _run_produce_runner(
     # so a reviewer can match plan files to shots without opening them.
     plan_files: dict[str, Path] = {}
     if not no_plan:
-        from brandly_cli.utils import write_generation_plan
+        from brandly_cli.planning import write_generation_plan
 
         model = "agnes-video-2.5-flash"
         for shot in shots:
@@ -2223,7 +2223,7 @@ def _run_produce_runner(
         # Issue #37: update the plan row; Issue #36: sync project.json.
         plan = plan_files.get(shot.id)
         if plan is not None:
-            from brandly_cli.utils import upsert_production_plan
+            from brandly_cli.planning import upsert_production_plan
 
             upsert_production_plan(
                 project_id,

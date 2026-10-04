@@ -58,13 +58,8 @@ from brandly_cli.constants import (
 )
 from brandly_cli.cost_tracker import CostTracker
 from brandly_cli.director import get_director_prompt
-from brandly_cli.memory import UserPreferences
-from brandly_cli.project_manager import ProjectManager
-from brandly_cli.style_presets import apply_style_preset
-from brandly_cli.types import PhaseResult
-from brandly_cli.utils import (
+from brandly_cli.io import (
     _now_iso,
-    _read_production_plan_rows,
     download_file,
     ellipsize,
     generate_project_id,
@@ -74,6 +69,11 @@ from brandly_cli.utils import (
     now_iso,
     sanitize_filename,
 )
+from brandly_cli.memory import UserPreferences
+from brandly_cli.planning import _read_production_plan_rows
+from brandly_cli.project_manager import ProjectManager
+from brandly_cli.style_presets import apply_style_preset
+from brandly_cli.types import PhaseResult
 from brandly_cli.video_prompts import build_enhanced_video_prompt
 
 
@@ -959,7 +959,7 @@ def produce(
         sys.exit(1)
 
     # ---- Phase 1: prepare ALL shots on the production plan (source of truth)
-    from brandly_cli.utils import (
+    from brandly_cli.planning import (
         production_plan_path,
         upsert_production_plan,
         write_generation_plan,

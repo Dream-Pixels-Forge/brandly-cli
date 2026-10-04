@@ -34,11 +34,11 @@ from brandly_cli.cost_tracker import (
     CostTracker,
     video_seconds_today,
 )
-from brandly_cli.memory import UserPreferences
-from brandly_cli.project_manager import ProjectManager
-from brandly_cli.utils import (
+from brandly_cli.io import (
     is_valid_project_id,
 )
+from brandly_cli.memory import UserPreferences
+from brandly_cli.project_manager import ProjectManager
 
 
 @click.command()

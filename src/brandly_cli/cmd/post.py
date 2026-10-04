@@ -30,12 +30,12 @@ from brandly_cli.edit import (
     resize_video,
     trim_video,
 )
-from brandly_cli.project_manager import ProjectManager
-from brandly_cli.utils import (
+from brandly_cli.io import (
     human_size,
     is_valid_project_id,
     now_iso,
 )
+from brandly_cli.project_manager import ProjectManager
 
 
 @click.command()

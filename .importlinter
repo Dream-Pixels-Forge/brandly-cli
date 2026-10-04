@@ -11,7 +11,9 @@
 
 [importlinter]
 root_package = brandly_cli
-contracts = layered-brandly
+contracts =
+    layered-brandly
+    no-internal-utils-shim
 
 [importlinter:contract:layered-brandly]
 name = Layered brandly_cli (L0 -> L5)
@@ -23,4 +25,12 @@ layers =
     brandly_cli.agnes_client : brandly_cli.minimax_client : brandly_cli.ark_client : brandly_cli.audio_client : brandly_cli.image_convert : brandly_cli.job_polling
     brandly_cli.project_manager : brandly_cli.cost_tracker : brandly_cli.memory : brandly_cli.issue_tracker : brandly_cli.sharing : brandly_cli.webhook : brandly_cli.templates : brandly_cli.trends
     brandly_cli.layout : brandly_cli.constants : brandly_cli.types : brandly_cli.io : brandly_cli.planning : brandly_cli.video_prompts : brandly_cli.style_presets : brandly_cli.stitch : brandly_cli.utils : brandly_cli.director : brandly_cli.blender_integration : brandly_cli.spatial_tracker
+
+[importlinter:contract:no-internal-utils-shim]
+name = Internal modules import io/planning directly, never the deprecated brandly_cli.utils shim
+type = forbidden
+source_modules =
+    brandly_cli.*
+forbidden_modules =
+    brandly_cli.utils
 

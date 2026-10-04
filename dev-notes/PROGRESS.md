@@ -3,7 +3,7 @@
 ## Current State
 - Project: brandly-cli
 - Started: 2026-09-07
-- Version: 0.9.0 (release cut 2026-10-02; prior 0.8.0 cut 2026-09-29; #189)
+- Version: 0.10.1 (cut 2026-10-04; prior 0.10.0; #203 + #204)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
 - Test Count: 1244 passed (0 xfail/xpass)
@@ -316,6 +316,15 @@ defaults; shipped as four TDD PRs behind one release, per
   main as `a6047ad`; CI green (web-quality + quality matrix)
 - NEXT: G6 PR 2/3 live-upload follow-ups (YouTube live, TikTok/IG
   adapters) + TikTok/IG analytics adapters
+
+### Round 10/256 — v0.10.1 release (chore/test patch)
+
+- [x] Bumped 0.10.0 → 0.10.1 in single source `src/brandly_cli/__about__.py` (hatch dynamic version drives pyproject); commit `858ef48` pushed to main; lightweight tag `v0.10.1` pushed
+- [x] Ships PR #203 + #204 (myr-141505 i2v/t2v-fallback test hardening; agent-tools to_json re-export); no new runtime code → patch
+- [x] `scripts/version_check.py` (plain + `--tag v0.10.1`) + `version_is_single_sourced` invariant green
+- [x] GitHub Release v0.10.1 → `release.yml` (OIDC trusted publishing) green, incl. built-in "verify installable from PyPI" gate; PyPI `0.10.1` verified (wheel + sdist)
+- [x] v0.10.1 is the rollback point: `pip install brandly-cli==0.10.1` (previous: `0.10.0`)
+- NEXT: issue #205 (agent_tools.to_json import-test re-export coupling) remains a banked micro-hygiene follow-up
 
 
 ### Round 10/256 — production-run hardening batch: issues #113–#125 closed, web monitor + review queue shipped

@@ -953,3 +953,23 @@ defaults; shipped as four TDD PRs behind one release, per
   to main; #208 auto-closed.
 - NEXT: #196 (produce auto-ref scoping — needs a product decision) + #192
   (Agnes 503: backoff / queue-status / clearer error handling).
+
+### Round 26/256 - Bug: ensure_hq_split skips nested hq/ segments (issue #210)
+- [x] RED first: `tests/test_issue_210.py` (4 cases) — the direct-call path
+  re-split a nested master (`character/hq/x.png`): the master duplicated to
+  the top-level `hq/character/` and a small JPG written *inside*
+  `character/hq/`, violating the documented "already lives under hq/" no-op.
+  3 guards (nested-in-legacy-tree, top-level hq, category-root split) green
+  before and after.
+- [x] Fix: `rel.parts[0] == layout.HQ_DIRNAME` became
+  `layout.HQ_DIRNAME in rel.parts` — the same one-line shape as #208 on the
+  walker side. #208 already guarded the walked path (`optimize_references`
+  -> `discover_project_plates`); this pins the direct path
+  (`cmd/generation.py` + public callers) to the same contract.
+- [x] GREEN: 32 passed (new + test_hq_references + test_layout); full suite
+  1294 passed (was 1290); ruff clean; mypy clean (92 files); version-check
+  OK (0.10.1); web/static untouched.
+- [x] PR #211 (`bug/hq-split-nested-guard`, commit `45775b2`) squash-merged
+  to main; #210 auto-closed.
+- NEXT: #196 (produce auto-ref scoping — needs a product decision) + #192
+  (Agnes 503: backoff / queue-status / clearer error handling).

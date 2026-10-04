@@ -51,6 +51,10 @@ from brandly_cli.constants import (
     get_all_models,
     get_model_info,
 )
+from brandly_cli.io import (
+    is_valid_project_id,
+    now_iso,
+)
 from brandly_cli.minimax_client import (
     create_video_task as minimax_create_video,
 )
@@ -65,10 +69,6 @@ from brandly_cli.minimax_client import (
 )
 from brandly_cli.project_manager import ProjectManager
 from brandly_cli.style_presets import apply_style_preset
-from brandly_cli.utils import (
-    is_valid_project_id,
-    now_iso,
-)
 
 
 @click.command()
@@ -452,7 +452,7 @@ def job_resume(
         plan_dir = layout.docs_dir(layout.project_dir(root, project_id), "plan")
         plan_files = sorted(plan_dir.glob("plan_video_*.md")) if plan_dir.exists() else []
         if plan_files:
-            from brandly_cli.utils import upsert_production_plan
+            from brandly_cli.planning import upsert_production_plan
 
             upsert_production_plan(
                 project_id,

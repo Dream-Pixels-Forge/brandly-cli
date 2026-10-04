@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from brandly_cli import layout
+from brandly_cli.io import read_json, write_json
 from brandly_cli.types import ProjectData
-from brandly_cli.utils import read_json, write_json
 
 
 class ProjectManager:
@@ -30,7 +30,7 @@ class ProjectManager:
 
     def _validate_id(self, project_id: str) -> str:
         """Reject path-traversal ids. Returns the safe id verbatim."""
-        from brandly_cli.utils import is_valid_project_id
+        from brandly_cli.io import is_valid_project_id
 
         if not is_valid_project_id(project_id):
             raise ValueError(f"Invalid project ID: {project_id!r}")
@@ -207,7 +207,7 @@ def sync_production_state(
         # budget_credits is what record-cost actually enforces, so
         # project.json should not contradict it.
         if reconcile_budget:
-            from brandly_cli.utils import read_json
+            from brandly_cli.io import read_json
 
             proj_dir = layout.resolve_project_dir(Path(root), project_id)
             cost = read_json(proj_dir / "cost.json")

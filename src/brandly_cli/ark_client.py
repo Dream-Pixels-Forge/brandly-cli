@@ -16,7 +16,7 @@ from typing import Any
 import httpx
 from rich.console import Console
 
-from brandly_cli.utils import now_iso
+from brandly_cli.io import now_iso
 
 console = Console()
 

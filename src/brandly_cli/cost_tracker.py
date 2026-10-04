@@ -192,7 +192,7 @@ class CostTracker:
                 f"Budget: {state.budget_credits}"
             )
 
-        from brandly_cli.utils import now_iso
+        from brandly_cli.io import now_iso
 
         state.credits_spent += credits
         state.cost_log.append(CostEntry(phase, action, credits, now_iso()))

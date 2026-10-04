@@ -45,7 +45,7 @@ def add(root: Path, project_id: str, video_id: str, note: str = "") -> None:
     current = entries(root, project_id)
     if any(e.get("video_id") == video_id for e in current):
         return
-    from brandly_cli.utils import now_iso
+    from brandly_cli.io import now_iso
 
     current.append(
         {"video_id": video_id, "note": note, "created_at": now_iso()}

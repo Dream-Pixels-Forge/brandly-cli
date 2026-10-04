@@ -3,10 +3,10 @@
 ## Current State
 - Project: brandly-cli
 - Started: 2026-09-07
-- Version: 0.10.1 (cut 2026-10-04; prior 0.10.0; #203 + #204)
+- Version: 0.10.2 (cut 2026-10-04; prior 0.10.1; #197 #208 #210)
 - Current Phase: Phase 3 (Engineer) — Feature Implementation
 - Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
-- Test Count: 1244 passed (0 xfail/xpass)
+- Test Count: 1294 passed (0 xfail/xpass)
 - Lint: clean (ruff + mypy + import-linter)
 
 ## Phase Completion
@@ -971,5 +971,25 @@ defaults; shipped as four TDD PRs behind one release, per
   OK (0.10.1); web/static untouched.
 - [x] PR #211 (`bug/hq-split-nested-guard`, commit `45775b2`) squash-merged
   to main; #210 auto-closed.
+- NEXT: #196 (produce auto-ref scoping — needs a product decision) + #192
+  (Agnes 503: backoff / queue-status / clearer error handling).
+
+### Round 27/256 - v0.10.2 release (patch: reference plate resolution + nested hq guards)
+- [x] Bumped 0.10.1 -> 0.10.2 in single source `src/brandly_cli/__about__.py`
+  (hatch dynamic version drives pyproject); commit `42f7716` pushed to main;
+  lightweight tag `v0.10.2` pushed; CHANGELOG.md gained the 0.10.2 entry
+  (0.10.0/0.10.1 were never logged — backfill noted as a follow-up).
+- [x] Ships PR #207 + #209 + #211 (issues #197/#208/#210, all TDD RED->GREEN);
+  #191 closed as a dup of #192 (no code).
+- [x] `scripts/version_check.py --tag v0.10.2` green; the
+  `version_is_single_sourced` invariant green; no version literal pinned in
+  src/ or tests/.
+- [x] GitHub Release v0.10.2 -> `release.yml` (OIDC trusted publishing) green
+  in 39s, incl. the built-in "verify installable from PyPI" gate; PyPI
+  `0.10.2` verified (wheel 761,932 B + sdist 2,700,991 B, uploaded
+  09:57:26/29); `pip index` LATEST = 0.10.2 (no CDN lag); `pip download
+  --no-deps` OK.
+- [x] v0.10.2 is the rollback point: `pip install brandly-cli==0.10.2`
+  (previous: `0.10.1`).
 - NEXT: #196 (produce auto-ref scoping — needs a product decision) + #192
   (Agnes 503: backoff / queue-status / clearer error handling).

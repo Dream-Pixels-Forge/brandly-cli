@@ -63,3 +63,42 @@ def test_lint_imports_exits_zero_on_repo_root(
     assert exit_status == 0, (
         f"lint_imports returned {exit_status}: contracts broken or config invalid"
     )
+
+
+def test_no_import_cycles(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The zero-cycle invariant is CI-gated via ``scripts/import_graph.py``.
+
+    import-linter 2.x has no cycle contract (see the ``.importlinter`` note),
+    so cycle detection lives in the standalone ``scripts/import_graph.py``
+    analyzer. Without this test that gate is manual-only: a future commit
+    could silently reintroduce a top-level import cycle that no other check
+    (import-linter layered/forbidden, ruff, mypy) would catch. This test runs
+    the analyzer and requires exit 0 plus its PASS sentinel (zero top-level
+    import cycles, zero provider->prompting upward edges).
+    """
+    import os
+    import subprocess
+    import sys
+
+    monkeypatch.chdir(REPO_ROOT)
+    py = sys.executable
+    script = REPO_ROOT / "scripts" / "import_graph.py"
+    proc = subprocess.run(
+        [py, str(script)],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")},
+    )
+    assert proc.returncode == 0, (
+        f"import_graph.py exited {proc.returncode} -- a top-level import cycle "
+        f"or provider->prompting upward edge was reintroduced:\n"
+        f"{proc.stdout}\n{proc.stderr}"
+    )
+    assert "PASS: zero hard cycles" in proc.stdout, (
+        f"import_graph.py did not report a clean PASS (possible no-op):\n{proc.stdout}"
+    )
+    assert "FAIL" not in proc.stdout, (
+        f"import_graph.py reported a failure:\n{proc.stdout}"
+    )
+
+

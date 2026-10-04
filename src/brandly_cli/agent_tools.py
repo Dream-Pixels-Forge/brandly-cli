@@ -20,10 +20,6 @@ from typing import Any
 
 from rich.console import Console
 
-from brandly_cli.job_polling import (
-    to_json,  # noqa: F401  # re-exported: tests import agent_tools.to_json
-)
-
 console = Console()
 
 # ---------------------------------------------------------------------------
@@ -459,7 +455,3 @@ def invoke_tool(name: str, **kwargs: Any) -> Any:
     handler = BUILTIN_TOOLS[name]["handler"]
     return handler(**kwargs)
 
-
-# ---------------------------------------------------------------------------
-# JSON helpers (re-exported from job_polling — shared with agnes_client's agent loop)
-# ---------------------------------------------------------------------------

@@ -4,6 +4,25 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-04
+
+### Fixed (reference plate resolution + nested hq guards — #197/#208/#210)
+- **Shot-side plate resolution (#197)**: `shot_runner.resolve_plate` gains a
+  last-resort scoped `rglob` over both discovery bases (`images_dir` + the
+  derived legacy `.brandly/<id>/images/` tree), suffix order preserved and
+  any `hq/` segment skipped. `IMAGE_CATEGORIES` has 11 folders vs 4
+  `REF_CATEGORIES`, so plates in `general/`/`vehicle/`/`mecha/`/`animal/`/
+  `plant/`/`keyframe/`/`storyboard/` were auto-injected by `brandly video`
+  yet raised `FileNotFoundError` when a shot list named them by bare stem.
+- **Nested hq masters are never injected (#208)**:
+  `layout.discover_project_plates` skips any `hq/` segment (was top-level
+  only), matching its documented contract; `optimize_references` no longer
+  re-splits a nested master.
+- **Direct hq-split guard (#210)**: `image_convert.ensure_hq_split` skips any
+  `hq/` segment (was top-level only), so a direct call on a nested master is
+  the documented no-op instead of duplicating the master and writing a small
+  JPG inside `hq/`.
+
 ## [0.9.1] - 2026-10-02
 
 ### Changed

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from brandly_cli import agent_tools
+from brandly_cli import agent_tools, job_polling
 from brandly_cli.agnes_client import (
     _build_tools_payload,
     agent_tool_loop,
@@ -165,13 +165,13 @@ class TestAgentToolLoop:
 
 class TestToJson:
     def test_passthrough_string(self) -> None:
-        assert agent_tools.to_json("hello") == "hello"
+        assert job_polling.to_json("hello") == "hello"
 
     def test_dict_serialised(self) -> None:
-        assert agent_tools.to_json({"a": 1}) == '{"a": 1}'
+        assert job_polling.to_json({"a": 1}) == '{"a": 1}'
 
     def test_unserialisable_falls_back(self) -> None:
-        assert isinstance(agent_tools.to_json(object()), str)
+        assert isinstance(job_polling.to_json(object()), str)
 
 
 # ---------------------------------------------------------------------------

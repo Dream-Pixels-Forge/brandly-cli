@@ -272,12 +272,13 @@ def build_social_copy(
     if not base_desc:
         base_desc = (subject or title or "").strip()
 
+    tags: list[str]
     if hashtags is None:
         tags = trends.build_hashtags(
             category, subject=subject, style=style, platform=platform, limit=limit
         )
     else:
-        tags: list[str] = []
+        tags = []
         for raw in hashtags:
             cleaned = str(raw).strip()
             if not cleaned:

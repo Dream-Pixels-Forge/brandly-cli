@@ -135,7 +135,7 @@ def publish(
     if not no_hashtags:
         social_copy = pub.build_social_copy(
             title or project_id,
-            description=description,
+            description=description or "",
             hashtags=hashtags_arg,
             platform=platform,
             subject=subject,

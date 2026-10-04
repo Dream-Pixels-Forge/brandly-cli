@@ -1069,7 +1069,7 @@ def run_shots(config: RunnerConfig) -> int:
 
             success, fail_code, fail_note = _phase(shot, shot, i2v_attempts, None)
             total_attempts = i2v_attempts
-            if not success and shot.refs:
+            if not success and shot.refs and config.build_text_fallback_shot is not None:
                 fallback = config.build_text_fallback_shot(shot)
                 if fallback is not None:
                     config.say(

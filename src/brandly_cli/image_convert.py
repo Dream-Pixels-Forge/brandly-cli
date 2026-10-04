@@ -256,8 +256,9 @@ def ensure_hq_split(
       once it has been safely archived in ``hq/`` and the small JPG written.
 
     No-op (returns None) when the feature is disabled, the file is missing,
-    already lives under ``hq/``, is not under ``images_root``, or is not
-    large enough to be worth splitting.
+    already lives under ``hq/`` (issue #210: at any depth, not just the
+    top-level folder), is not under ``images_root``, or is not large enough
+    to be worth splitting.
     """
     if not _hq_enabled():
         return None
@@ -273,7 +274,7 @@ def ensure_hq_split(
         rel = image.resolve().relative_to(base)
     except ValueError:
         return None  # not under this images root (e.g. a legacy v1 plate)
-    if not rel.parts or rel.parts[0] == layout.HQ_DIRNAME:
+    if not rel.parts or layout.HQ_DIRNAME in rel.parts:
         return None
     category = rel.parts[0] if len(rel.parts) > 1 else "general"
 

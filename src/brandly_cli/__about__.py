@@ -6,4 +6,4 @@ versioning in ``pyproject.toml``), the CLI ``--version``, the MCP server, and
 the web config API all follow with no second literal to keep in sync.
 """
 
-__version__ = "0.10.0"
+__version__ = "0.10.1"

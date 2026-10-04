@@ -324,7 +324,7 @@ defaults; shipped as four TDD PRs behind one release, per
 - [x] `scripts/version_check.py` (plain + `--tag v0.10.1`) + `version_is_single_sourced` invariant green
 - [x] GitHub Release v0.10.1 → `release.yml` (OIDC trusted publishing) green, incl. built-in "verify installable from PyPI" gate; PyPI `0.10.1` verified (wheel + sdist)
 - [x] v0.10.1 is the rollback point: `pip install brandly-cli==0.10.1` (previous: `0.10.0`)
-- NEXT: issue #205 (agent_tools.to_json import-test re-export coupling) remains a banked micro-hygiene follow-up
+- NEXT: resolved — issue #205 fixed by PR #206 (squash `f0f9bb0` to main, #205 auto-closed)
 
 
 ### Round 10/256 — production-run hardening batch: issues #113–#125 closed, web monitor + review queue shipped
@@ -913,3 +913,25 @@ defaults; shipped as four TDD PRs behind one release, per
 
 
 
+
+### Round 24/256 - Bug: aligned shot-side plate resolution with auto-ref discovery (issue #197)
+- [x] RED first: `tests/test_issue_197.py` (7 cases) — 5 failed on main with
+  `FileNotFoundError` (general / vehicle / nested / legacy / parity), 2
+  guards (hq never resolves, missing stem still raises) green before and
+  after.
+- [x] Fix: `shot_runner.resolve_plate` gains a last-resort scoped `rglob`
+  over both discovery bases (`images_dir` + the derived legacy
+  `.brandly/<id>/images/` tree via `layout.project_dir`), suffix order
+  preserved, skipping any `hq/` segment. `IMAGE_CATEGORIES` has 11 folders
+  vs 4 `REF_CATEGORIES`, so plates in general/vehicle/mecha/animal/plant/
+  keyframe/storyboard were auto-injected by `brandly video` yet raised
+  `FileNotFoundError` when a shot list named them by bare stem (the
+  split-brain).
+- [x] GREEN: 81 passed (new + test_shot_references + test_shot_references_check
+  + test_shot_runner); full suite 1285 passed (was 1278); ruff clean;
+  mypy clean (92 files); version-check OK (0.10.1); web/static untouched.
+- [x] PR #207 (`bug/align-plate-resolution`, commit `10bda38`) squash-merged
+  to main; #197 auto-closed.
+- NEXT: #196 (produce auto-ref scoping — needs a product decision) + #192
+  (Agnes 503: backoff / queue-status / clearer error handling); #191 closed
+  as a dup of #192.

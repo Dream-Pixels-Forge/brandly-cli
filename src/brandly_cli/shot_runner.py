@@ -71,6 +71,7 @@ scene/shot.
 
 from __future__ import annotations
 
+import glob
 import json
 import math
 import os
@@ -83,6 +84,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from brandly_cli import layout
 from brandly_cli.io import run_capture
 
 #: Reference categories a shot may resolve bare plate stems against, searched
@@ -284,6 +286,13 @@ def resolve_plate(stem: str, images_dir: Path) -> Path:
     Categories are searched in ``REF_CATEGORIES`` order, so when a stem exists
     in several categories (or as both an optimized twin and the original), the
     first match wins: ``character`` > ``location`` > ``prop``.
+
+    Issue #197: ``discover_project_plates`` (the auto-ref injection source)
+    reaches every sub-folder of the images root and the legacy
+    ``.brandly/<id>/images/`` tree, so a plate it auto-injects must also
+    resolve here: the last resort is a scoped ``rglob`` over both bases,
+    suffix order preserved, skipping any ``hq/`` segment (an archived master
+    is never a live reference).
     """
     for category in REF_CATEGORIES:
         folder = images_dir / category
@@ -297,6 +306,27 @@ def resolve_plate(stem: str, images_dir: Path) -> Path:
         candidate = images_dir / f"{stem}{suffix}"
         if candidate.is_file():
             return candidate
+    # Issue #197: last resort - the same discovery tree the auto-ref injection
+    # uses. ``discover_project_plates`` reaches every sub-folder of the images
+    # root (general/, vehicle/ and the other non-REF_CATEGORIES folders, plus
+    # nested dirs) and the legacy .brandly/<id>/images/ tree, so a plate it
+    # auto-injects must also resolve by bare stem here. ``images_dir`` is the
+    # v2 media root (<root>/pre-production/<id>/), so the legacy base is the
+    # project root two levels up - discover_project_plates' second base.
+    bases = [images_dir]
+    if len(images_dir.parents) >= 2:
+        bases.append(
+            layout.project_dir(images_dir.parents[1], images_dir.name) / "images"
+        )
+    for base in bases:
+        if not base.is_dir():
+            continue
+        for suffix in _PLATE_SUFFIXES:
+            for candidate in sorted(base.rglob(glob.escape(stem) + suffix)):
+                rel = candidate.relative_to(base)
+                if layout.HQ_DIRNAME in rel.parts:
+                    continue
+                return candidate
     raise FileNotFoundError(
         f"reference plate not found: {stem!r} under {images_dir} "
         f"(categories: {', '.join(REF_CATEGORIES)})"

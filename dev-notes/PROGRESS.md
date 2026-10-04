@@ -993,3 +993,25 @@ defaults; shipped as four TDD PRs behind one release, per
   (previous: `0.10.1`).
 - NEXT: #196 (produce auto-ref scoping — needs a product decision) + #192
   (Agnes 503: backoff / queue-status / clearer error handling).
+
+### Round 28/256 - Bug: brandly image auto-ref opt-out + visible preset appending + dry-run (issue #212)
+- [x] RED first: `tests/test_issue_212.py` (5 cases) — 4 failed on main
+  (`No such option '--no-auto-refs'` / `'--auto-ref-category'` /
+  `'--dry-run'`; `preset_applied` is None while `enhanced_prompt` shows the
+  appended fashion language — the exact repro). 1 guard (auto-refs on by
+  default, unchanged) green before and after.
+- [x] Fix: `--no-auto-refs` / `--auto-ref-category` added to `brandly image`
+  (matching produce/video; the category scoping additionally matches the
+  category as a directory segment — v2 paths are
+  `pre-production/<id>/<category>/`, so the legacy `images/<category>/`
+  marker alone never matches v2). `image_analysis` records `preset_applied`
+  + `preset_text` (the exact appended string) and the final prompt is
+  logged. `--dry-run` prints the exact final prompt + the resolved reference
+  list and exits BEFORE any write or API call.
+- [x] GREEN: 29 passed (new + test_cli.py); full suite 1299 passed (was 1294);
+  ruff clean; mypy clean (92 files); version-check OK (0.10.2).
+- [x] PR #222 (`bug/image-style-preset-and-auto-refs`, commit `52f609c`)
+  squash-merged to main; #212 auto-closed.
+- NEXT: #213 (budget authoritative cost.json) + #220 (memory CLI
+  exit/defaults) + #221 (401 token failure) + #219 (reference mode binding
+  roles) + #192 (rate-limit warning) + #215/#217 (docs).

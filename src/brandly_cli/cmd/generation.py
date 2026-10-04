@@ -624,6 +624,27 @@ def _print_machine_json(obj: Any) -> None:
     default=None,
     help="Text model for --llm-enhance (default: agnes-2.5-flash).",
 )
+@click.option(
+    "--no-auto-refs",
+    "auto_refs_enabled",
+    flag_value=False,
+    default=True,
+    help="Do NOT auto-inject every project image as a reference (issue #212: "
+    "prevents payload bloat and style bleed; matches brandly produce).",
+)
+@click.option(
+    "--auto-ref-category",
+    default=None,
+    help="Scope auto-injected references to one image category "
+    "(e.g. 'prop', 'character', 'location') instead of all images.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print the exact final prompt and the resolved reference list "
+    "WITHOUT spending credits (issue #212).",
+)
 @click.pass_context
 def image(
     ctx: click.Context,
@@ -637,6 +658,9 @@ def image(
     json_out: bool,
     llm_enhance: bool,
     llm_model: str | None,
+    auto_refs_enabled: bool = True,
+    auto_ref_category: str | None = None,
+    dry_run: bool = False,
 ) -> None:
     """Generate an image via Agnes AI."""
     # Issue #73: in --json mode, suppress rich console output entirely
@@ -647,10 +671,21 @@ def image(
     if json_out:
         console.quiet = True
 
-    enhanced = apply_style_preset(prompt, style_preset, media="still") if style_preset else prompt
+    preset_text = ""
+    if style_preset:
+        enhanced = apply_style_preset(prompt, style_preset, media="still")
+        # Issue #212: make the preset appending visible - the user's prompt is
+        # not what reaches the model unless they can see what was added.
+        preset_text = enhanced[len(prompt):].lstrip(", ").strip()
+        console.print(
+            f"[dim]Style preset '{style_preset}' appended: {preset_text}[/dim]"
+        )
+    else:
+        enhanced = prompt
 
     # Try to load sheet reference for better prompting if project has context
     root = _get_root(ctx)
+    auto_refs: list[str] = []
     if project_id:
         skill_names = [
             "brandly-vehicle-sheet",
@@ -670,14 +705,64 @@ def image(
                     console.print(f"[dim]Loaded sheet reference: {skill}[/dim]")
                     break
 
-        # Also auto-detect existing artifacts as references
-        auto_refs = get_reference_image_urls(project_id, root)
-        if auto_refs:
-            enhanced += (
-                f"\n\nReference images ({len(auto_refs)}): "
-                "Use these as visual guides for consistency."
+        # Also auto-detect existing artifacts as references. Issue #212:
+        # opt-out (--no-auto-refs) + category scoping (--auto-ref-category),
+        # matching brandly produce / brandly video.
+        if auto_refs_enabled:
+            auto_refs = list(get_reference_image_urls(project_id, root))
+            if auto_ref_category:
+                marker = f"images{os.sep}{auto_ref_category}{os.sep}"
+                scoped = [
+                    p
+                    for p in auto_refs
+                    if marker in p
+                    or f"images/{auto_ref_category}/" in p
+                    or auto_ref_category in Path(p).parent.parts
+                ]
+                if not scoped:
+                    console.print(
+                        f"[yellow]⚠ No images found in category "
+                        f"'{auto_ref_category}' — auto references are empty "
+                        "for this run.[/yellow]"
+                    )
+                auto_refs = scoped
+            if auto_refs:
+                enhanced += (
+                    f"\n\nReference images ({len(auto_refs)}): "
+                    "Use these as visual guides for consistency."
+                )
+                console.print(
+                    f"[dim]Found {len(auto_refs)} artifact(s) for reference[/dim]"
+                )
+
+    # Issue #212: --dry-run prints the exact final prompt and the resolved
+    # reference list, then exits BEFORE any write or API call (no credits).
+    if dry_run:
+        if json_out:
+            console.quiet = quiet_original
+            _print_machine_json(
+                {
+                    "status": "dry_run",
+                    "prompt": prompt,
+                    "final_prompt": enhanced,
+                    "references": auto_refs,
+                    "model": model,
+                    "size": size,
+                    "ratio": ratio,
+                    "style_preset": style_preset,
+                    "preset_applied": bool(style_preset),
+                    "preset_text": preset_text,
+                    "auto_refs_enabled": auto_refs_enabled,
+                }
             )
-            console.print(f"[dim]Found {len(auto_refs)} artifact(s) for reference[/dim]")
+            return
+        console.print("[bold]Dry run - no credits spent.[/bold]")
+        console.print("[bold]Final prompt:[/bold]")
+        console.print(enhanced)
+        console.print(f"[bold]References ({len(auto_refs)}):[/bold]")
+        for ref in auto_refs:
+            console.print(f"  - {ref}")
+        return
 
     # Write pre-generation plan BEFORE API call
     plan_file_ref: str | None = None
@@ -971,6 +1056,8 @@ def image(
                         "prompt": prompt,
                         "enhanced_prompt": enhanced,
                         "style_preset": style_preset,
+                        "preset_applied": bool(style_preset),
+                        "preset_text": preset_text,
                         "model": model,
                         "generated_at": now_iso(),
                     }

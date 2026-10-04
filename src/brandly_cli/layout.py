@@ -358,12 +358,17 @@ def discover_project_plates(root: str | Path, project_id: str) -> list[Path]:
     while the old discovery only scanned ``.brandly/<id>/images/``. Plates
     land in both across versions, so scan the v2 root's category folders
     and fall back to the legacy tree, keeping a stable sorted order.
+
+    Issue #208: any ``hq/`` segment under each base is skipped - a master
+    nested inside a category's ``hq/`` folder is an archived original, never
+    a live reference (matching the shot-side resolver's rule).
     """
     root_path = Path(root)
     found: list[Path] = []
-    # v2 media root first, then the legacy .brandly/<id>/images/ tree. The
-    # top-level hq/ master folder under each root is skipped so high-quality
-    # originals are never re-injected as live references.
+    # v2 media root first, then the legacy .brandly/<id>/images/ tree. Any
+    # hq/ master folder segment under each root is skipped so high-quality
+    # originals are never re-injected as live references (issue #208: the
+    # nested hq segments too, not just the top-level one).
     for base in (
         resolve_media_root(root_path, project_id, "images"),
         project_dir(root_path, project_id) / "images",
@@ -373,7 +378,7 @@ def discover_project_plates(root: str | Path, project_id: str) -> list[Path]:
         for ext in _IMAGE_EXTS:
             for p in base.rglob(ext):
                 rel = p.relative_to(base)
-                if rel.parts and rel.parts[0] == HQ_DIRNAME:
+                if HQ_DIRNAME in rel.parts:
                     continue
                 found.append(p)
     return sorted({p.resolve() for p in found})

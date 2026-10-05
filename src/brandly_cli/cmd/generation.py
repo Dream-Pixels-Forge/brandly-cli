@@ -1668,11 +1668,38 @@ def video(
             f"{detail or '(no error message — likely a timeout; see retry log above)'}"
             f"[/red]"
         )
-        console.print(
-            "[dim]Tip: large reference payloads can time out the create endpoint — "
-            "references are now auto-converted to smaller webp/jpeg copies; use "
-            "--no-auto-refs / --auto-ref-category to slim the request further.[/dim]"
-        )
+        # Issue #221: emit the reference-payload hint only on the statuses it
+        # is actually relevant to (timeouts, 413, 504) - an auth failure is an
+        # account/API-key problem a payload hint cannot affect, and whose
+        # advice would destroy the character references if followed.
+        _detail_text = detail.lower()
+        if (
+            "401" in _detail_text
+            or "unauthorized" in _detail_text
+            or "token status" in _detail_text
+        ):
+            console.print(
+                "[red]✗ Agnes rejected the request: 401 (token state "
+                "unavailable).[/red]"
+            )
+            console.print(
+                "  This is an account/API-key problem, not a payload problem."
+            )
+            console.print(
+                "  Check your key and balance in the Agnes dashboard; run "
+                "`brandly config`."
+            )
+        elif (
+            "timeout" in _detail_text
+            or "timed out" in _detail_text
+            or "413" in _detail_text
+            or "504" in _detail_text
+        ):
+            console.print(
+                "[dim]Tip: large reference payloads can time out the create endpoint — "
+                "references are now auto-converted to smaller webp/jpeg copies; use "
+                "--no-auto-refs / --auto-ref-category to slim the request further.[/dim]"
+            )
         from brandly_cli.planning import upsert_production_plan
 
         upsert_production_plan(

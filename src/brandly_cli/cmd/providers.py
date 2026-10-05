@@ -526,8 +526,23 @@ def agnes_chat(
 
     tool_specs = get_builtin_tools() if tools else None
     messages = [{"role": "user", "content": prompt}]
+
+    def _provider_error_exit(exc: Exception) -> None:
+        # Issue #221: a permanent, correctly-classified provider error is a
+        # short message and a non-zero exit — not a stack trace through click
+        # internals. Callers parsing stderr and agents reading the output get
+        # a signal instead of noise.
+        detail = str(exc).strip()
+        console.print(
+            f"[red]✗ {type(exc).__name__}: {detail or '(no error message)'}[/red]"
+        )
+        sys.exit(1)
+
     if tool_specs:
-        result = asyncio.run(agent_tool_loop(messages, tool_specs, model=model))
+        try:
+            result = asyncio.run(agent_tool_loop(messages, tool_specs, model=model))
+        except Exception as e:
+            _provider_error_exit(e)
         if output == "json":
             _print_json(result)
             return
@@ -539,7 +554,10 @@ def agnes_chat(
     else:
         from brandly_cli.agnes_client import chat_completion
 
-        data = asyncio.run(chat_completion(messages, model=model))
+        try:
+            data = asyncio.run(chat_completion(messages, model=model))
+        except Exception as e:
+            _provider_error_exit(e)
         if output == "json":
             _print_json(data)
             return

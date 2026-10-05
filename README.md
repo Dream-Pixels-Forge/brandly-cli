@@ -366,6 +366,76 @@ brandly analyze video.mp4
 brandly share output.mp4
 ```
 
+## Costs, Quotas & Rate Limits
+
+Sizing a batch is a **rate-limit** decision, not a cost decision: on the Agnes
+free tier the price is flat per model while throughput cliffs hard.
+
+**Price is per model, not per size tier.** `brandly models` prints the single
+credit price for each model; brandly does not price by resolution. Measured
+against the live API (#215), `agnes-image-2.5-flash` bills **10 credits at both
+2K and 4K** — `--size 4K` is not a cost multiplier.
+
+**Throughput is where the tiers differ.** The Agnes free key's image rate limit
+is per size tier (`image_rpm_by_size` in `constants.py`):
+
+| `--size` | image RPM (free key) | wall-clock vs 2K |
+|---|---|---|
+| 1K | 20 | 2x faster |
+| 2K | 10 | baseline |
+| 3K | 1 | **10x slower** |
+| 4K | 1 | **10x slower** |
+
+A batch of plates at 4K therefore takes roughly **10x the wall-clock** of the
+same batch at 2K for the **same credits**. Draft at 2K; reserve 4K for approved
+assets.
+
+**`--size` and `--ratio` are independent.** `--size` (`1K`/`2K`/`3K`/`4K`) and
+`--ratio` (`1:1`, `3:4`, `4:3`, `16:9`, `9:16`, `2:3`, `3:2`, `21:9`) are
+separate options and separate request fields — choosing a size never overrides
+your ratio. Both default to `--size 2K` and `--ratio 16:9`.
+
+**Video quota and the credit cap.** The free tier allows **500
+video-seconds/day across all projects** (not per project), and each project's
+own cap lives in `cost.json`. `brandly produce` prices the shot list up front
+and warns before it spends:
+
+```
+$ brandly produce <id> --shots shots.json --dry-run
+Dry run: 72 shot(s), 360s total - estimated 1440 credits (20 credits/shot) - no API calls, no files written.
+⚠ Projected video cost: 72 shots x 20 credits = 1440; 500 remaining. Run 25 shots or raise the cap.
+```
+
+A second warning fires when today is already within 80% of the 500s daily cap,
+so a 503 wave can be told apart from quota exhaustion.
+
+## Project Files: What brandly Manages
+
+`.brandly/<project>/` mixes brandly-owned state with your own files. Only the
+paths below are read or rewritten by brandly — **anything else you drop beside
+them is left alone**, so a co-located `screenplay.md` or `notes.md` at the
+project root is safe across `init`, `resume` and phase syncs.
+
+**Yours to author (brandly reads it, never writes it):**
+- `<project>/shots.json` — **the canonical shot-list path.** `produce --shots`
+  and `gate-drift` resolve this exact path; no other location is auto-discovered,
+  so a shot list kept elsewhere must be passed explicitly.
+
+**brandly-managed (rewritten in place — do not hand-edit):**
+- `<project>/project.json` — project state (status, phase, style). Its `budget`
+  is a **display mirror**; the authoritative cap is `cost.json`.
+- `<project>/cost.json` — the cost ledger and the **authoritative** budget cap.
+- `<project>/scenes.json` — the scene manifest written by `produce`/gate.
+- `<project>/docs/` — `plan/` (the production plan), `bible/`, `storyboard/`,
+  `screenplay/` and `tmp/` (transient: the resume progress file, failure docs,
+  per-video generation records).
+- `pre-production/<project>/` — reference plates per category, `hq/` masters and
+  `3d-spatial/` renders. Brandly writes every plate here.
+- `production/<project>/` — `videos/`, `audio/` and `export/`.
+
+If you need a scratch file next to your plan, prefer the project root
+(`<project>/my-notes.md`) over `docs/`, which is brandly's to rewrite.
+
 ## CLI Reference
 
 ### Project Management

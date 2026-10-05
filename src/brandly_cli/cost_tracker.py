@@ -63,6 +63,38 @@ def video_seconds_today(root: str | Path) -> dict[str, int]:
     return {"seconds": seconds, "records": records}
 
 
+#: Issue #192: the Agnes free tier allows ~500 video-seconds/day
+#: (``PROVIDER_RATE_LIMITS["Agnes AI"]["video"]``). Warn as the day fills up so
+#: quota exhaustion is distinguishable from service degradation (#148).
+DAILY_VIDEO_SECONDS_FREE_TIER = 500
+#: Fraction of the daily cap at which the quota warning fires.
+DAILY_VIDEO_SECONDS_WARN_RATIO = 0.8
+
+
+def daily_video_quota_status(root: str | Path) -> dict[str, Any]:
+    """Issue #192: today's video-seconds against the free-tier daily cap."""
+    usage = video_seconds_today(root)
+    cap = DAILY_VIDEO_SECONDS_FREE_TIER
+    seconds = usage["seconds"]
+    return {
+        **usage,
+        "cap": cap,
+        "remaining": max(0, cap - seconds),
+        "percent_used": round((seconds / cap) * 100) if cap else 0,
+        "at_risk": seconds >= cap * DAILY_VIDEO_SECONDS_WARN_RATIO,
+    }
+
+
+def estimate_video_credits(shot_count: int, model: str) -> tuple[int, int]:
+    """Issue #214: ``(cost_per_shot, total)`` from the same model/cost table
+    the ``models`` command displays, so a dry-run can price a shot list."""
+    from brandly_cli.constants import get_model_info
+
+    info = get_model_info(model)
+    per_shot = int(info.get("cost_credits", 0)) if info else 0
+    return per_shot, per_shot * shot_count
+
+
 class CostEntry:
     def __init__(self, phase: str, action: str, credits: int, timestamp: str) -> None:
         self.phase = phase

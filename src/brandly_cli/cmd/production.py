@@ -57,7 +57,11 @@ from brandly_cli.constants import (
     VIDEO_STYLES,
     StylePreset,
 )
-from brandly_cli.cost_tracker import CostTracker
+from brandly_cli.cost_tracker import (
+    CostTracker,
+    daily_video_quota_status,
+    estimate_video_credits,
+)
 from brandly_cli.director import get_director_prompt
 from brandly_cli.io import (
     _now_iso,
@@ -898,6 +902,10 @@ def produce(
 
     # Issue #122: dry run resolves + prints everything the real run would
     # do, then exits before any write or API call.
+    # Issue #192 + #214: preflight cost/quota warnings before any credit is
+    # spent (the credit gate would otherwise fire mid-run, after assets).
+    _preflight_warnings(root, project_id, shots, "agnes-video-2.5-flash")
+
     if dry_run:
         images_dir = layout.resolve_media_root(root, project_id, "images")
         try:
@@ -1089,6 +1097,53 @@ def produce(
         except ImportError:
             console.print("[yellow]Web UI not available — install with: pip install brandly-cli[web][/yellow]")
 
+def _preflight_warnings(
+    root: Path, project_id: str, shots: Any, model: str
+) -> None:
+    """Issue #192 + #214: warn BEFORE any credit is spent.
+
+    A run whose projected cost cannot fit the budget, or a day already near the
+    free-tier video quota, is a preflight problem - not something to discover
+    at the credit gate mid-run after assets are already paid for.
+    """
+    quota = daily_video_quota_status(root)
+    if quota["at_risk"]:
+        console.print(
+            f"[yellow]⚠ Daily video quota: {quota['seconds']}/{quota['cap']}s "
+            f"used ({quota['percent_used']}%) - the Agnes free tier allows "
+            f"{quota['cap']} video-seconds/day. A 503 wave now is likely quota "
+            "exhaustion, not service degradation.[/yellow]"
+        )
+    if isinstance(shots, list):
+        shot_count = len(shots)
+    elif isinstance(shots, dict):
+        shot_count = sum(
+            len(act.get("shots") or [])
+            for act in (shots.get("acts") or {}).values()
+        )
+    else:
+        shot_count = 0
+    per_shot, projected = estimate_video_credits(shot_count, model)
+    if per_shot <= 0 or projected <= 0:
+        return
+    try:
+        summary = asyncio.run(
+            CostTracker(root / ".brandly").get_summary(project_id)
+        )
+    except (FileNotFoundError, OSError, KeyError, ValueError):
+        # No (or an unreadable) cost state: nothing to compare the projection
+        # against - the credit gate still enforces the cap.
+        return
+    remaining = max(0, int(summary["budget"]) - int(summary["total"]))
+    if projected > remaining:
+        fits = remaining // per_shot
+        console.print(
+            f"[yellow]⚠ Projected video cost: {shot_count} shots x "
+            f"{per_shot} credits = {projected}; {remaining} remaining. "
+            f"Run {fits} shots or raise the cap.[/yellow]"
+        )
+
+
 def _print_dry_run_shots(shots: list, done: set[str], progress_name: str) -> None:
     """Issue #122: render the flattened shot list for --dry-run.
 
@@ -1111,9 +1166,19 @@ def _print_dry_run_shots(shots: list, done: set[str], progress_name: str) -> Non
         prompt = s.prompt if len(s.prompt) <= 70 else s.prompt[:70] + "..."
         table.add_row(status, s.id, str(s.scene), f"{s.duration}s", refs, prompt)
     console.print(table)
+    # Issue #214: price the shot list from the same model/cost table the
+    # `models` command displays, so the dry-run shows what the run will cost.
+    per_shot, projected = estimate_video_credits(
+        len(shots), "agnes-video-2.5-flash"
+    )
+    price = (
+        f"estimated {projected} credits ({per_shot} credits/shot)"
+        if per_shot
+        else "cost unavailable for the configured model"
+    )
     console.print(
         f"[green]Dry run: {len(shots)} shot(s), {total:.0f}s total - "
-        "no API calls, no files written.[/green]"
+        f"{price} - no API calls, no files written.[/green]"
     )
 
 

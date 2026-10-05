@@ -1054,3 +1054,21 @@ defaults; shipped as four TDD PRs behind one release, per
   squash-merged to main; #220 auto-closed.
 - NEXT: #221 (401 token failure) + #219 (reference mode binding roles) +
   #192 (rate-limit warning) + #215/#217 (docs) + #214 (preflight estimate).
+
+### Round 31/256 - Bug: 401 gets an auth message not a payload tip; agnes-chat exits cleanly (issue #221)
+- [x] RED first: `tests/test_issue_221.py` (3 cases) — 2 failed on main (the
+  401 emitted the reference-payload tip and no auth message; `agnes-chat`
+  leaked the `HTTPStatusError` as a raw traceback through click internals).
+  1 guard (a timeout still gets the payload tip) green before and after.
+- [x] Fix: the reference-payload hint is emitted only on the statuses it is
+  actually relevant to (timeouts, 413, 504); a 401 gets an auth-specific
+  message (an account/API-key problem, not a payload problem — the old tip
+  would have destroyed the character references if followed).
+  `agnes-chat`'s agent-loop and plain-chat paths both catch the provider
+  error, print a one-line message and exit 1 — no stack trace.
+- [x] GREEN: 3 passed; full suite 1311 passed (was 1308); ruff clean; mypy
+  clean (92 files); version-check OK (0.10.2).
+- [x] PR #225 (`bug/agnes-401-token-failure`, commit `1f8a931`) squash-merged
+  to main; #221 auto-closed.
+- NEXT: #219 (reference mode binding roles) + #192 (rate-limit warning) +
+  #215/#217 (docs) + #214 (preflight estimate).

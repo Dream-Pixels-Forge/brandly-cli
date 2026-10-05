@@ -1072,3 +1072,23 @@ defaults; shipped as four TDD PRs behind one release, per
   to main; #221 auto-closed.
 - NEXT: #219 (reference mode binding roles) + #192 (rate-limit warning) +
   #215/#217 (docs) + #214 (preflight estimate).
+
+### Round 32/256 - Bug: reference-mode binding names each Picture N role (issue #219)
+- [x] RED first: `tests/test_issue_219.py` (3 cases) — 2 failed on main (the
+  flat sentence used for a mixed 2-character + 1-location shot telling the
+  model to preserve exact composition from all three simultaneously;
+  `reference_roles` raised TypeError: unexpected keyword argument). 1 guard
+  (URL references keep the flat sentence) green before and after.
+- [x] Fix (the issue's option 2 + automatic derivation):
+  `create_video_task` gains `reference_roles: list[str]` used verbatim when
+  provided; roles are otherwise derived from each plate path's category
+  folder (`_CATEGORY_ROLE` + `_binding_role_for`) BEFORE the paths are
+  resolved to data: URLs (the encoded form carries no category).
+  `_role_clause` names each `<Picture N>`'s role (character / environment /
+  style / other); the flat sentence is preserved for unknown categories.
+- [x] GREEN: 3 passed (47 with test_agnes_client.py); full suite 1314 passed
+  (was 1311); ruff clean; mypy clean (92 files); version-check OK (0.10.2).
+- [x] PR #226 (`bug/reference-binding-roles`, commit `d27c515`)
+  squash-merged to main; #219 auto-closed.
+- NEXT: #192 (rate-limit warning) + #215/#217 (docs) + #214 (preflight
+  estimate).

@@ -1783,6 +1783,11 @@ def video(
             )
             if saved:
                 console.print(f"  Saved → {saved}")
+                # G7: Measure the clip's actual duration and record it
+                from brandly_cli.shot_runner import _probe_video_duration
+                measured_s = _probe_video_duration(saved)
+                if measured_s is not None:
+                    console.print(f"  Duration: requested={duration}s, measured={measured_s:.2f}s")
                 # Issue #114: terminal state - clear the in-flight entry.
                 inflight.remove(root, project_id, video_id)
                 # Record the job so `brandly job-resume <id>` can locate the project.
@@ -1800,6 +1805,8 @@ def video(
                                 "mode": mode,
                                 "model": model,
                                 "created_at": now_iso(),
+                                "requested_duration": duration,
+                                "measured_duration": measured_s,
                             }
                         },
                     )

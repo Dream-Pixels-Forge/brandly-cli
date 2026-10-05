@@ -1092,3 +1092,27 @@ defaults; shipped as four TDD PRs behind one release, per
   squash-merged to main; #219 auto-closed.
 - NEXT: #192 (rate-limit warning) + #215/#217 (docs) + #214 (preflight
   estimate).
+
+### Round 33/256 - Feature: preflight cost estimate + daily video quota warning (issues #214 + #192)
+- [x] RED first: `tests/test_issue_214.py` (5 cases) — 3 failed on main (the
+  dry-run printed no price; no projection warning; no quota warning). 2
+  guards (no warning when the projection fits, no warning on a quiet day)
+  green before and after.
+- [x] Fix: `cost_tracker.daily_video_quota_status()` (today's video-seconds vs
+  `DAILY_VIDEO_SECONDS_FREE_TIER = 500`, at_risk at >=80%) and
+  `cost_tracker.estimate_video_credits()` (the same model/cost table the
+  `models` command displays, via `constants.get_model_info`).
+  `produce --dry-run` now prices the shot list, and `_preflight_warnings()`
+  warns BEFORE any credit is spent when the projection cannot fit the budget
+  (naming how many shots fit) or the day is near the daily cap. An
+  unreadable/absent cost.json skips the projection warning.
+- [x] #192 scope closed: item 1 (exponential backoff) + item 3 (503
+  classification) were already shipped; item 2 (queue-status endpoint) is
+  server-side with no Agnes endpoint - the in-repo equivalent is the
+  in-flight ledger + `job-resume --sweep` (PR #140). Item 4 landed here.
+- [x] GREEN: 5 passed; full suite 1319 passed (was 1314); ruff clean; mypy
+  clean (92 files).
+- [x] PR #227 (`bug/preflight-cost-and-quota-warnings`, commit `f833a62`)
+  squash-merged to main; #214 + #192 auto-closed.
+- NEXT: #215 + #217 (docs: 2K/4K cost parity + rate-limit cliff; the
+  brandly-managed vs user-owned project files).

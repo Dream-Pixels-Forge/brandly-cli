@@ -6,6 +6,20 @@ import json
 from pathlib import Path
 from typing import Any
 
+#: The self-describing default schema (issue #220). Merged into every load so
+#: a fresh store renders a full, self-describing ``view`` instead of a bare
+#: heading, and the defaults live in ONE place (not only inside ``reset``).
+#: The dead ``budget`` key (write-never, read-never; the budget plumbing is
+#: the preflight-cost work, issue #214) is dropped so ``view`` stops
+#: advertising something unusable.
+DEFAULTS: dict[str, Any] = {
+    "preferred_style": None,
+    "target_platforms": None,
+    "liked_hooks": [],
+    "disliked_hooks": [],
+    "last_used_style": None,
+}
+
 
 class UserPreferences:
     """Stores user preferences (liked/disliked hooks, preferred style, etc.)."""
@@ -15,12 +29,22 @@ class UserPreferences:
         self._data: dict[str, Any] = self._load()
 
     def _load(self) -> dict[str, Any]:
+        # Issue #220: merge the defaults into whatever is on disk so a fresh
+        # store is self-describing; stored values win over the defaults.
+        data: dict[str, Any] = {
+            k: (list(v) if isinstance(v, list) else v) for k, v in DEFAULTS.items()
+        }
         if self.storage_path.exists():
             try:
-                return json.loads(self.storage_path.read_text())
+                stored = json.loads(self.storage_path.read_text())
+                if isinstance(stored, dict):
+                    data.update(stored)
             except (json.JSONDecodeError, OSError):
-                return {}
-        return {}
+                pass
+        # Issue #220: drop the dead `budget` key (write-never, read-never) so
+        # `view` stops advertising something unusable.
+        data.pop("budget", None)
+        return data
 
     def _save(self) -> None:
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
@@ -30,7 +54,8 @@ class UserPreferences:
         return dict(self._data)
 
     def exists(self) -> bool:
-        return bool(self._data)
+        """True when the storage file exists on disk (user-authored data)."""
+        return self.storage_path.is_file()
 
     def update(self, prefs: dict[str, Any]) -> None:
         self._data.update(prefs)
@@ -60,11 +85,6 @@ class UserPreferences:
 
     def reset(self) -> None:
         self._data = {
-            "preferred_style": None,
-            "target_platforms": None,
-            "liked_hooks": [],
-            "disliked_hooks": [],
-            "budget": None,
-            "last_used_style": None,
+            k: (list(v) if isinstance(v, list) else v) for k, v in DEFAULTS.items()
         }
         self._save()

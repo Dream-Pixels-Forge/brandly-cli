@@ -1035,3 +1035,22 @@ defaults; shipped as four TDD PRs behind one release, per
 - NEXT: #220 (memory CLI exit/defaults) + #221 (401 token failure) + #219
   (reference mode binding roles) + #192 (rate-limit warning) + #215/#217
   (docs) + #214 (preflight estimate).
+
+### Round 30/256 - Bug: memory CLI exits 1 on misuse, self-describing fresh store, dead budget key dropped (issue #220)
+- [x] RED first: `tests/test_issue_220.py` (6 cases) — 5 failed on main (the
+  exit-0 misuse; the bare `User Preferences` fresh view; no defaults merge on
+  a stored file; `budget` in the reset data; `budget` in a stored file). 1
+  guard (like-with-hook still exits 0) green before and after.
+- [x] Fix: the memory CLI's usage branch calls `sys.exit(1)` (a silent no-op
+  corrupted trust in scripted/agent/CI callers); `memory.py` gains a
+  module-level `DEFAULTS` schema merged into every `_load()` (stored values
+  win) so a fresh store is self-describing; the dead `budget` key
+  (write-never, read-never — the plumbing belongs to #214) is dropped from
+  both the defaults and any stored file. `exists()` now means "the storage
+  file exists on disk" (test-only, no production callers).
+- [x] GREEN: 6 passed; full suite 1308 passed, 0 failed; ruff clean; mypy
+  clean (92 files); version-check OK (0.10.2).
+- [x] PR #224 (`bug/memory-cli-exit-and-defaults`, commit `461075b`)
+  squash-merged to main; #220 auto-closed.
+- NEXT: #221 (401 token failure) + #219 (reference mode binding roles) +
+  #192 (rate-limit warning) + #215/#217 (docs) + #214 (preflight estimate).

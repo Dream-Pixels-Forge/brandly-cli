@@ -1015,3 +1015,23 @@ defaults; shipped as four TDD PRs behind one release, per
 - NEXT: #213 (budget authoritative cost.json) + #220 (memory CLI
   exit/defaults) + #221 (401 token failure) + #219 (reference mode binding
   roles) + #192 (rate-limit warning) + #215/#217 (docs).
+
+### Round 29/256 - Bug: cost.json is the authoritative budget cap, warn on mirror divergence (issue #213)
+- [x] RED first: `tests/test_issue_213.py` (3 cases) — 2 failed on main
+  (`brandly list` and `brandly status` both showed the mirror `1600` /
+  `10/1600` with NO warning — the silent-revert repro). 1 guard (no warning
+  when the caps agree) green before and after.
+- [x] Fix (the issue's option 3, the root cause): the display reads
+  `cost.json` (`budget_credits` + `credits_spent`) directly instead of the
+  `project.json.budget` mirror. `cli.py` gains `_cost_authoritative()` and
+  `_print_project_summary(proj, root=None)` warns on divergence;
+  `cmd/production.py` `status` passes root and `list` shows the
+  authoritative values with a compact `⚠` marker on diverging rows.
+  `_check_budget` already read cost.json — unchanged.
+- [x] GREEN: 3 passed; full suite 1297 passed (was 1294); ruff clean; mypy
+  clean (92 files); version-check OK (0.10.2).
+- [x] PR #223 (`bug/budget-authoritative-cost-json`, commit `56ec431`)
+  squash-merged to main; #213 auto-closed.
+- NEXT: #220 (memory CLI exit/defaults) + #221 (401 token failure) + #219
+  (reference mode binding roles) + #192 (rate-limit warning) + #215/#217
+  (docs) + #214 (preflight estimate).

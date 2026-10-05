@@ -38,6 +38,7 @@ from brandly_cli.audio_client import generate_music, generate_tts
 from brandly_cli.cli import (
     _check_budget,
     _check_phase_artifacts,
+    _cost_authoritative,
     _get_root,
     _print_json,
     _print_project_summary,
@@ -190,7 +191,7 @@ def status(ctx: click.Context, project_id: str) -> None:
         "created_at": proj.created_at,
         "updated_at": proj.updated_at,
     }
-    _print_project_summary(summary)
+    _print_project_summary(summary, root=root)
 
 @click.command(name="list")
 @click.pass_context
@@ -214,14 +215,22 @@ def list_projects(ctx: click.Context) -> None:
     table.add_column("Spent", style="blue")
     table.add_column("Updated", style="dim")
     for p in projects:
+        # Issue #213: cost.json (budget_credits) is the authoritative cap;
+        # project.json.budget is a display mirror. Show the authoritative
+        # values and mark the row when they diverge.
+        pid = p["id"]
+        authoritative = _cost_authoritative(root, pid)
+        budget = authoritative["budget_credits"] if authoritative else p["budget"]
+        spent = authoritative["credits_spent"] if authoritative else p["spent"]
+        diverged = authoritative is not None and int(p.get("budget") or 0) != budget
         table.add_row(
-            p["id"][:8] + "...",
+            pid[:8] + "...",
             p.get("slug") or "",
             ellipsize(p.get("name") or "", 20),
             p["status"],
             p["current_phase"],
-            f"{p['budget']}",
-            f"{p['spent']}/{p['budget']}",
+            f"{budget}{' ⚠' if diverged else ''}",
+            f"{spent}/{budget}",
             (p.get("updated_at") or "")[:10],
         )
     console.print(table)

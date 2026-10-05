@@ -196,7 +196,29 @@ def _standardize_reference_format(saved: Path, target: str) -> Path:
     return saved
 
 
-def _print_project_summary(proj: dict[str, Any]) -> None:
+def _cost_authoritative(root: Path, project_id: str) -> dict[str, int] | None:
+    """Issue #213: cost.json (budget_credits) is the authoritative cap.
+
+    project.json.budget is a display mirror that the next spending command
+    re-syncs silently, so the display reads the authoritative file and warns
+    on divergence instead of showing a briefly-wrong raised cap.
+    """
+    path = Path(root) / ".brandly" / project_id / "cost.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return {
+        "budget_credits": int(data.get("budget_credits") or 0),
+        "credits_spent": int(data.get("credits_spent") or 0),
+    }
+
+
+def _print_project_summary(
+    proj: dict[str, Any], root: Path | None = None
+) -> None:
 
     table = Table(title=f"Project: {proj.get('name', proj.get('id', 'Untitled'))}")
     table.add_column("Field", style="cyan")
@@ -205,9 +227,29 @@ def _print_project_summary(proj: dict[str, Any]) -> None:
     table.add_row("Status", proj.get("status", ""))
     table.add_row("Phase", proj.get("current_phase", ""))
     table.add_row("Style", proj.get("style", ""))
-    table.add_row("Budget", f"{proj.get('budget', 0)} credits")
-    table.add_row("Spent", f"{proj.get('spent', 0)} credits")
-    remaining = proj.get("remaining", proj.get("budget", 0) - proj.get("spent", 0))
+    # Issue #213: cost.json (budget_credits) is the authoritative cap;
+    # project.json.budget is a display mirror. Read the authoritative values
+    # and warn on divergence instead of showing a briefly-wrong raised cap.
+    budget = proj.get("budget", 0)
+    spent = proj.get("spent", 0)
+    remaining = proj.get("remaining", budget - spent)
+    authoritative = (
+        _cost_authoritative(root, str(proj.get("id", "")))
+        if root is not None
+        else None
+    )
+    if authoritative is not None:
+        budget = authoritative["budget_credits"]
+        spent = authoritative["credits_spent"]
+        remaining = budget - spent
+        if int(proj.get("budget", 0) or 0) != budget:
+            console.print(
+                f"[yellow]⚠ project.json.budget ({proj.get('budget')}) does not "
+                f"match cost.json budget_credits ({budget}) — cost.json is "
+                "authoritative; edit cost.json to change the cap.[/yellow]"
+            )
+    table.add_row("Budget", f"{budget} credits")
+    table.add_row("Spent", f"{spent} credits")
     table.add_row("Remaining", f"{remaining} credits")
     table.add_row("Created", proj.get("created_at", ""))
     table.add_row("Updated", proj.get("updated_at", ""))

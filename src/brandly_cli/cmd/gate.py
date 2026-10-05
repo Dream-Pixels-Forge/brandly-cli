@@ -662,6 +662,9 @@ def memory(ctx: click.Context, action: str, hook: str | None) -> None:
         console.print("[dim]Memory reset.[/dim]")
     else:
         console.print("[red]Usage: brandly memory view|like|dislike|reset [HOOK][/red]")
+        # Issue #220: misuse must fail loudly - a silent no-op corrupts trust
+        # in scripted/agent/CI callers doing `brandly memory like "$HOOK"`.
+        sys.exit(1)
 
 
 @click.command()

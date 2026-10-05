@@ -154,8 +154,12 @@ class TestUtils:
 class TestMemory:
     def test_empty_initial_state(self, tmp_path: Path) -> None:
         mem = UserPreferences(tmp_path)
+        # Issue #220: a fresh store is self-describing - the defaults are
+        # merged into the load so the schema is visible on first run. The
+        # storage file itself does not exist until a preference is written.
         assert not mem.exists()
-        assert mem.get() == {}
+        assert mem.get()["liked_hooks"] == []
+        assert "preferred_style" in mem.get()
 
     def test_like_and_dislike_hook(self, tmp_path: Path) -> None:
         mem = UserPreferences(tmp_path)

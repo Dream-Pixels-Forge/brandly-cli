@@ -1141,3 +1141,43 @@ defaults; shipped as four TDD PRs behind one release, per
 - [x] PR #228 (`docs/quota-parity-and-project-file-ownership`, commit
   `3fbf69c`) squash-merged to main; #215 + #217 auto-closed.
 - NEXT: board clear - every open issue filed this session is closed.
+
+### Round 35/256 - Goal: measured truth (accuracy program G7-G14) + honest goal audit
+
+- Architectural audit of `origin/main` @ `70623d0` scored the founding goal
+  ("agents can drive it to produce long video and accurate result with cinema
+  as core bone") at **~65%**:
+  - agents can drive it **90%** (15-tool MCP surface; tools map to real CLI
+    argv, so the tool surface *is* the CLI surface)
+  - cinema as core bone **70%** (real cinematography layer; no dramatic arc)
+  - long video **55%** (architecturally unbounded, externally throttled)
+  - accurate result **55%** (strong on stills, **unverified on footage**)
+- Suite re-verified on `origin/main`: **1319 passed, 0 failed**. (An earlier
+  30-failure reading was a *measurement artifact* - the shared venv is
+  editable-installed against a different worktree's `src/`, so main's tests ran
+  against the feature branch's code. Re-run with the correct `PYTHONPATH`.)
+- **Root cause of all four gaps is one bug: brandly trusts requests, not
+  reality.**
+  - `agnes_client.py:654` clamps the duration **request**; `shot_runner` never
+    measures the returned clip, so a 5-6s take for a 12s request is recorded
+    `OK`. The gotcha is documented in a comment (`shot_runner.py:111-113`) and
+    never handled.
+  - video is never vision-judged: `production.py:1563,2799` pass
+    `use_ai=False`, although multi-frame judging is **already built**
+    (`quality_gate._extra_video_frames`, issue #171; `--use-ai --judge-frames`
+    already on the gate CLI) - a wiring gap, not a build gap.
+  - the gate fails open: no `AGNES_API_KEY` ⇒ `skipped`, never a failure, so a
+    project can finish `PASS` while nothing was verified.
+  - no closed loop: nothing scores the finished film and re-plans.
+- New artifact **`dev-notes/GOAL-ACCURACY.md`** (G7-G14), dependency-ordered:
+  G7 duration truth (keystone) → G8 continuation take; G9 wire the vision gate;
+  G10 scene scorecard + bounded rework (needs G9); G11 `UNVERIFIED` is never
+  `PASS`; G12 narrative beats; G13 quota-aware multi-day planning;
+  G14 `VideoBackend` seam.
+- Explicit non-goals: do not exceed 500 video-seconds/day this cycle, do not
+  ship a second provider, no full dramaturgy engine, no director-loop rewrite.
+- Projected: **~65% → ~85%** on the founding goal, with the residual 15%
+  genuinely external (provider quality, quota) rather than architectural.
+- Docs only: no code, no tests added. The 500s/day ceiling is accepted as-is by
+  decision; growth is planned via G13/G14 rather than fought now.
+

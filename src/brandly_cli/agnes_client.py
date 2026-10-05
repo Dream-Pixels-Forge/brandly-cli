@@ -571,6 +571,56 @@ def _validate_flash_create(
         )
 
 
+#: Issue #219: map a plate path's category folder to the role the binding
+#: sentence should name. The caller knows the roles (refs are ordered and
+#: category-tagged) but that information was discarded before the request.
+_CATEGORY_ROLE: dict[str, str] = {
+    "character": "character",
+    "location": "environment",
+    "prop": "prop",
+    "wardrobe": "wardrobe",
+    "vehicle": "vehicle",
+    "mecha": "mecha",
+    "animal": "animal",
+    "plant": "plant",
+    "keyframe": "keyframe",
+}
+
+
+def _binding_role_for(path_text: str) -> str | None:
+    """Derive a reference role from a plate path's category folder."""
+    parts = Path(path_text).parent.parts
+    for part in reversed(parts):
+        if part in _CATEGORY_ROLE:
+            return _CATEGORY_ROLE[part]
+    return None
+
+
+def _role_clause(index: int, role: str) -> str:
+    """One binding clause per reference image, naming its role (issue #219)."""
+    r = role.strip().lower()
+    if r == "character":
+        return (
+            f"<Picture {index}> is a character reference: preserve its exact "
+            "appearance, face, and identity."
+        )
+    if r == "environment":
+        return (
+            f"<Picture {index}> is the environment reference: match its "
+            "palette, lighting, and texture only - do not copy its framing "
+            "or subject placement."
+        )
+    if r == "style":
+        return (
+            f"<Picture {index}> is a style reference: match its visual style, "
+            "medium, and treatment only - do not copy its subject."
+        )
+    return (
+        f"<Picture {index}> is a {role} reference: use it consistently with "
+        "its role in the scene."
+    )
+
+
 async def create_video_task(
     prompt: str,
     *,
@@ -585,6 +635,7 @@ async def create_video_task(
     last_frame: str | None = None,
     reference_images: list[str] | None = None,
     reference_audios: list[str] | None = None,
+    reference_roles: list[str] | None = None,
 ) -> dict[str, Any]:
     """Create a video generation task and return {id, video_id, status, progress}.
 
@@ -655,6 +706,21 @@ async def create_video_task(
     body["size"] = size or "720P"
     body["aspect_ratio"] = aspect_ratio
 
+    # Issue #219: derive the reference roles from the plate paths' category
+    # folders BEFORE the paths are resolved to data: URLs (the encoded form
+    # carries no category).
+    derived_roles: list[str] | None = None
+    if reference_images:
+        roles_derived: list[str] = []
+        for p in reference_images:
+            role = _binding_role_for(str(p))
+            if role is None:
+                roles_derived = []
+                break
+            roles_derived.append(role)
+        if roles_derived:
+            derived_roles = roles_derived
+
     # Resolve local file paths to data: URLs
     if first_frame:
         first_frame = _resolve_image_url(first_frame)
@@ -679,13 +745,33 @@ async def create_video_task(
         # "Use <Audio 1> as the rhythm and ambience reference").
         binding_sentences: list[str] = []
         if reference_images:
-            pictures = ", ".join(
-                f"<Picture {i}>" for i in range(1, len(reference_images) + 1)
-            )
-            binding_sentences.append(
-                f"Use {pictures} as reference: preserve exact appearance, "
-                "lighting, and composition from the provided reference image(s)."
-            )
+            roles: list[str] | None = None
+            if reference_roles and len(reference_roles) == len(reference_images):
+                roles = [str(r) for r in reference_roles]
+            elif (
+                derived_roles is not None
+                and len(derived_roles) == len(reference_images)
+            ):
+                roles = derived_roles
+            if roles is not None:
+                # Issue #219: one clause per <Picture N> naming its role -
+                # mixed-category shots get contradictory instructions when a
+                # single flat sentence tells the model to preserve exact
+                # composition from every plate simultaneously.
+                binding_sentences.append(
+                    " ".join(
+                        _role_clause(i, role)
+                        for i, role in enumerate(roles, start=1)
+                    )
+                )
+            else:
+                pictures = ", ".join(
+                    f"<Picture {i}>" for i in range(1, len(reference_images) + 1)
+                )
+                binding_sentences.append(
+                    f"Use {pictures} as reference: preserve exact appearance, "
+                    "lighting, and composition from the provided reference image(s)."
+                )
         if reference_audios:
             audios = ", ".join(f"<Audio {i}>" for i in range(1, len(reference_audios) + 1))
             binding_sentences.append(

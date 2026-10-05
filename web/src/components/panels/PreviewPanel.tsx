@@ -7,6 +7,9 @@ export default function PreviewPanel() {
   const { selectedClipId, timeline, activeProject, currentFrame, totalFrames, isPlaying, volume, setPlayhead } = useAppStore();
   const videoRef = useRef<HTMLVideoElement>(null);
   const clip = timeline?.clips.find((c: Clip) => c.id === selectedClipId) ?? null;
+  // Two distinct empty states: no footage generated yet (show the still plate)
+  // vs. clips exist but none selected (keep the "select a clip" hint).
+  const hasNoClips = !timeline || timeline.clips.length === 0;
 
   // Sync video playback with store frame position
   useEffect(() => {
@@ -197,6 +200,70 @@ export default function PreviewPanel() {
             </div>
             {/* Transport is an overlay inside the frame — design §7 */}
             <TransportControls overlay />
+          </div>
+        ) : hasNoClips ? (
+          /* No footage generated yet: show the still plate. It is labelled so
+             it can never be mistaken for a real clip (data honesty). */
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <img
+              src="/static/preview.jpg"
+              alt="Placeholder still — no footage generated for this project yet"
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                opacity: 0.55,
+                filter: 'saturate(0.85)',
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                pointerEvents: 'none',
+              }}
+            >
+              <span
+                style={{
+                  background: 'rgba(14,14,17,0.85)',
+                  border: '1px solid var(--md-primary)',
+                  color: 'var(--md-primary)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.12em',
+                  fontFamily: 'var(--md-font-code-inline)',
+                  padding: '4px 10px',
+                }}
+              >
+                NO FOOTAGE YET
+              </span>
+              <span
+                style={{
+                  background: 'rgba(14,14,17,0.85)',
+                  border: '1px solid var(--md-surface-container-highest)',
+                  color: 'var(--md-on-surface-variant)',
+                  fontSize: 11,
+                  fontFamily: 'var(--md-font-code-inline)',
+                  padding: '4px 10px',
+                }}
+              >
+                Placeholder still — generate shots to see them here
+              </span>
+            </div>
           </div>
         ) : (
           <div style={{ textAlign: 'center', color: 'var(--md-on-surface-variant)', opacity: 0.5 }}>

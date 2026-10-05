@@ -111,6 +111,29 @@ an em-dash otherwise. Never fabricate telemetry as if it were live.
 | 06 | Agnes AI | **generation console** (prompt box, style-preset chips, aspect/fit/seed params, credit-budget bar, Synthesize/Queue actions) + **2×2 results grid** (one selected variant) + run-summary footer |
 | 07 | Preview Player | dedicated clean playback: **large centered 16:9 stage** with the transport **overlay** (play/pause · prev/next · scrubber · time · volume · fullscreen) + a **slim preview control strip** (shot name + PREVIEW chip + codec/fps · Loop toggle · “Open in Timeline” action); **no timeline, no Clip Inspector** |
 
+### 7.1 Preview stage empty states (added 2026-10-05)
+
+The 16:9 stage has **two** distinct empty states. They are not
+interchangeable, and the first is **not** in the Paper artboards — it is
+recorded here so the layout is not undocumented:
+
+| State | Condition | Stage renders |
+|---|---|---|
+| **No footage yet** | `!timeline \|\| timeline.clips.length === 0` | the still plate `web/public/preview.jpg` (`object-fit: cover`, `opacity: 0.55`), overlaid with a `NO FOOTAGE YET` chip (`--md-primary`) + a `Placeholder still — generate shots to see them here` caption |
+| **Nothing selected** | clips exist, `selectedClipId` unset | the existing `videocam_off` glyph + `Select a clip to preview` hint |
+
+**Data honesty (AGENTS.md §5):** the plate is a *placeholder*, never
+generated footage, so it is always labelled. Do not remove the chip to "clean
+up" the frame — a bare still in a video stage reads as real output.
+
+Tokens: `--md-primary`, `--md-on-surface-variant`,
+`--md-surface-container-highest`, `--md-font-code-inline` only — no new token
+namespace. Pinned by `tests/test_web_empty_state_preview.py`.
+
+The plate ships from `web/public/` (not the build output) because
+`vite.config.ts` sets `emptyOutDir: true`, which wipes
+`src/brandly_cli/web/static/` on every build.
+
 ## 8. Verification gates
 
 | Gate | Command |

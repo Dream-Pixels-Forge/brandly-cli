@@ -1,2 +1,15 @@
+# Normalize line endings for the built bundle's *text* assets only.
+# The blanket `** text eol=lf` below also matched binaries (e.g. the
+# empty-state preview.jpg), which makes git rewrite CRLF inside a JPEG and
+# corrupts it. Negate both `text` AND `eol` for binary extensions — `binary`
+# alone is not enough, because the inherited `eol=lf` still normalizes.
 src/brandly_cli/web/static/** text eol=lf
+src/brandly_cli/web/static/**/*.jpg -text -eol
+src/brandly_cli/web/static/**/*.jpeg -text -eol
+src/brandly_cli/web/static/**/*.png -text -eol
+src/brandly_cli/web/static/**/*.gif -text -eol
+src/brandly_cli/web/static/**/*.webp -text -eol
+src/brandly_cli/web/static/**/*.ico -text -eol
+src/brandly_cli/web/static/**/*.woff -text -eol
+src/brandly_cli/web/static/**/*.woff2 -text -eol
 web/index.html text eol=lf

@@ -84,6 +84,22 @@ branch with failing or skipped tests.
 **Non-negotiable merge condition:** every CI check green, zero lint warnings,
 no unresolved review threads.
 
+### 7.1 Branch hygiene (adopted 2026-10-05)
+
+Squash-merge leaves the original branch commits as non-ancestors of `main`, so
+stale branches pile up invisibly — the repo carried **38** of them before this
+rule, and `git branch -d` could only prove 26 were merged.
+
+1. **Always merge with** `gh pr merge <n> --squash --delete-branch`. Never
+   plain `git merge` + manual cleanup.
+2. **Prune after every merge:** `git fetch --prune origin`.
+3. **Prune local branches** with `git branch -d` (never `-D` blindly) —
+   `-d` refuses anything not provably merged, which is the safety net.
+4. When auditing whether a branch still holds work, do **not** trust
+   `git log main..<branch>` or `git cherry` on a squash-merged repo: both
+   report false positives. Prove it with **hard evidence** — a merged PR for
+   that head branch, or a distinctive symbol present in the current tree.
+
 ## 8. Fixing latent defects found mid-task
 
 If you discover a defect (e.g. a CSS variable referenced ~20 times but never

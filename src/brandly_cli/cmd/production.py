@@ -258,6 +258,19 @@ def list_projects(ctx: click.Context) -> None:
     is_flag=True,
     help="With --execute: skip the confirmation prompt.",
 )
+@click.option(
+    "--gate-ai",
+    "gate_ai",
+    type=click.Choice(scenes.GATE_AI_POLICIES),
+    default=scenes.DEFAULT_GATE_AI_POLICY,
+    show_default=True,
+    help=(
+        "How hard the validate phase vision-judges generated clips "
+        "(issue #232): 'off' = deterministic pre-checks only, "
+        "'scene-first' = judge the first clip of each scene, "
+        "'all' = judge every clip. Needs AGNES_API_KEY."
+    ),
+)
 @click.pass_context
 def run(
     ctx: click.Context,
@@ -265,6 +278,7 @@ def run(
     execute: bool,
     until_phase: str | None,
     yes: bool,
+    gate_ai: str,
 ) -> None:
     """Run the next phase of the pipeline.
 
@@ -300,7 +314,7 @@ def run(
                 "spends credits.",
                 abort=True,
             )
-        director = Director(DirectorConfig(root))
+        director = Director(DirectorConfig(root, gate_ai=gate_ai))
         result = asyncio.run(director.run_pipeline(project_id, until=until_phase))
         if "error" in result:
             console.print(
@@ -2248,11 +2262,14 @@ class DirectorConfig:
         default_style: str = "cinematic",
         default_budget: int = 500,
         default_shots: int = 5,
+        gate_ai: str = scenes.DEFAULT_GATE_AI_POLICY,
     ) -> None:
         self.root = Path(root)
         self.default_style = default_style
         self.default_budget = default_budget
         self.default_shots = default_shots
+        #: Vision-judge policy for the validate phase (issue #232).
+        self.gate_ai = gate_ai
         self.pm = ProjectManager(self.root)
         self.ct = CostTracker(self.root / ".brandly")
         self.mem = UserPreferences(self.root)
@@ -2787,12 +2804,13 @@ class Director:
                     )
                 }
             root_path = Path(self.cfg.root)
+            gate_ai = getattr(self.cfg, "gate_ai", "off")
 
             def gate_runner(clip: Path) -> str:
-                # Deterministic pre-checks only (use_ai=False) — the same
-                # runner the ``brandly gate --all-scenes`` CLI uses. The
-                # pipeline is async, so the sync QualityRunner contract is
-                # served with a fresh event loop per clip.
+                # Deterministic pre-checks only — the same runner the
+                # ``brandly gate --all-scenes`` CLI uses. The pipeline is async,
+                # so the sync QualityRunner contract is served with a fresh
+                # event loop per clip.
                 return asyncio.run(
                     quality_gate.verify_element(
                         clip,
@@ -2803,13 +2821,41 @@ class Director:
                     )
                 ).status
 
+            def ai_gate_runner(clip: Path) -> str:
+                # Vision judge (issue #232). ``judge_frames`` samples N
+                # evenly-spaced frames and judges them in ONE call (issue #171)
+                # — judging a clip, not just its poster frame. 3 frames is the
+                # cost/benefit sweet spot under the 500s/day video quota.
+                return asyncio.run(
+                    quality_gate.verify_element(
+                        clip,
+                        use_ai=True,
+                        judge_frames=3,
+                        root=root_path,
+                        project_id=proj.id,
+                        write_report=False,
+                    )
+                ).status
+
             # evaluate_all is sync and calls the gate runner inline, so run
             # the whole gate off the event loop (mirrors the gate CLI).
             report = await asyncio.to_thread(
                 lambda: scenes.evaluate_all(
-                    proj.id, root=root_path, gate_runner=gate_runner
+                    proj.id,
+                    root=root_path,
+                    gate_runner=gate_runner,
+                    ai_runner=ai_gate_runner,
+                    gate_ai=gate_ai,
                 )
             )
+            if gate_ai != "off":
+                judged = sum(
+                    s.get("quality", {}).get("ai_checked", 0) for s in report["scenes"]
+                )
+                console.print(
+                    f"[dim]Vision gate ({gate_ai}): {judged} clip(s) judged "
+                    f"across {len(report['scenes'])} scene(s).[/dim]"
+                )
             if report["verdict"] != "pass":
                 bad = [s for s in report["scenes"] if s["verdict"] != "pass"]
                 detail = "; ".join(f"{s['id']}={s['verdict']}" for s in bad)

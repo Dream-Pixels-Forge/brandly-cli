@@ -38,6 +38,19 @@ SCENES_VERSION = 1
 #: Returns "pass" | "warn" | "fail" for one clip path (case-insensitive).
 QualityRunner = Callable[[Path], str]
 
+#: How aggressively the **vision** judge is applied to generated clips
+#: (issue #232). The judge itself already ships in ``quality_gate``
+#: (issue #171: N evenly-spaced frames judged in one call).
+#:
+#: * ``off``         - deterministic pre-checks only (pre-#232 behaviour)
+#: * ``scene-first`` - judge the FIRST clip of each scene; highest identity
+#:                     signal per credit, so this is the default
+#: * ``all``         - judge every clip
+GATE_AI_POLICIES: tuple[str, ...] = ("off", "scene-first", "all")
+
+#: ``scene-first`` is the default: one judge call per scene, not per clip.
+DEFAULT_GATE_AI_POLICY = "scene-first"
+
 
 def scenes_path(project_id: str, *, root: Path | str | None = None) -> Path:
     """Where the manifest lives: ``docs/plan/scenes.json``."""
@@ -239,22 +252,53 @@ def resolve_scene(manifest: dict[str, Any], ref: str) -> dict[str, Any]:
     raise ValueError(f"unknown scene {ref!r} — available: {available}")
 
 
-def _with_quality(report: dict[str, Any], gate_runner: QualityRunner) -> dict[str, Any]:
-    """Run the deterministic quality gate over every present clip of a scene."""
+def _with_quality(
+    report: dict[str, Any],
+    gate_runner: QualityRunner,
+    ai_runner: QualityRunner | None = None,
+    gate_ai: str = "off",
+) -> dict[str, Any]:
+    """Run the quality gate over every present clip of a scene.
+
+    ``ai_runner`` is the **vision** judge (issue #232). ``gate_ai`` decides
+    which clips it applies to: ``all``, the first clip only
+    (``scene-first``), or none (``off``). A judged clip still gets the
+    deterministic pre-checks, because ``quality_gate.verify_element`` runs
+    both when ``use_ai=True``.
+    """
     failures: list[dict[str, Any]] = []
     checked = 0
-    for shot_id, path in report.get("_paths", {}).items():
+    ai_checked = 0
+    paths: dict[str, Any] = report.get("_paths", {})
+    for index, (shot_id, path) in enumerate(paths.items()):
         checked += 1
+        use_ai = (
+            ai_runner is not None
+            and gate_ai != "off"
+            and (gate_ai == "all" or index == 0)
+        )
+        # Both runners are non-None at this point (callers guard), and `use_ai`
+        # is True only when `ai_runner` is set — narrow for the type checker.
+        if use_ai and ai_runner is not None:
+            runner: QualityRunner = ai_runner
+            ai_checked += 1
+        else:
+            runner = gate_runner
         try:
             # GateResult.status is lowercase ("pass"/"warn"/"fail") — normalize.
-            status = gate_runner(path).strip().lower()
+            status = runner(path).strip().lower()
         except Exception as exc:  # a gate crash must fail the scene, not the CLI
             failures.append({"id": shot_id, "clip": path.name, "status": "fail", "error": str(exc)})
             continue
         if status in ("fail", "warn"):
             failures.append({"id": shot_id, "clip": path.name, "status": status})
 
-    report["quality"] = {"checked": checked, "failures": failures, "skipped": False}
+    report["quality"] = {
+        "checked": checked,
+        "ai_checked": ai_checked,
+        "failures": failures,
+        "skipped": False,
+    }
     if any(f["status"] == "fail" for f in failures):
         report["verdict"] = "fail"
     elif failures:  # WARN only — never promotes a fail, keeps pass→warn
@@ -266,12 +310,14 @@ def _evaluate_one(
     videos_root: Path,
     entry: dict[str, Any],
     gate_runner: QualityRunner | None,
+    ai_runner: QualityRunner | None = None,
+    gate_ai: str = "off",
 ) -> dict[str, Any]:
     report = _scene_report(videos_root, entry)
     if gate_runner is not None and report["present"] > 0:
-        report = _with_quality(report, gate_runner)
+        report = _with_quality(report, gate_runner, ai_runner, gate_ai)
     else:
-        report["quality"] = {"checked": 0, "failures": [], "skipped": True}
+        report["quality"] = {"checked": 0, "ai_checked": 0, "failures": [], "skipped": True}
     return _public(report)
 
 
@@ -281,12 +327,14 @@ def evaluate(
     *,
     root: Path | str | None = None,
     gate_runner: QualityRunner | None = None,
+    ai_runner: QualityRunner | None = None,
+    gate_ai: str = "off",
 ) -> dict[str, Any]:
     """Gate one scene: completeness (+ stale detection), then quality if a runner is given."""
     manifest = _require_manifest(project_id, root=root)
     entry = resolve_scene(manifest, ref)
     videos_root = layout.resolve_media_root(Path(root) if root else Path.cwd(), project_id, "videos")
-    return _evaluate_one(videos_root, entry, gate_runner)
+    return _evaluate_one(videos_root, entry, gate_runner, ai_runner, gate_ai)
 
 
 def evaluate_all(
@@ -294,12 +342,15 @@ def evaluate_all(
     *,
     root: Path | str | None = None,
     gate_runner: QualityRunner | None = None,
+    ai_runner: QualityRunner | None = None,
+    gate_ai: str = "off",
 ) -> dict[str, Any]:
     """Gate every scene of the project; the verdict is the worst scene verdict."""
     manifest = _require_manifest(project_id, root=root)
     videos_root = layout.resolve_media_root(Path(root) if root else Path.cwd(), project_id, "videos")
     reports = [
-        _evaluate_one(videos_root, entry, gate_runner) for entry in manifest.get("scenes", [])
+        _evaluate_one(videos_root, entry, gate_runner, ai_runner, gate_ai)
+        for entry in manifest.get("scenes", [])
     ]
     return {
         "project_id": project_id,

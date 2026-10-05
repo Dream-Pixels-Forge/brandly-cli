@@ -34,6 +34,7 @@ from brandly_cli.io import proc_output
 PASS = "pass"
 WARN = "warn"
 FAIL = "fail"
+UNVERIFIED = "unverified"
 
 # ---------------------------------------------------------------------------
 # Gate policy (issue #34 — documented threshold + override logic)
@@ -187,6 +188,8 @@ class GateResult:
     """Score floor used for this run (issue #34). None = no floor."""
     lenient: bool = False
     """Whether this run used lenient artifact cutoffs."""
+    ai_unavailable: bool = False
+    """True when AI was requested (use_ai=True) but unavailable (no API key)."""
 
     def add_issue(self, msg: str, *, check: str | None = None, detail: Any = None) -> None:
         self.status = FAIL
@@ -206,7 +209,10 @@ class GateResult:
 
     def finalize(self, *, strict: bool = False) -> None:
         """Recompute status from issues/warnings and apply strict mode."""
-        if self.issues:
+        # If AI was requested but unavailable, status is UNVERIFIED (not PASS/WARN/FAIL)
+        if getattr(self, "ai_unavailable", False):
+            self.status = UNVERIFIED
+        elif self.issues:
             self.status = FAIL
         elif self.warnings:
             self.status = WARN
@@ -1036,6 +1042,7 @@ async def verify_element(
                     lenient=lenient,
                 )
             else:
+                result.ai_unavailable = True
                 result.add_warning(
                     "AI visual analysis skipped (AGNES_API_KEY not set) — "
                     "only offline pre-checks were run",

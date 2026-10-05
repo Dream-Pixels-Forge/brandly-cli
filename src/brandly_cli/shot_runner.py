@@ -114,6 +114,134 @@ AGNES_MAX_SHOT_DURATION = 12
 #: Default segment length when splitting over-long shots.
 SPLIT_SEGMENT_DURATION = 6
 
+# --- Duration truth (G7) ---
+#: Legal provider max (12s) vs reliable max (~6s). 7-12s is a measured-risk zone.
+RELIABLE_MAX_SHOT_DURATION = 6
+#: Acceptable deviation: max(1s, 10% of requested).
+DURATION_TOLERANCE_FACTOR = 0.10
+DURATION_TOLERANCE_MIN = 1.0
+#: Status enum for a shot's duration fidelity.
+DURATION_STATUSES: tuple[str, ...] = ("ok", "short", "continuation")
+
+
+# --- Duration truth helpers (G7) ---
+
+def duration_tolerance(requested_s: int | float) -> float:
+    """Acceptable deviation: max(1s, 10% of requested)."""
+    return max(DURATION_TOLERANCE_MIN, abs(requested_s) * DURATION_TOLERANCE_FACTOR)
+
+
+def is_within_tolerance(requested: int | float, measured: float) -> bool:
+    """True if measured duration is within tolerance of requested."""
+    tol = duration_tolerance(requested)
+    return abs(measured - requested) <= tol
+
+
+def duration_status(requested_s: int | float, measured_s: float | None) -> str:
+    """Classify a clip's duration fidelity.
+
+    Returns "ok" if within tolerance (or unmeasured), "short" if measurably
+    short beyond tolerance, "continuation" if a continuation take was added.
+    """
+    if measured_s is None:
+        return "ok"  # unmeasured defaults to ok (legacy behaviour)
+    if is_within_tolerance(requested_s, measured_s):
+        return "ok"
+    return "short"
+
+
+# --- Probe helpers ---
+
+def _probe_video_duration(path: Path) -> float | None:
+    """Return the duration of a video clip in seconds using ffprobe.
+
+    Returns None if the file doesn't exist, isn't a valid video, or ffprobe fails.
+    """
+    import json
+    import subprocess
+
+    if not path.is_file():
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=duration",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout)
+        streams = data.get("streams", [])
+        if not streams:
+            return None
+        dur = streams[0].get("duration")
+        return float(dur) if dur is not None else None
+    except Exception:
+        return None
+
+
+def get_timeline(project_id: str, root: Path | str = ".") -> list[dict[str, Any]]:
+    """Return a timeline view with measured vs requested durations.
+
+    This reads the production plan and progress log to build a timeline view
+    that includes measured vs requested durations and duration status.
+    """
+    from brandly_cli import layout
+    from brandly_cli.planning import production_plan_path
+
+    root_path = Path(root) if isinstance(root, str) else root
+    plan_path = production_plan_path(project_id, root=root_path)
+    if not plan_path.exists():
+        return []
+
+    import json
+
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    shots = plan.get("shots", [])
+
+    # Read progress log for completed shots
+    from brandly_cli.shot_runner import ProgressLog
+
+    progress_log = ProgressLog(layout.docs_dir(layout.resolve_project_dir(Path("."), project_id), "tmp") / PROGRESS_FILENAME)
+    completed = progress_log.completed_ids([])
+
+    timeline = []
+    for shot in shots:
+        shot_id = shot.get("id") or shot.get("name")
+        requested = shot.get("duration", 0)
+        entry = {
+            "shot_id": shot_id,
+            "requested_s": requested,
+            "measured_s": None,
+            "delta_s": None,
+            "duration_status": "pending",
+        }
+        if shot_id in completed:
+            # Try to find the clip and measure it
+            videos_root = layout.resolve_media_root(Path("."), project_id, "videos") / "scenes"
+            clip_path = videos_root / clip_filename(shot.get("scene", 1), shot.get("index_in_scene", 1))
+            if clip_path.exists():
+                measured = _probe_video_duration(clip_path)
+                entry["measured_s"] = measured
+                if measured is not None:
+                    entry["delta_s"] = round(measured - requested, 2)
+                    entry["duration_status"] = duration_status(requested, measured)
+        timeline.append(entry)
+
+    return timeline
+
 
 def utcnow() -> str:
     """UTC timestamp for progress-file lines."""
@@ -188,6 +316,16 @@ class Shot:
     #: dropped, prompt re-described in text). Lets ``generate_one`` skip the
     #: auto-reference re-injection that would otherwise defeat the switch.
     text_fallback: bool = False
+
+    # --- Duration truth (G7) ---
+    #: Duration the shot was requested to be.
+    requested_s: int | None = None
+    #: Actual measured duration of the generated clip (seconds).
+    measured_s: float | None = None
+    #: Difference: measured - requested (negative = short).
+    delta_s: float | None = None
+    #: Duration fidelity status: "ok" | "short" | "continuation".
+    duration_status: str = "ok"
 
     @property
     def clip_name(self) -> str:

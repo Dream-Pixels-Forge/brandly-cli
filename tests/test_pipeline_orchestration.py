@@ -649,8 +649,19 @@ def test_validate_phase_runs_scene_gate_and_passes(
     assert "error" not in result, result
     assert result["result"]["verdict"] == "pass"
     assert [clip for clip, _ in calls] == expected_clips  # every present clip gated
-    for _, kwargs in calls:
-        assert kwargs["use_ai"] is False  # deterministic runner, like the gate CLI
+    # Issue #232: the default policy is `scene-first`, so the first clip of the
+    # scene is vision-judged and the rest stay deterministic. Every clip is
+    # still gated exactly once.
+    judged: list[Path] = []
+    for clip, kwargs in calls:
+        if kwargs["use_ai"] is True:
+            judged.append(clip)
+            assert kwargs["judge_frames"] == 3, (
+                "the vision judge must sample multiple frames (issue #171)"
+            )
+        else:
+            assert kwargs["use_ai"] is False, "gating must never be skipped"
+    assert len(judged) == 1, f"scene-first judges one clip per scene, got {judged}"
     proj = _read(tmp_path)
     assert proj.phases["validate"].status == "completed"
     assert proj.current_phase == "publish"

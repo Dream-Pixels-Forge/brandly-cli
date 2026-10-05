@@ -53,14 +53,14 @@ class TestDurationTruth:
     def test_is_within_tolerance(self):
         """Check if measured duration is within tolerance of requested."""
         # Within tolerance -> True
-        assert shot_runner.is_within_tolerance(requested=10, measured=9.5) is True
-        assert shot_runner.is_within_tolerance(requested=10, measured=10.5) is True
-        assert shot_runner.is_within_tolerance(requested=5, measured=4.5) is True
-        assert shot_runner.is_within_tolerance(requested=5, measured=5.5) is True
+        assert shot_runner.is_within_tolerance(requested_s=10, measured_s=9.5) is True
+        assert shot_runner.is_within_tolerance(requested_s=10, measured_s=10.5) is True
+        assert shot_runner.is_within_tolerance(requested_s=5, measured_s=4.5) is True
+        assert shot_runner.is_within_tolerance(requested_s=5, measured_s=5.5) is True
         # Beyond tolerance -> False
-        assert shot_runner.is_within_tolerance(requested=10, measured=8.5) is False
-        assert shot_runner.is_within_tolerance(requested=10, measured=11.5) is False
-        assert shot_runner.is_within_tolerance(requested=5, measured=3.5) is False
+        assert shot_runner.is_within_tolerance(requested_s=10, measured_s=8.5) is False
+        assert shot_runner.is_within_tolerance(requested_s=10, measured_s=11.5) is False
+        assert shot_runner.is_within_tolerance(requested_s=5, measured_s=3.5) is False
 
 
 

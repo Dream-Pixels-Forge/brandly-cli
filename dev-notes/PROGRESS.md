@@ -1116,3 +1116,28 @@ defaults; shipped as four TDD PRs behind one release, per
   squash-merged to main; #214 + #192 auto-closed.
 - NEXT: #215 + #217 (docs: 2K/4K cost parity + rate-limit cliff; the
   brandly-managed vs user-owned project files).
+
+### Round 34/256 - Docs: 2K/4K cost+rate reality, project file ownership (issues #215 + #217)
+- [x] #215: README gains `## Costs, Quotas & Rate Limits` - price is per model
+  not per size tier (10 credits at both 2K and 4K on
+  `agnes-image-2.5-flash`, measured), the per-tier RPM table
+  (`image_rpm_by_size`: 1K 20 / 2K 10 / 3K 1 / 4K 1 - 4K is ~10x the
+  wall-clock for the same credits), `--size` and `--ratio` are independent
+  options, and the 500 video-seconds/day quota + the #214/#192 preflight
+  output.
+- [x] #217: README gains `## Project Files: What brandly Manages` -
+  `shots.json` is the canonical shot-list path (`produce --shots` and
+  `gate-drift` resolve exactly that; nothing else is auto-discovered);
+  `project.json` (budget is a display mirror of `cost.json`), `cost.json`,
+  `scenes.json`, `docs/**`, `pre-production/**` and `production/**` are
+  brandly-managed; anything else beside them (e.g. a co-located
+  `screenplay.md`) is left alone across init/resume/phase syncs.
+- [x] Data honesty: every number sourced from the code (the RPM table, the
+  `cost_credits` the `models` command prints, `AGNES_IMAGE_RATIOS`,
+  `layout.DOC_CATEGORIES`, `layout.resolve_project_dir` + shots.json in
+  cmd/gate.py) - not from prose.
+- [x] Docs only: no test added (no code); full suite unchanged; ruff + mypy
+  clean; version-check OK (0.10.2).
+- [x] PR #228 (`docs/quota-parity-and-project-file-ownership`, commit
+  `3fbf69c`) squash-merged to main; #215 + #217 auto-closed.
+- NEXT: board clear - every open issue filed this session is closed.

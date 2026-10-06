@@ -85,6 +85,45 @@ def daily_video_quota_status(root: str | Path) -> dict[str, Any]:
     }
 
 
+def compute_multi_day_schedule(
+    target_seconds: int,
+    daily_quota: int = NOMINAL_VIDEO_SECONDS_PER_DAY,
+    avg_shot_duration: float = 5.0,
+) -> dict[str, Any]:
+    """Compute a multi-day schedule for a target duration given daily quota.
+
+    Args:
+        target_seconds: Total video seconds needed.
+        daily_quota: Daily video seconds quota (default 500).
+        avg_shot_duration: Average shot duration in seconds (default 5.0 from G7 reliable window).
+
+    Returns:
+        Dict with days, seconds_per_day, and shots_per_day.
+    """
+    if target_seconds <= daily_quota:
+        return {
+            "days": 1,
+            "seconds_per_day": [target_seconds],
+            "shots_per_day": [max(1, round(target_seconds / avg_shot_duration))],
+        }
+
+    days = (target_seconds + daily_quota - 1) // daily_quota  # Ceiling division
+    seconds_per_day = []
+    remaining = target_seconds
+    for _ in range(days):
+        day_seconds = min(daily_quota, remaining)
+        seconds_per_day.append(day_seconds)
+        remaining -= day_seconds
+
+    shots_per_day = [max(1, round(s / avg_shot_duration)) for s in seconds_per_day]
+
+    return {
+        "days": days,
+        "seconds_per_day": seconds_per_day,
+        "shots_per_day": shots_per_day,
+    }
+
+
 def estimate_video_credits(shot_count: int, model: str) -> tuple[int, int]:
     """Issue #214: ``(cost_per_shot, total)`` from the same model/cost table
     the ``models`` command displays, so a dry-run can price a shot list."""
@@ -257,6 +296,42 @@ class CostTracker:
             "by_phase": by_phase,
             "entries": [e.to_dict() for e in state.cost_log],
         }
+
+    async def record_continuation(
+        self,
+        project_id: str,
+        shot_id: str,
+        shortfall_s: float,
+        attempt_number: int,
+        credits: int,
+        budget_credits: int | None = None,
+    ) -> dict[str, Any]:
+        """Record a continuation take spend.
+
+        Continuations are extra requests to finish a short clip. They cost
+        credits but don't count as new shots - they're attributed to the
+        original shot's continuation history.
+
+        Args:
+            project_id: Project identifier
+            shot_id: The original shot ID this continuation is for
+            shortfall_s: Duration shortfall this continuation addresses
+            attempt_number: Which continuation attempt (1, 2, etc.)
+            credits: Credit cost of the continuation generation
+            budget_credits: Optional budget for auto-initialization
+
+        Returns:
+            Dict with spend result including total_spent and remaining budget
+        """
+        # Reuse record_spend but tag the action as a continuation
+        action = f"continuation-{shot_id}-attempt-{attempt_number}"
+        return await self.record_spend(
+            project_id=project_id,
+            phase="continuation",
+            action=action,
+            credits=credits,
+            budget_credits=budget_credits,
+        )
 
 
 

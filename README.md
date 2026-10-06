@@ -4,7 +4,7 @@
   <img src="assets/banner.png" alt="Brandly CLI Banner" width="100%">
 </p>
 
-> **AI product video orchestrator** — add image, video, and sound generation capability to any AI tool (OpenCode, Codex, Qwen Code, Claude Code, etc.) via a CLI and Director agent.
+> **AI product video orchestrator** — create professional product videos with AI. Works with any AI tool (OpenCode, Codex, Qwen Code, Claude Code, etc.) via CLI, agent tools, and MCP server.
 
 [![PyPI version](https://img.shields.io/pypi/v/brandly-cli.svg)](https://pypi.org/project/brandly-cli/)
 [![Python >=3.10](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -12,524 +12,355 @@
 [![Tests](https://img.shields.io/badge/tests-passing-green.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![Lint](https://img.shields.io/badge/lint-ruff_clean-brightgreen.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli)
 [![CI](https://github.com/Dream-Pixels-Forge/brandly-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Dream-Pixels-Forge/brandly-cli/actions)
+[![GitHub stars](https://github.com/Dream-Pixels-Forge/brandly-cli?style=social)](https://github.com/Dream-Pixels-Forge/brandly-cli/stargazers)
+
+---
+
+## 🎬 What is Brandly?
+
+**Brandly helps you create professional product videos using AI** — from concept to final render, all from the command line or your favorite AI assistant.
+
+### ✨ What You Can Do
+
+| Capability | Description |
+|------------|-------------|
+| **Generate images** | Text-to-image, image-to-image with Agnes AI |
+| **Generate videos** | Text-to-video, keyframe-controlled, reference-based (consistent characters/objects) |
+| **Generate audio** | Background music, voiceovers (TTS) via MiniMax |
+| **3D spatial reference** | Blender PlayBlast for precise camera/lighting reference frames |
+| **Shot-by-shot production** | Plan → generate → assemble with retries, resume, and canonical naming |
+| **Post-production** | Stitch, color-grade, captions, dubbing, beat-sync, thumbnails |
+| **Quality gates** | Anti-slop/drift verification before each step |
+| **Multi-platform export** | TikTok, Instagram Reels, YouTube Shorts, generic MP4 |
+| **Schedule & publish** | Direct to TikTok/IG/YouTube (dry-run first, credential-gated) |
+
+### 🎯 Who Is This For?
+
+- **Marketers & creators** — make product videos without a production team
+- **Developers** — integrate video generation into your apps/agents via CLI or MCP
+- **AI enthusiasts** — orchestrate multi-modal AI workflows (image + video + audio)
+
+---
+
+## 🚀 Quick Start (5 minutes)
+
+### 1. Install
+
+`ash
+pip install brandly-cli
+`
+
+### 2. Get an API Key
+
+1. Sign up at [Agnes AI](https://apihub.agnes-ai.com)
+2. Get your API key
+3. Set it as environment variable:
+
+`ash
+export AGNES_API_KEY="your_key_here"
+# Add to your ~/.bashrc or ~/.zshrc for persistence
+`
+
+### 3. Create Your First Video Project
+
+`ash
+# Interactive project setup
+brandly init -n "My Product" -i "A sleek wireless charger that doubles as a desk lamp"
+
+# Or one-liner:
+brandly init -n "Wireless Charger" -i "Minimalist 2-in-1 charger and lamp, premium materials" -s cinematic -b 200
+`
+
+### 4. Generate Shots (Director Mode)
+
+`ash
+# Let the Director agent plan and execute
+brandly run <project_id> --execute --until produce
+
+# Or step-by-step:
+brandly run <project_id> --execute --until script    # Write shot list
+brandly run <project_id> --execute --until asset     # Generate shots
+brandly run <project_id> --execute --until validate  # Quality check
+brandly run <project_id> --execute --until publish   # Export & schedule
+`
+
+### 5. View Results
+
+`ash
+# Open visual timeline editor
+brandly timeline <project_id>
+
+# Or check status
+brandly status <project_id>
+`
+
+---
+
+## 📋 Core Workflows
+
+### For Creators (Human-Driven)
+
+`ash
+# 1. Create project
+brandly init -n "Product Name" -i "Brief description" -s cinematic
+
+# 2. Review & approve the shot plan
+brandly status <id>
+brandly approve <id> script
+
+# 3. Generate assets (one shot at a time, resumable)
+brandly run <id> --execute --until asset
+
+# 4. Quality check
+brandly gate <id> --all-scenes
+
+# 5. Assemble & export
+brandly run <id> --execute --until publish
+`
+
+### For AI Agents (Tool-Driven)
+
+Brandly exposes **15 agent-callable tools** via MCP server:
+
+`ash
+# Start MCP server (for Cursor, Claude Code, etc.)
+brandly mcp serve
+
+# Or use tools directly:
+brandly tools --json           # List all available tools
+brandly tools call produce_shots --project_id <id> --shots 5
+brandly tools call gate_scene --project_id <id> --scene_id S01
+`
+
+**Available tools:** init_project, produce_shots, gate_scene, stitch_video, export_platforms, publish_video, estimate_cost, check_quota, 
+egister_reference, 
+ecover_job, and more.
+
+---
+
+## 🎨 Common Commands Cheat Sheet
+
+### Project Setup
+`ash
+brandly init -n "Name" -i "Idea" -s cinematic -b 500    # New project
+brandly status <id>                                      # Full project overview
+brandly approve <id> <phase>                             # Human gate approval
+`
+
+### Generation
+`ash
+brandly run <id> --execute --until produce              # Full auto-pipeline
+brandly run <id> --execute --only shot-03 shot-07       # Regenerate specific shots
+brandly produce <id> --shots shots.json --interval 60   # Manual shot-by-shot
+brandly video <id> -p "prompt" --style commercial       # Single video clip
+`
+
+### Quality & Validation
+`ash
+brandly gate <id> --all-scenes --json                   # All scenes quality check
+brandly gate <id> --element ./clip.mp4 --ref ./ref.png  # Single element check
+brandly validate <id>                                   # Virality scoring
+`
+
+### Post-Production
+`ash
+brandly stitch clip1.mp4 clip2.mp4 --ratio 2.39:1 --fit crop --output final.mp4
+brandly export <id> --platforms tiktok,instagram,youtube
+brandly thumbnail <id> --style cinematic
+brandly voice-match <video> --source en --target es    # Dubbing
+brandly beat-sync <video> <music>                       # Cut to beats
+`
+
+### Publishing
+`ash
+brandly publish <id> --dry-run                          # Preview what will happen
+brandly publish <id> --platforms tiktok,instagram       # Schedule posts
+brandly config set tiktok <token>                       # Store credentials
+`
+
+### Utilities
+`ash
+brandly estimate --style cinematic --shots 8            # Cost preview
+brandly quota                                           # Daily quota remaining
+brandly timeline <id>                                   # Open visual editor
+brandly director                                        # Show agent prompt
+`
+
+---
+
+## 🎬 Video Generation Deep Dive
+
+### Styles Available
+| Style | Best For |
+|-------|----------|
+| cinematic | Storytelling, brand films |
+| commercial | Product demos, ads |
+| ugc | TikTok/Reels native feel |
+| montage | Fast-paced showcase |
+| continuous | One-take style |
+| unboxing | Product reveals |
+| lifestyle | In-context usage |
+
+### Reference Images (Consistency)
+`ash
+# Use reference images for consistent characters/objects
+brandly video <id> -p "hero walks" --reference-images char.png,prop.png
+
+# Or register references first (recommended for multi-shot)
+brandly reference <id> --image char.png --subject-type character
+brandly reference <id> --image prop.png --subject-type prop
+`
+
+### Keyframe Control
+`ash
+# Start from first frame, end at last frame
+brandly video <id> -p "transition" --mode keyframe --first-frame start.png --last-frame end.png
+`
+
+---
+
+## 🤖 Director Agent (AI-Orchestrated)
+
+The Director is an **agent prompt** that knows how to drive Brandly end-to-end:
+
+`ash
+# Print the prompt for your AI tool
+brandly director
+
+# Or run directly (experimental)
+brandly run <id> --execute --yes
+`
+
+**Director phases:** 	rends → concept → script → sset → udio → 
+e_edit → alidate → publish
+
+Each phase has:
+- **Defined inputs/outputs** (see randly plan <id> --json)
+- **Gate command** for verification
+- **Cost estimate** before execution
+
+---
+
+## 📊 Monitoring & Debugging
+
+`ash
+# Project status dashboard
+brandly status <id>
+
+# Shot list with progress
+brandly scenes <id> --json
+
+# Quota & budget
+brandly quota
+brandly cost <id> --breakdown
+
+# Job recovery (if process crashed)
+brandly job-resume <video_id>
+brandly job-poll <video_id> --output recovered.mp4
+
+# Visual timeline editor
+brandly timeline <id> --port 8765
+`
+
+---
+
+## ⚙️ Configuration
+
+`ash
+# Set provider credentials (stored securely)
+brandly config set tiktok "access_token=..."
+brandly config set instagram "access_token=..."
+brandly config set youtube "client_id=... client_secret=..."
+
+# View config
+brandly config show
+
+# Environment variables
+export AGNES_API_KEY="..."          # Required for video/image
+export BRANDLY_IMAGE_CONVERT=off    # Disable auto image compression
+export BRANDLY_WEB_PORT=8765        # Timeline editor port
+`
+
+---
+
+## 🏗️ Architecture (For Developers)
+
+<details>
+<summary><strong>Click to expand technical architecture</strong></summary>
+
+### Pipeline Phases
+`
+init → trends → concept → script → asset → audio → re_edit → validate → publish
+`
+
+Each phase is **fail-closed**: failure freezes current_phase, exits non-zero.
+
+### Key Modules
+| Module | Responsibility |
+|--------|----------------|
+| gnes_client.py | Agnes AI HTTP client (retry, backoff, 503 handling) |
+| shot_runner.py | Resumable shot-by-shot generation (rate-limited) |
+| scenes.py | Explicit scene manifest + completeness gate |
+| quality_gate.py | Anti-slop/drift verification (deterministic + AI vision) |
+| director.py | Orchestrator prompt + Director.run_pipeline |
+| stitch.py | FFmpeg-based assembly (transitions, ratio, color) |
+| export_platforms.py | Platform-specific renders (9:16, 1:1, 16:9) |
+| cost_tracker.py | Per-phase budgeting + daily quota tracking |
+| gent_surface.py | 15-tool MCP surface for AI agents |
+
+### Provider Seam (G14)
+Video generation uses a **VideoBackend protocol** — Agnes is one implementation. Adding a new backend:
+`python
+from brandly_cli.video_backend import VideoBackend, VideoBackendCapabilities
+
+class MyBackend(VideoBackend):
+    def capabilities(self): return VideoBackendCapabilities(...)
+    async def submit(self, ...): ...
+    async def poll(self, ...): ...
+    async def fetch(self, ...): ...
+`
+
+Then pass ideo_backend=MyBackend() in RunnerConfig.
+
+### Data Flow
+`
+User input → Director → Shot list (shots.json) → Scene manifest (scenes.json)
+    → Production plan → Shot runner (1 req/min) → Clips on disk
+    → Quality gate → Stitch → Export platforms → Publish
+`
+
+All state lives in .brandly/<project>/ — **disk is the only shared state**.
+</details>
+
+---
+
+## 🔧 Development
+
+`ash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+make test          # Full suite (Python + web contracts)
+make lint          # ruff + oxlint + mypy + import-linter
+
+# Web UI development
+cd web && npm run dev
+
+# Build wheel
+pip wheel . -w dist/
+`
+
+---
+
+## ⭐ Star This Repo
+
+If Brandly helps you create better product videos, please consider starring the repository on GitHub — it helps others discover the project and motivates continued development.
+
 [![GitHub stars](https://img.shields.io/github/stars/Dream-Pixels-Forge/brandly-cli?style=social)](https://github.com/Dream-Pixels-Forge/brandly-cli/stargazers)
 
 ---
 
-## What is Brandly?
-
-Brandly is an **AI media toolkit for product video**: image, video, and
-sound generation plus a real post-production pipeline. It adds these
-capabilities to any AI tool (OpenCode, Codex, Qwen Code, Claude Code, etc.)
-via a CLI, an agent-callable tool surface, and an MCP server.
-
-**What runs today** (audited 2026-09-25 — gaps tracked in the
-[gap register](dev-notes/AUDIT-AGENTIC-PIPELINE.md)):
-
-- **Image generation** via [Agnes AI](https://apihub.agnes-ai.com) (text-to-image, image-to-image)
-- **Video generation** via Agnes AI (text-to-video, keyframe-controlled, reference-based)
-- **Audio generation** via [MiniMax Audio](https://platform.minimaxi.com) (background music, TTS voiceover)
-- **3D Spatial Control** — Blender PlayBlast renderer for spatial reference frames feeding Agnes keyframe/reference modes
-- **Shot-by-shot production** — `brandly produce` registers every shot on the production plan, then generates one at a time (retries, resume, canonical `Scene-XX-Shot-X-Y` naming)
-- **Assembly & post** — `stitch` (transitions, color grade, G4 `--ratio/--fit`), `captions`, `voice-match` dubbing, `beat-sync`, `thumbnail`, `export-platforms`
-- **Scene model + gate** — explicit `scenes.json` manifest and the `brandly gate --scene/--all-scenes` completeness gate (G3)
-- **Director orchestration** — `brandly run <id> --execute` advances real phases with per-phase gates; agent/human-driven, not autonomous (G2)
-- **Agent tools** — discoverable tool manifest + MCP server; `brandly sync` no longer injects raw provider keys (G1)
-- **Credit budgeting** — track spend per phase against a project budget
-- **Style presets** — photorealistic, cinematic, editorial, commercial, and documentary
-- **Production plan as source of truth** — every generation registers on `docs/plan/production_plan.md`
-- **Smaller reference payloads** — large local images auto-convert to webp/jpeg before upload
-- **Publish/schedule to TikTok/IG/YouTube** — `brandly publish` (dry-run-first, credential-gated live via `brandly config set <platform> <token>`; YouTube `publishAt` scheduling; TikTok direct-post private; Instagram Reels need a shared `--video-url`)
-
-**Not shipped yet (roadmap — tracked, not claimed):**
-
-- Brand kit — `brandly brand init/verify/show` + prompt-layer colour/claim lock (G7 PR 1); gate claim-lock + `export-platforms --brand` logo overlay (G7 PR 2); TikTok/IG analytics + live uploads planned
-- Performance-metrics ingest — `brandly metrics import` + `analyze` source labelling (G8 PR 1) + `metrics ingest` YouTube Analytics API (credential-gated, dry-run-first, G8 PR 2); TikTok/IG analytics planned
-- Campaign A/B at scale — `batch` exists; variant matrix + scoring loop planned
-
-Run `brandly capabilities` for the machine-readable matrix — the same list
-this section is checked against (CI guard: `tests/test_capabilities.py`).
-
-### v0.3.15 New Features + Issue Fixes (#19–#24)
-
-| Fix | Description |
-|-----|-------------|
-| **Image converter** | `src/brandly_cli/image_convert.py` — large local references auto-shrink to webp/jpeg (JPEG opaque, WebP alpha; `BRANDLY_IMAGE_CONVERT=off` to disable) — 1.7 MB PNG → 410 KB JPEG |
-| **`brandly produce` (shot-by-shot)** | New command: registers ALL shots on the production plan first, then generates one at a time with a 60 s wait (1 req/min). No batch/parallel mode; resumable (COMPLETED shots skipped, failures stay PENDING) |
-| **Scoped auto-refs (#20)** | `brandly video --no-auto-refs` / `--auto-ref-category <name>` — stop payload bloat + style bleed in multi-look projects |
-| **Style follows `--style` (#21)** | `create_video_task` takes `style_preset`; no more hardcoded cinematic suffix on stylised work (e.g. monochrome sumi-e) |
-| **Reference import (#23)** | `brandly reference <id> --image <path> [--no-generate]` — adopt client-supplied plates as `primary_reference`, zero credit spend |
-| **Visible create errors (#24)** | Failures print `ExceptionType: detail` (no more empty messages); create timeout 60 s → 180 s |
-| **Graceful `brandly jobs` (#19)** | 404 degrades to a dim hint (`brandly job-resume <id>`) instead of error spam |
-| **Rate-limited `brandly batch`** | Variants submit one at a time (60 s spacing) + style-preset parity; kept as the future batch path when Agnes supports true batch |
-
-### v0.3.12 Bug Fixes
-
-| Fix | Description |
-|-----|-------------|
-| **Auto credit spend recording** | `brandly video` / `brandly image` now auto-record credits via `CostTracker`; `brandly status` shows real spend — budget gate fires correctly (#18) |
-| **Windows Unicode crash fixed** | `cli()` reconfigures stdout/stderr to UTF-8 on Windows; all async Click commands (`jobs`, `edit`, `resize`, `concat`, `audio`, `captions`, `speed`, `batch`, `minimax_*`, `ark_*`) now actually run (#12) |
-| **Stitch stderr + no-audio clips** | ffmpeg errors now surface the *tail* of stderr (not the version banner); multi-clip xfade gracefully falls back to video-only when any input lacks an audio stream (#17) |
-| **Export ancestor-dir guard** | `brandly export` aborts with a clear message when `--output` is an ancestor of the project dir instead of silently copying nothing (#16) |
-| **Agnes 429/400 fixes** | Create-endpoint 429s now back off ≥60 s (respecting the 1 req/min limit); 400 body is surfaced; stale v2.0 tip removed; timeout message points at `job-resume` (#15) |
-| **Pipeline no longer a mock** | Director phases dispatch real work — `asset` calls `generate_video`, `audio` calls `generate_music`, `trends` calls `research_trends`, `validate` runs `quality_gate` (#14) |
-| **Phase artifact gating** | `brandly approve` now refuses to advance if required artifacts are missing (e.g. approving `asset` with zero clips) (#13) |
-| **Root auto-detection** | `_get_root` walks up from cwd looking for `.brandly` marker, preventing doubled-nested project trees when running from inside a project dir (#13) |
-
-### v0.3.9 New Features
-
-| Feature | Description |
-|---------|-------------|
-| **Blender 3D Spatial Pipeline** | `skills/brandly-3d-spatial/` — PlayBlast + EEVEE fallback renders spatial references for Agnes keyframe/reference modes; Blender version auto-detection via `blender_integration.py` |
-| **Resilient 503 Retry** | Video task creation now uses 5 retries with jitter + `Retry-After` header support; prevents transient GPU backend outages from failing the whole pipeline |
-| **Spatial Reference System** | `brandly/layout.py` now creates `3d-spatial/{cameras,keyframes,depthmaps,general}/` per project |
-
-### v0.3.7 New Features
-
-| Feature | Description |
-|---------|-------------|
-| **Quality Gate** | `brandly gate <id> <element>` — anti-slop/anti-drift verification before the next step |
-| **AI Visual Review** | Multimodal model scores quality, slop, distortion, drift, and matte backdrop |
-| **Auto-Gate** | `brandly reference` and `brandly video` run the gate post-generation (`--no-gate` to skip) |
-| **Matte Sheets** | Reference sheets now use a seamless matte mid-grey studio backdrop for clean cutouts |
-| **Gate Reports** | Auditable reports written to `.brandly/<project>/docs/tmp/` |
-
-### v0.3.1 New Features
-
-| Feature | Description |
-|---------|-------------|
-| **Stitch** | Multi-shot video assembly with transitions (fade, dissolve) and color grading |
-| **Export Platforms** | Platform-optimized exports for TikTok, Instagram, YouTube, Facebook |
-| **Thumbnails** | Keyframe extraction with text overlays |
-| **Dubbing** | Multi-language video dubbing via MiniMax TTS |
-| **Beat Sync** | Music-reactive editing with beat detection |
-| **Auto-Director** | Script-to-video pipeline automation |
-| **Trends** | Trending format research database |
-| **Analyzer** | Video performance prediction & scoring |
-| **Templates** | Reusable project configurations |
-| **Webhook** | CI/CD integration with job queue |
-| **Sharing** | Cloud export with pluggable providers |
-
----
-
-## Demos
-
-**Brandly Studio** — the web timeline editor for sequencing, inspecting and
-dispatching generated clips:
-
-![Brandly Studio — timeline editor](assets/studio-preview.png)
-
-> Live capture of the Studio web UI (1440×900, populated demo project). Regenerate
-> it any time the frontend changes with `python scripts/make_studio_preview.py`.
-
-**Produced films** (end-to-end Agnes + MiniMax pipeline runs):
-
-- [Full-pipeline producer run](https://youtu.be/F1tr08UeHLs)
-- [Commercial cutdown](https://youtu.be/7lNt1Y8tAzo)
-
----
-
-## Installation
-
-```bash
-pip install brandly-cli
-```
-
-### Install Agent Skills
-
-Brandly ships a set of agent skills (camera language, storyboard, production bible,
-character/object/vehicle/animal/plant/mecha sheets, 3D spatial, consistency, video generation)
-that you can install into any AI tool that supports the `npx skills` protocol:
-
-```bash
-npx skills add https://github.com/Dream-Pixels-Forge/brandly-cli/tree/main/skills
-```
-
-Available skills (see [skills/README.md](skills/README.md) for details):
-
-| Skill | Purpose |
-|-------|---------|
-| `brandly-camera` | Hollywood camera language — framing, angles, placement, composition, movement, Rembrandt/butterfly/split lighting |
-| `brandly-video-generation` | Master skill — generate AI video & images with prompt engineering |
-| `brandly-storyboard` | Plan shot-by-shot visual blueprints |
-| `brandly-production-bible` | Single source-of-truth campaign document |
-| `brandly-consistency` | Lock visual identity across all shots |
-| `brandly-character-sheet` | Character reference sheets |
-| `brandly-object-sheet` | Product/object reference sheets |
-| `brandly-location-sheet` | Location/set reference sheets |
-| `brandly-vehicle-sheet` | Vehicle reference sheets |
-| `brandly-mecha-sheet` | Mecha/robot reference sheets |
-| `brandly-animal-sheet` | Animal/creature reference sheets |
-| `brandly-plant-sheet` | Plant/botanical reference sheets |
-| `brandly-3d-spatial` | Blender PlayBlast renderer — spatial reference frames for Agnes keyframe/reference video modes |
-
-### Driving brandly from an AI tool (agent-native surface)
-
-AI coding tools (opencode, Claude Code, Codex, pi, …) should drive brandly through
-its tool surface — never by inventing their own ffmpeg/provider calls:
-
-```bash
-brandly tools --json     # machine-readable manifest: name, description,
-                         # JSON-Schema params, read-only class, backing command
-brandly mcp serve        # MCP server over stdio (JSON-RPC 2.0)
-```
-
-MCP client config:
-
-```json
-{ "mcpServers": { "brandly": { "command": "brandly", "args": ["mcp", "serve"] } } }
-```
-
-`brandly init` writes an `AGENTS.md` at the project root (created only if absent —
-your file is never overwritten) instructing agents to use this surface.
-`brandly sync` no longer writes provider API keys into tool configs by default;
-pass `--legacy-provider-keys` only if you deliberately want raw provider access
-(which bypasses the pipeline).
-
-#### Orchestrator + subagent workflow (G7)
-
-One orchestrating agent drives the pipeline by dispatching **phase-scoped
-subagents** — the contracts and gates are the only shared state:
-
-```bash
-brandly plan <project-id> --json        # 1. dispatch source of truth: per phase
-                                        #    inputs, outputs, gate, est_cost
-brandly run <project-id> --execute --until <phase> --yes   # 4. advance a phase
-brandly gate <project-id> --all-scenes  # 3. screen a worker result (deterministic)
-```
-
-1. **Read** `brandly plan <id> --json` — each phase carries `inputs[]`,
-   `outputs[]`, the deterministic `gate` that verifies it, `next_command`, and
-   `est_cost` (budget with `brandly estimate` before dispatching paid work).
-2. **Dispatch** one subagent per phase with that contract
-   (`brandly director` prints the same table for humans).
-3. **Screen** every worker result with its gate — never trust a subagent's
-   self-report; `verify_element`/`scenes` run deterministically (`use_ai=False`).
-4. **Advance** with `brandly run <id> --execute --until <phase>` — fail-closed:
-   a failed phase freezes `current_phase` and exits non-zero.
-
-On failure the run prints (and `plan --json` repeats) a structured
-`retry_instruction`: the failing error/verdict, the attempt counter
-(`attempts`/`max_attempts`), the exact re-run command, and — once the
-3-attempt cap is reached — `escalate: true` with the human escalation command
-(`brandly approve <id> <phase>`). Re-dispatch the worker with that reason; the
-cap keeps the loop bounded. Cognition can run in parallel, but provider
-generation stays single-writer (subagents never fan out paid generation calls
-and never publish).
-
-### Configure API Keys
-
-```bash
-export AGNES_API_KEY="your-agnes-api-key"
-export MINIMAX_API_KEY="your-minimax-api-key"
-```
-
-Or create a `.env` file:
-
-```dotenv
-AGNES_API_KEY=your_key_here
-MINIMAX_API_KEY=your_key_here
-AGNES_BASE_URL=https://apihub.agnes-ai.com/v1
-MINIMAX_BASE_URL=https://api.minimaxi.com/v1
-```
-
-## Quick Start
-
-### 1. Initialize a Project
-
-```bash
-brandly init \
-  --name "SuperWidget Pro" \
-  --idea "A revolutionary widget that organizes your desk with AI" \
-  --style cinematic \
-  --budget 500 \
-  --shots 5 \
-  --platforms tiktok instagram youtube
-```
-
-### 2. Run the Pipeline
-
-```bash
-brandly estimate --style cinematic --shots 5
-brandly run <project-id>
-brandly approve <project-id> <phase>
-brandly director
-```
-
-### 3. Generate Media
-
-```bash
-brandly image --prompt "product on marble surface" --style-preset cinematic
-brandly video <project-id> --prompt "sleek earbuds rotating" --duration 5
-brandly music --prompt "upbeat electronic" --duration 30
-brandly tts "Welcome to SuperWidget Pro"
-```
-
-#### Running image generation externally (isolated context, #75)
-
-All project metadata (plans, generation docs, autosaved media) is written
-beneath the selected context root — never inferred. To keep an external
-pipeline's working tree clean:
-
-```bash
-# Isolated Brandly home (all .brandly/ state lands here, not in the repo):
-export ROOT=/tmp/brandly-home          # or: brandly --root /tmp/brandly-home ...
-
-# Write the artifact outside the tree, attach it to an explicit project:
-brandly image --prompt "product on marble surface" \
-  --output ./out/product.png \
-  --project-id superwidget
-
-# No project selected? Pass nothing and run externally — no project records
-# are created (the run reports this explicitly instead of falling back to an
-# implicit "untitled" project):
-brandly image --prompt "hero shot" --output ./out/hero.png --json
-```
-
-#### Machine-readable results and explicit outputs (#73)
-
-`--output <path>` is the contract for "put the artifact exactly here": the
-provider payload is downloaded/decoded and validated (full decode + format,
-width and height probe) before an atomic move, so a failed or truncated
-download never leaves a partial or non-image file at the requested path.
-
-`--json` makes the command script-safe: stdout carries exactly one JSON
-document and nothing else — callers no longer parse human-readable output to
-recover a provider URL.
-
-```bash
-brandly image --prompt "hero shot" --output ./out/hero.png --json
-```
-
-```json
-{
-  "status": "success",
-  "task_id": "provider-task-handle",
-  "provider_url": "https://... (credential query params redacted)",
-  "path": "out/hero.png",
-  "format": "png",
-  "width": 1024,
-  "height": 1024,
-  "model": "image-model-id",
-  "generated_at": "2026-09-24T00:00:00Z",
-  "job_id": "job-id (recover with brandly job-poll)"
-}
-```
-
-Failures exit non-zero with a structured error instead:
-
-```json
-{
-  "status": "error",
-  "error_code": "provider_error | no_image | image_download_failed",
-  "error_message": "...",
-  "task_id": null,
-  "job_id": "job-id"
-}
-```
-
-Branch on `error_code`, then recover the durable result for that `job_id` with
-`brandly job-poll` (#74) instead of re-submitting. Success detection is
-payload-driven: URL-only and base64-only provider responses both succeed; only
-a response carrying neither payload is reported as `no_image`.
-
-
-### 4. 3D Spatial References (Optional)
-
-If Blender is installed, generate spatial reference frames for Agnes AI keyframe/reference modes:
-
-```bash
-# Detect installed Blender version
-python -c "from brandly_cli.blender_integration import detect_blender; v = detect_blender(); print(v)"
-
-# Render spatial references
-python skills/brandly-3d-spatial/scripts/playblast_renderer.py \
-  --config .brandly/my-project/3d-spatial/cameras/scene.json \
-  --output .brandly/my-project/3d-spatial/cameras \
-  --mode single
-
-# Extract references for Agnes
-python skills/brandly-3d-spatial/scripts/extract_references.py \
-  --input .brandly/my-project/3d-spatial/cameras \
-  --output .brandly/my-project/3d-spatial/keyframes \
-  --strategy first
-```
-
-### 5. Export & Share
-
-```bash
-brandly export <project-id> --platforms tiktok youtube
-brandly thumbnail <project-id>
-brandly stitch clip1.mp4 clip2.mp4 --transition fade
-brandly voice-match input.mp4 --source en --target es
-brandly analyze video.mp4
-brandly share output.mp4
-```
-
-## Costs, Quotas & Rate Limits
-
-Sizing a batch is a **rate-limit** decision, not a cost decision: on the Agnes
-free tier the price is flat per model while throughput cliffs hard.
-
-**Price is per model, not per size tier.** `brandly models` prints the single
-credit price for each model; brandly does not price by resolution. Measured
-against the live API (#215), `agnes-image-2.5-flash` bills **10 credits at both
-2K and 4K** — `--size 4K` is not a cost multiplier.
-
-**Throughput is where the tiers differ.** The Agnes free key's image rate limit
-is per size tier (`image_rpm_by_size` in `constants.py`):
-
-| `--size` | image RPM (free key) | wall-clock vs 2K |
-|---|---|---|
-| 1K | 20 | 2x faster |
-| 2K | 10 | baseline |
-| 3K | 1 | **10x slower** |
-| 4K | 1 | **10x slower** |
-
-A batch of plates at 4K therefore takes roughly **10x the wall-clock** of the
-same batch at 2K for the **same credits**. Draft at 2K; reserve 4K for approved
-assets.
-
-**`--size` and `--ratio` are independent.** `--size` (`1K`/`2K`/`3K`/`4K`) and
-`--ratio` (`1:1`, `3:4`, `4:3`, `16:9`, `9:16`, `2:3`, `3:2`, `21:9`) are
-separate options and separate request fields — choosing a size never overrides
-your ratio. Both default to `--size 2K` and `--ratio 16:9`.
-
-**Video quota and the credit cap.** The free tier allows **500
-video-seconds/day across all projects** (not per project), and each project's
-own cap lives in `cost.json`. `brandly produce` prices the shot list up front
-and warns before it spends:
-
-```
-$ brandly produce <id> --shots shots.json --dry-run
-Dry run: 72 shot(s), 360s total - estimated 1440 credits (20 credits/shot) - no API calls, no files written.
-⚠ Projected video cost: 72 shots x 20 credits = 1440; 500 remaining. Run 25 shots or raise the cap.
-```
-
-A second warning fires when today is already within 80% of the 500s daily cap,
-so a 503 wave can be told apart from quota exhaustion.
-
-## Project Files: What brandly Manages
-
-`.brandly/<project>/` mixes brandly-owned state with your own files. Only the
-paths below are read or rewritten by brandly — **anything else you drop beside
-them is left alone**, so a co-located `screenplay.md` or `notes.md` at the
-project root is safe across `init`, `resume` and phase syncs.
-
-**Yours to author (brandly reads it, never writes it):**
-- `<project>/shots.json` — **the canonical shot-list path.** `produce --shots`
-  and `gate-drift` resolve this exact path; no other location is auto-discovered,
-  so a shot list kept elsewhere must be passed explicitly.
-
-**brandly-managed (rewritten in place — do not hand-edit):**
-- `<project>/project.json` — project state (status, phase, style). Its `budget`
-  is a **display mirror**; the authoritative cap is `cost.json`.
-- `<project>/cost.json` — the cost ledger and the **authoritative** budget cap.
-- `<project>/scenes.json` — the scene manifest written by `produce`/gate.
-- `<project>/docs/` — `plan/` (the production plan), `bible/`, `storyboard/`,
-  `screenplay/` and `tmp/` (transient: the resume progress file, failure docs,
-  per-video generation records).
-- `pre-production/<project>/` — reference plates per category, `hq/` masters and
-  `3d-spatial/` renders. Brandly writes every plate here.
-- `production/<project>/` — `videos/`, `audio/` and `export/`.
-
-If you need a scratch file next to your plan, prefer the project root
-(`<project>/my-notes.md`) over `docs/`, which is brandly's to rewrite.
-
-## CLI Reference
-
-### Project Management
-
-| Command | Description |
-|---------|-------------|
-| `brandly init` / `brandly start` | Start a new video project |
-| `brandly status <id>` | Show project status |
-| `brandly list` | List all projects |
-| `brandly run <id>` | Run the next pipeline phase |
-| `brandly approve <id> <phase>` | Approve a phase and advance |
-| `brandly cost <id>` | Show cost summary |
-
-### Media Generation
-
-| Command | Description |
-|---------|-------------|
-| `brandly image` | Generate an image via Agnes AI (persists a durable job record; recover with `brandly job-poll`) |
-| `brandly video <id>` | Generate a video via Agnes AI (with 503 resilience) |
-| `brandly music` | Generate background music |
-| `brandly tts <text>` | Generate voiceover via TTS |
-| `brandly produce <id> --shots shots.json` | Multi-shot film: registers ALL shots on the production plan (source of truth), then generates **one shot at a time** with a 60 s wait (Agnes: 1 request/min). No batch/parallel mode; resumable |
-| `brandly job-poll <job-id>` | Poll a durable image-job record; `--output` writes the recovered artifact — never submits a new generation |
-
-### Durable image jobs and retry safety (#74)
-
-`brandly image` writes a job record to `ROOT/.brandly/jobs/<job-id>.json`
-before the provider call; terminal state (artifact URL/metadata or failure
-reason) is persisted on success/failure. If the process dies — crash,
-`--timeout` exceeded, client disconnect — the result is not lost:
-
-```bash
-brandly job-poll <job-id> --json                  # status / result_available / path
-brandly job-poll <job-id> --output ./recovered.png # write the recovered artifact
-```
-
-Polling only reads the durable record, so a disconnected client can never
-trigger a duplicate generation. `--max-age` (default 48 h) expires stale
-records. For new submissions, retry safety depends on the provider: ones that
-honour `X-Client-Request-Id` (Ark/Doubao) allow safe resume; providers
-without request-echo support are at-most-once — resubmission may bill again.
-
-
-Large local reference images are auto-converted to smaller webp/jpeg payloads
-before upload (disable with `BRANDLY_IMAGE_CONVERT=off`). Scope auto-injected
-references with `brandly video --no-auto-refs` / `--auto-ref-category <name>`,
-and adopt client-supplied plates with
-`brandly reference <id> --image <path> [--no-generate]`.
-
-### Post-Production
-
-| Command | Description |
-|---------|-------------|
-| `brandly stitch <clips...>` | Multi-shot video assembly (G4 ratio owner: `--ratio 2.39:1 --fit crop\|pad`) |
-| `brandly export <id> --platforms <p>` | Export for specific platforms (`--fit crop\|pad`) |
-| `brandly thumbnail <id>` | Generate thumbnails |
-| `brandly voice-match <video> --source <lang> --target <lang>` | Dub video |
-| `brandly beat-sync <video> <audio>` | Cut video to beats |
-| `brandly analyze <video>` | Predict performance metrics |
-| `brandly share <file>` | Upload for cloud sharing |
-
-#### Aspect-ratio responsibilities (G4)
-
-| Stage | Ratio behavior |
-|-------|----------------|
-| Production (`produce`, `video`) | Keeps source aspect — clips are never cropped. `produce --aspect-ratio` is a deprecated alias: it prints a migration notice and defers the crop to assembly |
-| Assembly (`stitch --ratio R --fit crop\|pad`) | The single ratio decision: center-crop at source scale, or letterbox/pillarbox with black bars |
-| Export (`export-platforms --fit crop\|pad`) | Reuses the assembly filters: crop for feed aspects by default, pad only on request; a source already at the target ratio is a no-op (no double-crop) |
-
-### Intelligence
-
-| Command | Description |
-|---------|-------------|
-| `brandly trend <category>` | Research trending formats |
-| `brandly template list` | List templates |
-| `brandly template use <name>` | Create project from template |
-| `brandly validate <id>` | Run virality validation |
-| `brandly gate <id> [element]` | Verify an element (anti-slop/drift) before the next step |
-| `brandly director` | Show Director agent prompt |
-
-### 3D Spatial
-
-| Command | Description |
-|---------|-------------|
-| (Python API) | `from brandly_cli.blender_integration import detect_blender, is_blender_available` |
-
----
-
-## Keywords
-
-`ai video generation`, `product video`, `marketing video`, `cli tool`, `agent pipeline`, `multi-agent`, `agentic ai`, `brand video`, `social media video`, `tiktok video`, `youtube video`, `image generation`, `video generation`, `keyframe video`, `reference video`, `blender 3d`, `spatial reference`, `agnes ai`, `minimax tts`, `background music`, `voiceover`, `director agent`, `pipeline orchestration`, `creative ai`, `automated video production`, `product demo`, `commercial`, `advertising`, `content creation`, `shot list`, `storyboard`, `consistency`, `character sheet`, `reference sheet`
-
----
-
-## License
+## 📄 License
 
 MIT — Dream Pixels Forge

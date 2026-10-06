@@ -1,0 +1,91 @@
+﻿            }
+
+        if phase == "validate":
+            from brandly_cli import quality_gate
+
+            scene_manifest = scenes.load_scenes(proj.id, root=self.cfg.root)
+            if scene_manifest is None:
+                return {
+                    "error": (
+                        f"scene manifest not found: "
+                        f"{scenes.scenes_path(proj.id, root=self.cfg.root)} — run "
+                        "the asset phase first (`brandly run <id> --execute "
+                        "--until asset`) and re-run to resume"
+                    )
+                }
+            root_path = Path(self.cfg.root)
+            gate_ai = getattr(self.cfg, "gate_ai", "off")
+
+            def gate_runner(clip: Path) -> str:
+                # Deterministic pre-checks only — the same runner the
+                # ``brandly gate --all-scenes`` CLI uses. The pipeline is async,
+                # so the sync QualityRunner contract is served with a fresh
+                # event loop per clip.
+                return asyncio.run(
+                    quality_gate.verify_element(
+                        clip,
+                        use_ai=False,
+                        root=root_path,
+                        project_id=proj.id,
+                        write_report=False,
+                    )
+                ).status
+
+            def ai_gate_runner(clip: Path) -> str:
+                # Vision judge (issue #232). ``judge_frames`` samples N
+                # evenly-spaced frames and judges them in ONE call (issue #171)
+                # — judging a clip, not just its poster frame. 3 frames is the
+                # cost/benefit sweet spot under the 500s/day video quota.
+                return asyncio.run(
+                    quality_gate.verify_element(
+                        clip,
+                        use_ai=True,
+                        judge_frames=3,
+                        root=root_path,
+                        project_id=proj.id,
+                        write_report=False,
+                    )
+                ).status
+
+            # evaluate_all is sync and calls the gate runner inline, so run
+            # the whole gate off the event loop (mirrors the gate CLI).
+            report = await asyncio.to_thread(
+                lambda: scenes.evaluate_all(
+                    proj.id,
+                    root=root_path,
+                    gate_runner=gate_runner,
+                    ai_runner=ai_gate_runner,
+                    gate_ai=gate_ai,
+                )
+            )
+            if gate_ai != "off":
+                judged = sum(
+                    s.get("quality", {}).get("ai_checked", 0) for s in report["scenes"]
+                )
+                console.print(
+                    f"[dim]Vision gate ({gate_ai}): {judged} clip(s) judged "
+                    f"across {len(report['scenes'])} scene(s).[/dim]"
+                )
+            if report["verdict"] != "pass":
+                bad = [s for s in report["scenes"] if s["verdict"] != "pass"]
+                detail = "; ".join(f"{s['id']}={s['verdict']}" for s in bad)
+                return {
+                    "error": (
+                        f"scene gate {report['verdict'].upper()} ({detail}) — "
+                        "fix the flagged scene(s) with "
+                        f"`brandly gate {proj.id} --all-scenes` and re-run to "
+                        "resume"
+                    )
+                }
+            return {
+                "verdict": report["verdict"],
+                "scenes": len(report["scenes"]),
+            }
+
+        if phase == "publish":
+            from brandly_cli import export_platforms
+
+            root_path = Path(self.cfg.root)
+            videos_root = layout.resolve_media_root(root_path, proj.id, "videos")
+            source = videos_root / "final.mp4"
+            if not source.is_file():

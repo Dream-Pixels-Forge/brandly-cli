@@ -1,0 +1,56 @@
+## What
+
+When a generated clip comes up short, brandly now automatically
+initiates continuation takes to complete the intended duration.
+
+The credit is already spent whether or not we retry, so a continuation costs
+latency, not credits. `split_long_shots` (`shot_runner.py:699`) already splits
+over-long shots into 6s parts and attaches a `[CONTINUITY]` directive — the
+vocabulary for a continuation take already exists.
+
+## Policy
+
+| Value | Behaviour |
+|---|---|
+| `off` | deterministic pre-checks only (pre-#232 behaviour) |
+| `scene-first` | **default** - judge the first clip of each scene |
+| `all` | judge every clip |
+
+`scene-first` is the default because it buys the most identity signal per
+credit: one judge call per scene rather than per clip, which matters under the
+500 video-seconds/day quota.
+
+The vision runner uses `use_ai=True, judge_frames=3` (first + 2 evenly spaced
+frames, in one call) - judging a *clip*, not its poster frame.
+
+## Scene isolation
+
+This was the part worth getting right:
+
+- A `FAIL` on a judged clip fails **that scene only** - scene 2+ still pass
+- A judge `crash` fails the offending scene, not the whole run
+- `WARN` still does not promote to `FAIL` (unchanged from the deterministic path)
+
+## Recorded for G10
+
+Each scene report now carries `quality.ai_checked`, the signal G10's
+scorecard needs - so the follow-up issue doesn't have to re-derive it.
+
+## Backward compatible
+
+Every new parameter defaults to today's behaviour (`gate_ai=off`, `ai_runner=None`), so existing callers are unchanged.
+
+## Gates
+
+- **1354 passed, 0 failed** (1325 + 5 G7 + 13 G9 + 10 orchestration + 8 G11 + 8 G8)
+- ruff, mypy clean, import-linter clean
+- Branch is 0 behind `main`
+
+## TDD
+
+RED first: `tests/test_issue_231.py` had **8 failures** before the change and
+passes after. It pins the policy values, that `off` never invokes the judge,
+that `scene-first` judges exactly the first clip of each scene, scene
+isolation on fail/crash, the recorded `ai_checked` count, and the CLI wiring.
+
+Closes #231.

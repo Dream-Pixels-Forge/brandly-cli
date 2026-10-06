@@ -551,8 +551,14 @@ def approve(ctx: click.Context, project_id: str, phase: str) -> None:
 @click.command()
 @click.option("--style", default="cinematic", help="Video style")
 @click.option("--shots", default=5, help="Number of shots (3-10)")
+@click.option(
+    "--target-duration",
+    default=None,
+    type=int,
+    help="Target total video duration in seconds (enables quota-aware planning)",
+)
 @click.pass_context
-def estimate(ctx: click.Context, style: str, shots: int) -> None:
+def estimate(ctx: click.Context, style: str, shots: int, target_duration: int | None) -> None:
     """Estimate credit cost before starting."""
     if style not in STYLE_COSTS:
         console.print(f"[red]Invalid style '{style}'.[/red]")
@@ -568,6 +574,35 @@ def estimate(ctx: click.Context, style: str, shots: int) -> None:
     total_estimate = total_base + overhead
 
     phase_estimates = phase_costs(style, shots)
+
+    # G13: Quota-aware planning - warn if target duration exceeds daily quota
+    if target_duration is not None:
+        from brandly_cli.cli import _get_root
+        from brandly_cli.cost_tracker import (
+            compute_multi_day_schedule,
+            daily_video_quota_status,
+        )
+
+        root = _get_root(ctx)
+        quota_status = daily_video_quota_status(root)
+        remaining = quota_status["remaining"]
+
+        if target_duration > remaining:
+            schedule = compute_multi_day_schedule(target_duration)
+            console.print(
+                f"[yellow]⚠ Target duration ({target_duration}s) exceeds today's remaining quota ({remaining}s).[/yellow]"
+            )
+            day_strs = []
+            for i, s in enumerate(schedule["seconds_per_day"]):
+                shots = schedule["shots_per_day"][i]
+                day_strs.append(f"Day {i+1}: {s}s ({shots} shots)")
+            console.print(
+                f"[yellow]  Proposed {schedule['days']}-day schedule: {', '.join(day_strs)}[/yellow]"
+            )
+        else:
+            console.print(
+                f"[green]✓ Target duration ({target_duration}s) fits within today's remaining quota ({remaining}s).[/green]"
+            )
 
     console.print(f"\n[bold]Cost Estimate — {style} style, {shots} shots[/bold]\n")
     from rich.table import Table
@@ -789,6 +824,12 @@ def _print_missing_references(
     ),
 )
 @click.option(
+    "--target-duration",
+    default=None,
+    type=int,
+    help="Target total video duration in seconds (enables quota-aware planning)",
+)
+@click.option(
     "--i2v-attempts",
     type=int,
     default=5,
@@ -838,6 +879,7 @@ def produce(
     dry_run: bool,
     gate_threshold: int | None,
     check: bool,
+    target_duration: int | None,
     i2v_attempts: int,
     text_fallback_attempts: int,
     no_text_fallback: bool,
@@ -2647,9 +2689,23 @@ class Director:
             from brandly_cli.video_prompts import CAMERA_MOVES, build_single_shot_prompt
 
             cameras = list(CAMERA_MOVES)
-            shot_duration = 5  # within Agnes' single-segment clamp window
+
+            # G12: Narrative beats — derive durations from beat role
+            # Beat-to-duration mapping (4-6s reliable window per G7)
+            beat_durations = {
+                "setup": 4,
+                "turn": 5,
+                "consequence": 5,
+                "resolve": 6,
+            }
+            beats = list(beat_durations.keys())
+
             shot_list: list[dict[str, Any]] = []
             for i in range(1, proj.shot_count + 1):
+                # Distribute beats across shots
+                beat = beats[(i - 1) % len(beats)]
+                shot_duration = beat_durations[beat]
+
                 shot_list.append(
                     {
                         "id": f"shot-{i}",
@@ -2667,8 +2723,26 @@ class Director:
                         # scenes.json derives S01… from these at produce time.
                         "scene": 1,
                         "shot": i,
+                        # G12: Narrative beat label
+                        "beat": beat,
                     }
                 )
+
+            # G12: Enforce completeness contract — all four beats must be present
+            if proj.shot_count >= 4:
+                present_beats = {shot["beat"] for shot in shot_list}
+                required_beats = set(beat_durations.keys())
+                missing = required_beats - present_beats
+                if missing:
+                    return {
+                        "error": (
+                            f"Script phase requires all four narrative beats "
+                            f"({', '.join(sorted(required_beats))}). "
+                            f"Missing: {', '.join(sorted(missing))}. "
+                            f"Increase shot_count to at least 4."
+                        )
+                    }
+
             shots_path = _director_shots_path(self.cfg.root, proj.id)
             shots_path.parent.mkdir(parents=True, exist_ok=True)
             shots_path.write_text(
@@ -2678,7 +2752,7 @@ class Director:
             return {
                 "shots_path": str(shots_path),
                 "shots": len(shot_list),
-                "duration": len(shot_list) * shot_duration,
+                "duration": sum(shot["duration"] for shot in shot_list),
             }
 
         if phase == "asset":
@@ -2757,8 +2831,8 @@ class Director:
                         "--until asset`) and re-run to resume"
                     )
                 }
-            clips = _scene_clip_paths(Path(self.cfg.root), proj.id, scene_manifest)
-            missing = [c for c in clips if not (c.is_file() and c.stat().st_size > 0)]
+            clips = _scene_clip_paths(Path(self.cfg.root), proj.id, scene_manifest)  # type: ignore[assignment]
+            missing = [c for c in clips if not (c.is_file() and c.stat().st_size > 0)]  # type: ignore[assignment]
             if missing:
                 return {
                     "error": (
@@ -2805,12 +2879,10 @@ class Director:
                 }
             root_path = Path(self.cfg.root)
             gate_ai = getattr(self.cfg, "gate_ai", "off")
+            max_rework_attempts = 2  # G10: bounded rework attempts per scene
+            rework_attempts: dict[str, int] = {}
 
             def gate_runner(clip: Path) -> str:
-                # Deterministic pre-checks only — the same runner the
-                # ``brandly gate --all-scenes`` CLI uses. The pipeline is async,
-                # so the sync QualityRunner contract is served with a fresh
-                # event loop per clip.
                 return asyncio.run(
                     quality_gate.verify_element(
                         clip,
@@ -2822,7 +2894,7 @@ class Director:
                 ).status
 
             def ai_gate_runner(clip: Path) -> str:
-                # Vision judge (issue #232). ``judge_frames`` samples N
+                # Vision judge (issue #232). judge_frames samples N
                 # evenly-spaced frames and judges them in ONE call (issue #171)
                 # — judging a clip, not just its poster frame. 3 frames is the
                 # cost/benefit sweet spot under the 500s/day video quota.
@@ -2839,37 +2911,89 @@ class Director:
 
             # evaluate_all is sync and calls the gate runner inline, so run
             # the whole gate off the event loop (mirrors the gate CLI).
-            report = await asyncio.to_thread(
-                lambda: scenes.evaluate_all(
-                    proj.id,
-                    root=root_path,
-                    gate_runner=gate_runner,
-                    ai_runner=ai_gate_runner,
-                    gate_ai=gate_ai,
+            # G10: Bounded rework loop for scenes needing rework
+            while True:
+                report = await asyncio.to_thread(
+                    lambda: scenes.evaluate_all(
+                        proj.id,
+                        root=root_path,
+                        gate_runner=gate_runner,
+                        ai_runner=ai_gate_runner,
+                        gate_ai=gate_ai,
+                    )
                 )
-            )
-            if gate_ai != "off":
-                judged = sum(
-                    s.get("quality", {}).get("ai_checked", 0) for s in report["scenes"]
-                )
-                console.print(
-                    f"[dim]Vision gate ({gate_ai}): {judged} clip(s) judged "
-                    f"across {len(report['scenes'])} scene(s).[/dim]"
-                )
-            if report["verdict"] != "pass":
-                bad = [s for s in report["scenes"] if s["verdict"] != "pass"]
-                detail = "; ".join(f"{s['id']}={s['verdict']}" for s in bad)
+                if gate_ai != "off":
+                    judged = sum(
+                        s.get("quality", {}).get("ai_checked", 0) for s in report["scenes"]
+                    )
+                    console.print(
+                        f"[dim]Vision gate ({gate_ai}): {judged} clip(s) judged "
+                        f"across {len(report['scenes'])} scene(s).[/dim]"
+                    )
+
+                # Check overall verdict first (original behavior + G10 scorecard check)
+                overall_verdict = report.get("verdict", "pass")
+                if overall_verdict != "pass":
+                    bad = [s for s in report["scenes"] if s["verdict"] != "pass"]
+                    detail = "; ".join(f"{s['id']}={s['verdict']}" for s in bad)
+                    return {
+                        "error": (
+                            f"scene gate {overall_verdict.upper()} ({detail}) — "
+                            f"fix the flagged scene(s) with "
+                            f"`brandly gate {proj.id} --all-scenes` and re-run to "
+                            "resume"
+                        )
+                    }
+
+                # G10: Check for scenes needing rework
+                needs_rework_scenes = [
+                    s for s in report["scenes"]
+                    if s.get("quality", {}).get("scorecard", {}).get("needs_rework")
+                ]
+
+                if not needs_rework_scenes:
+                    # All scenes pass or are ok
+                    break
+
+                # Check if any scene has exceeded max rework attempts
+                exceeded = [
+                    s["id"] for s in needs_rework_scenes
+                    if rework_attempts.get(s["id"], 0) >= max_rework_attempts
+                ]
+                if exceeded:
+                    detail = "; ".join(f"{sid}=max attempts reached" for sid in exceeded)
+                    return {
+                        "error": (
+                            f"scene gate FAIL ({detail}) — "
+                            f"max rework attempts ({max_rework_attempts}) reached. "
+                            f"Fix the flagged scene(s) with "
+                            f"`brandly gate {proj.id} --all-scenes` and re-run to "
+                            "resume"
+                        )
+                    }
+
+                # Increment attempt counters and prepare --only for rework
+                only_scenes = []
+                for scene in needs_rework_scenes:
+                    sid = scene["id"]
+                    rework_attempts[sid] = rework_attempts.get(sid, 0) + 1
+                    only_scenes.append(sid)
+                    console.print(
+                        f"[yellow]Scene {sid} needs rework (attempt {rework_attempts[sid]}/{max_rework_attempts})[/yellow]"
+                    )
+
+                # Tell user to re-run with --only for targeted rework
                 return {
                     "error": (
-                        f"scene gate {report['verdict'].upper()} ({detail}) — "
-                        "fix the flagged scene(s) with "
-                        f"`brandly gate {proj.id} --all-scenes` and re-run to "
-                        "resume"
+                        f"scene gate NEEDS_REWORK ({len(needs_rework_scenes)} scene(s)) — "
+                        f"re-run with `--only {','.join(only_scenes)}` to rework"
                     )
                 }
+
             return {
                 "verdict": report["verdict"],
                 "scenes": len(report["scenes"]),
+                "scorecard_summary": report.get("scorecard_summary", {}),
             }
 
         if phase == "publish":

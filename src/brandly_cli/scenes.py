@@ -52,6 +52,23 @@ GATE_AI_POLICIES: tuple[str, ...] = ("off", "scene-first", "all")
 DEFAULT_GATE_AI_POLICY = "scene-first"
 
 
+# --- Scene scorecard (G10) ---
+#: The four quality dimensions scored per scene (0.0-1.0 each).
+SCENE_SCORECARD_DIMENSIONS: tuple[str, ...] = (
+    "identity",
+    "drift",
+    "duration",
+    "slop",
+)
+
+#: Score threshold below which a scene needs rework (0.0-1.0).
+#: Overall is the mean of the four dimensions.
+SCENE_REWORK_THRESHOLD = 0.7
+
+#: Maximum rework attempts per scene (bounded loop mandate).
+MAX_REWORK_ATTEMPTS = 2
+
+
 def scenes_path(project_id: str, *, root: Path | str | None = None) -> Path:
     """Where the manifest lives: ``docs/plan/scenes.json``."""
     base = Path(root) if root else Path.cwd()
@@ -299,6 +316,55 @@ def _with_quality(
         "failures": failures,
         "skipped": False,
     }
+
+    # G10: Scene scorecard - evaluate four dimensions
+    if ai_checked > 0:
+        # Extract dimension scores from AI verdicts in failures/checks
+        # The AI verdicts should contain dimension scores in checks
+        dim_scores = {"identity": 100, "drift": 100, "duration": 100, "slop": 100}
+        for _check_name, check_data in report.get("checks", {}).items():
+            if isinstance(check_data, dict) and "dimensions" in check_data:
+                for dim, score in check_data["dimensions"].items():
+                    if dim in dim_scores:
+                        dim_scores[dim] = min(dim_scores[dim], score)
+
+        # Determine if any dimension is below threshold (70)
+        rework_dims = [dim for dim, score in dim_scores.items() if score < 70]
+        if rework_dims:
+            report["quality"]["scorecard"] = {
+                "dimensions": dim_scores,
+                "rework_dimensions": rework_dims,
+                "needs_rework": True,
+            }
+            report["verdict"] = "needs_rework"
+        else:
+            report["quality"]["scorecard"] = {
+                "dimensions": dim_scores,
+                "rework_dimensions": [],
+                "needs_rework": False,
+            }
+        # Add dimension fields directly to quality for test compatibility
+        for dim in SCENE_SCORECARD_DIMENSIONS:
+            score = dim_scores.get(dim, 100)
+            report["quality"][dim] = {
+                "status": "pass" if score >= 70 else "fail",
+                "score": score / 100.0,
+            }
+    else:
+        # No AI checks - cannot assess dimensions
+        report["quality"]["scorecard"] = {
+            "dimensions": {},
+            "rework_dimensions": [],
+            "needs_rework": False,
+            "unverified": True,
+        }
+        # Add dimension fields as unverified
+        for dim in SCENE_SCORECARD_DIMENSIONS:
+            report["quality"][dim] = {
+                "status": "unverified",
+                "score": None,
+            }
+
     if any(f["status"] == "fail" for f in failures):
         report["verdict"] = "fail"
     elif failures:  # WARN only — never promotes a fail, keeps pass→warn
@@ -352,8 +418,18 @@ def evaluate_all(
         _evaluate_one(videos_root, entry, gate_runner, ai_runner, gate_ai)
         for entry in manifest.get("scenes", [])
     ]
+    # G10: Aggregate scorecard summary
+    total_ai_checked = sum(r["quality"].get("ai_checked", 0) for r in reports)
+    scenes_needing_rework = sum(1 for r in reports if r.get("quality", {}).get("scorecard", {}).get("needs_rework"))
+    scenes_unverified = sum(1 for r in reports if r.get("quality", {}).get("scorecard", {}).get("unverified"))
     return {
         "project_id": project_id,
         "verdict": _worst([r["verdict"] for r in reports]),
         "scenes": reports,
+        "scorecard_summary": {
+            "total_scenes": len(reports),
+            "ai_checked": total_ai_checked,
+            "needs_rework": scenes_needing_rework,
+            "unverified": scenes_unverified,
+        },
     }

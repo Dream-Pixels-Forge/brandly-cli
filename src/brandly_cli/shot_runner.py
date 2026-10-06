@@ -86,6 +86,10 @@ from typing import Any
 
 from brandly_cli import layout
 from brandly_cli.io import run_capture
+from brandly_cli.video_backend import (
+    AgnesVideoBackend,
+    VideoBackend,
+)
 
 #: Reference categories a shot may resolve bare plate stems against, searched
 #: in priority order. Mirrors the generation-side ``layout.IMAGE_CATEGORIES``
@@ -148,6 +152,76 @@ def duration_status(requested_s: int | float, measured_s: float | None) -> str:
     if is_within_tolerance(requested_s, measured_s):
         return "ok"
     return "short"
+
+
+# --- Continuation take (G8) ---
+#: Default maximum number of continuation takes per shot.
+DEFAULT_MAX_CONTINUATIONS = 2
+#: Status value for a shot that received a continuation take.
+CONTINUATION_STATUS = "continuation"
+
+
+def should_trigger_continuation(requested: int | float, measured: float) -> bool:
+    """Return True if a continuation take should be triggered.
+
+    A continuation is needed when the measured duration is short beyond
+    the acceptable tolerance (i.e., not within tolerance).
+    """
+    return not is_within_tolerance(requested, measured)
+
+
+def continuation_shortfall(requested: int | float, measured: float) -> float:
+    """Return the shortfall duration (what we're missing) for a continuation take.
+
+    Returns 0 if the measured duration is within tolerance (no continuation needed).
+    """
+    if is_within_tolerance(requested, measured):
+        return 0.0
+    return max(0.0, requested - measured)
+
+
+def max_continuations_reached(attempts: int, max_continuations: int = DEFAULT_MAX_CONTINUATIONS) -> bool:
+    """Return True if the maximum number of continuations has been reached."""
+    return attempts >= max_continuations
+
+
+def build_continuation_prompt(shot: Shot, shortfall_s: float) -> str:
+    """Build a prompt for a continuation take that preserves the identity anchor.
+
+    The continuation prompt includes:
+    - The original shot's identity anchor (character presence from issue #38)
+    - A CONTINUITY directive for seamless stitching
+    - The shortfall duration to target
+    """
+    parts = []
+
+    # Preserve the original prompt as the base
+    if isinstance(shot.prompt, str):
+        parts.append(shot.prompt)
+    elif isinstance(shot.prompt, dict):
+        # Structured prompt - expand it
+        from brandly_cli.video_prompts import expand_structured_prompt
+        parts.append(expand_structured_prompt(shot.prompt))
+
+    # Add the identity anchor (character presence from issue #38)
+    # Shot has `character` field (string, can be comma-separated for multiple)
+    character = getattr(shot, "character", None)
+    if character:
+        # Support comma-separated multiple characters
+        chars = [c.strip() for c in character.split(",")] if "," in character else [character]
+        if len(chars) == 1:
+            parts.append(f"\n[CONTINUITY] Same character: {chars[0]}. Maintain identical appearance.")
+        else:
+            parts.append(f"\n[CONTINUITY] Same characters: {', '.join(chars)}. Maintain identical appearances.")
+
+    # Add the continuation directive with shortfall
+    parts.append(
+        f"\n[CONTINUATION] This is a continuation take for a {shortfall_s:.1f}s shortfall. "
+        f"Pick up exactly where the previous clip ended. Seamless match on action, "
+        f"lighting, and camera position. Target duration: {shortfall_s:.1f}s."
+    )
+
+    return " ".join(parts)
 
 
 # --- Probe helpers ---
@@ -326,6 +400,17 @@ class Shot:
     delta_s: float | None = None
     #: Duration fidelity status: "ok" | "short" | "continuation".
     duration_status: str = "ok"
+
+    # --- Continuation take (G8) ---
+    #: Number of continuation attempts made for this shot.
+    continuation_attempts: int = 0
+    #: ID of the parent shot this is a continuation of (for split parts).
+    continuation_parent_id: str | None = None
+    #: True if this shot is a continuation take.
+    is_continuation: bool = False
+    #: History of continuation attempts: list of dicts with
+    #: attempt_number, requested_s, measured_s, shortfall_s, status.
+    continuation_history: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def clip_name(self) -> str:
@@ -843,6 +928,11 @@ class RunnerConfig:
     text_fallback_attempts: int = 1
     """Number of text-to-video submit attempts made after the i2v budget is
     exhausted and a fallback variant has been produced."""
+
+    # G14: Provider seam - video backend protocol
+    video_backend: VideoBackend = field(default_factory=AgnesVideoBackend)
+    """Video generation backend implementing the VideoBackend protocol.
+    Defaults to AgnesVideoBackend for backwards compatibility."""
 
     def move_shot_clips(self, shot: Shot, new_clips: Sequence[Path]) -> list[Path]:
         """After generating ``shot``, relocate its clips when the shot is a

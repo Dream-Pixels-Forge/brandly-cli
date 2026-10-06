@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here.
 
+## [0.11.0] - 2026-10-06
+
+### Added — Accuracy Program (G7–G14)
+
+- **G7 Duration Truth**: Every generated clip is measured via ffprobe; `requested_s`, `measured_s`, `delta_s`, and `duration_status` (`ok`|`short`|`continuation`) are recorded. Tolerance = `max(1s, 10%)`. Shots beyond tolerance are never marked `OK`.
+- **G8 Continuation Take**: Short clips beyond tolerance trigger bounded continuation takes (default 2) with identity-anchored prompts for seamless head+tail stitch; costs tracked per attempt.
+- **G9 Video Judging Wired**: Existing multi-frame vision capability (issue #171) now wired to video clips via `--gate-ai` policy (`off`|`scene-first`|`all`); `scene-first` judges first clip of each scene.
+- **G10 Closed Rework Loop**: Scene scorecard with 4 dimensions (identity, drift, duration, slop); threshold 0.7 triggers bounded rework (max 2 attempts); `--only` re-runs only scenes needing rework.
+- **G11 Fail-Honest**: New `UNVERIFIED` status distinct from `PASS`/`WARN`/`FAIL`; gate returns `UNVERIFIED` (never `PASS`) when `use_ai=True` but no `AGNES_API_KEY`; `--strict` exits non-zero on `UNVERIFIED`.
+- **G12 Narrative Beats**: Script phase emits beat labels (`setup`|`turn`|`consequence`|`resolve`); shot durations derived from beat role (4–6s reliable window); backward compatible with projects lacking beat labels.
+- **G13 Quota-Aware Planning**: `--target-duration` on `estimate`/`produce` warns when plan exceeds daily quota; proposes multi-day schedule with shots/day split; duration fidelity from G7 feeds schedule.
+- **G14 Provider Seam**: `VideoBackend` protocol with `submit`/`poll`/`fetch` + capability descriptor (`max_duration`, `reliable_duration`, `rate_limit_rpm`); Agnes is one implementation; `shot_runner` depends on protocol, not concrete client.
+
+### Changed
+
+- **Web UI included by default**: Web UI dependencies (`fastapi`, `starlette`, `uvicorn`, `websockets`) moved to core dependencies; single `pip install brandly-cli` installs everything including `brandly timeline`.
+- **README overhaul**: User-friendly quick start, workflow separation (creators vs AI agents), command cheat sheet, architecture in collapsible section.
+- **Star Repo section** added to README.
+
+### Fixed
+
+- Type annotations and imports cleaned up across `video_backend.py`, `shot_runner.py`, `cost_tracker.py`, `production.py`.
+
 ## [Unreleased]
 
 ## [0.10.2] - 2026-10-04

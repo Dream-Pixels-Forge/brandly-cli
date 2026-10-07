@@ -1447,27 +1447,54 @@ def video(
                 f"[yellow]⚠ No images found in category '{auto_ref_category}' — "
                 "auto references are empty for this run.[/yellow]"
             )
-    # Per-shot auto-ref scoping: filter the auto-detected plates down to the
-    # ones this shot is concerned with (character anchor presence, prompt
-    # relevance) instead of merging the whole images tree into every shot.
-    if auto_ref_filter is not None:
-        auto_refs = auto_ref_filter(auto_refs)
-
     # Read the project's primary_reference metadata (set by `brandly reference`)
-    reference: dict[str, Any] | None = _load_project_reference(project_id, root)
+    reference_metadata: dict[str, Any] | None = _load_project_reference(project_id, root)
 
     # Build the list of paths to pass as the FIRST reference (strongest influence).
-    # Include the local file path (if on disk) and the source URL (if any).
+    # Use layout-based discovery to validate the reference (like require_clip_media_file)
     ref_paths: list[str] = []
-    if reference is not None:
-        path = reference.get("image_path", "")
-        if path and Path(path).exists():
-            ref_paths.append(path)
-        src_url = reference.get("source_url", "")
+    reference: dict[str, Any] | None = None  # Track if we have a valid reference
+    if reference_metadata is not None:
+        # Extract information from metadata to locate the reference via layout
+        subject_type = reference_metadata.get("subject_type")
+        if subject_type:
+            # Determine expected category and location
+            from brandly_cli import layout
+            category = layout.image_category_for_subject(subject_type)
+            # Images are stored in: pre-production/<project_id>/images/<category>/
+            # layout.resolve_media_root gives us pre-production/<project_id>/
+            # So we need to go one level deeper into images/
+            images_root = layout.resolve_media_root(root, project_id, "images")
+            expected_dir = images_root / "images" / category
+            
+            # Look for reference files matching the pattern in the expected location
+            # The reference filename should start with "reference_<subject_type>_"
+            expected_prefix = f"reference_{subject_type}_"
+            if expected_dir.is_dir():
+                for candidate_path in expected_dir.iterdir():
+                    if (candidate_path.is_file() and 
+                        candidate_path.name.startswith(expected_prefix) and
+                        candidate_path.suffix.lower() in {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'}):
+                        # Found a matching reference file
+                        ref_paths.append(str(candidate_path))
+                        # Use the first matching file as the reference
+                        reference = reference_metadata.copy()
+                        reference["image_path"] = str(candidate_path)  # Update with actual path
+                        break
+    
+        # Fallback: if layout-based discovery didn't work, try the original path (for backward compatibility)
+        if not ref_paths and reference_metadata is not None:
+            path = reference_metadata.get("image_path", "")
+            if path and Path(path).exists():
+                ref_paths.append(path)
+                reference = reference_metadata
+        
+        src_url = reference_metadata.get("source_url", "") if reference_metadata else ""
         if src_url:
             ref_paths.append(src_url)
+            
         if not ref_paths:
-            reference = None  # stale metadata, no usable path
+            reference = None  # stale metadata, no usable reference
 
     missing = reference is None
     if missing and not allow_referenceless:

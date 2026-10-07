@@ -16,6 +16,7 @@ from typing import Any
 
 import click
 from rich.table import Table
+from brandly_cli.async_compat import run_async
 
 from brandly_cli import inflight, layout, shot_runner
 from brandly_cli.agnes_client import (
@@ -1646,7 +1647,7 @@ def video(
             context=f"command=video; style={style}; mode={mode}; "
             f"duration={duration}s; aspect={aspect_ratio}",
         )
-        task = asyncio.run(
+        task = run_async(
             create_video_task(
                 enhanced,
                 model=model,
@@ -1723,7 +1724,7 @@ def video(
     if wait:
         console.print(f"[dim]Polling (max {max_wait}s)...[/dim]")
         try:
-            result = asyncio.run(poll_video(video_id, max_wait_seconds=max_wait, model_name=model))
+            result = run_async(poll_video(video_id, max_wait_seconds=max_wait, model_name=model))
         except TimeoutError as e:
             console.print(f"[red]Error: {e}[/red]")
             console.print(
@@ -1794,7 +1795,7 @@ def video(
                 # (The generation doc + plan COMPLETED upsert happen after the
                 # human gate approves, or later via `job-resume`.)
                 pm = ProjectManager(root)
-                asyncio.run(
+                run_async(
                     pm.update(
                         project_id,
                         {
@@ -1825,7 +1826,7 @@ def video(
 
         _saved_media = locals().get("saved")
         if isinstance(_saved_media, Path) and _saved_media.exists():
-            gate_result = asyncio.run(
+            gate_result = run_async(
                 quality_gate.verify_element(
                     _saved_media,
                     description=character or prompt,
@@ -1897,7 +1898,7 @@ def video(
     # Persist to project
     root = _get_root(ctx)
     pm = ProjectManager(root)
-    asyncio.run(pm.update(project_id, {"current_phase": "asset"}))
+    run_async(pm.update(project_id, {"current_phase": "asset"}))
     # Auto-record credit spend so budget gates can fire.
     _record_media_spend(root, project_id, "video", model)
 

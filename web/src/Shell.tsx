@@ -121,10 +121,44 @@ function NoProjectSelected() {
       height: '100%',
       gap: 16,
       color: 'var(--md-on-surface-variant)',
+      position: 'relative',
+      overflow: 'hidden',
     }}>
-      <span className="material-symbols-outlined" style={{ fontSize: 48, opacity: 0.3 }}>movie_edit</span>
-      <div style={{ fontFamily: 'var(--md-font-display-lg)', fontSize: 14, color: 'var(--md-on-surface)' }}>Select a Project</div>
-      <div style={{ fontSize: 12, opacity: 0.7 }}>Choose a project from the sidebar to begin editing</div>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          backgroundImage: 'url(/static/preview.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 0.6,
+          zIndex: 0,
+        }}
+      />
+      <div style={{
+        position: 'relative',
+        zIndex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        textAlign: 'center',
+        padding: '20px',
+        background: 'rgba(14, 14, 17, 0.4)',
+        backdropFilter: 'blur(2px)',
+      }}>
+        <span className="material-symbols-outlined" style={{ fontSize: 48, marginBottom: 12, display: 'block', color: 'var(--md-on-surface)', opacity: 0.8 }}>movie_edit</span>
+        <div style={{ fontFamily: 'var(--md-font-display-lg)', fontSize: 18, fontWeight: 600, color: 'var(--md-on-surface)', marginBottom: 8 }}>Select a Project</div>
+        <div style={{ fontSize: 14, opacity: 0.8, maxWidth: '400px', lineHeight: 1.5 }}>
+          Choose a project from the sidebar to begin editing<br/>
+          <span style={{ opacity: 0.6, fontSize: 12, marginTop: 8, display: 'block' }}>
+            Preview shows sample content when no project is loaded
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

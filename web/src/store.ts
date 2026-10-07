@@ -71,6 +71,30 @@ export const withToken = (path: string) =>
 
 const API = (path: string) => withToken(`/api${path}`);
 
+/** Parse a fetch Response defensively. Non-OK statuses, empty bodies and
+ * non-JSON payloads surface as readable errors instead of the cryptic
+ * ``SyntaxError: Unexpected end of JSON input`` the dev proxy produces
+ * when the backend (`brandly timeline`) is not running. */
+async function readJson<T = unknown>(res: Response): Promise<T> {
+  const text = await res.text();
+  if (!res.ok) {
+    let detail = `Request failed (HTTP ${res.status})`;
+    try {
+      const parsed = JSON.parse(text) as { detail?: unknown };
+      if (parsed?.detail) detail = String(parsed.detail);
+    } catch { /* body wasn't JSON — keep the generic message */ }
+    throw new Error(detail);
+  }
+  if (!text.trim()) {
+    throw new Error('Empty response — backend not reachable. Start it with `brandly timeline`');
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error('Invalid response from backend (not JSON)');
+  }
+}
+
 function notifySave() {
   window.dispatchEvent(new Event('brandly-save'));
 }
@@ -102,7 +126,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const res = await fetch(API('/projects'));
-      const data = await res.json();
+      const data = await readJson<{ projects?: Project[] }>(res);
       set({ projects: data.projects || [], loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });
@@ -113,7 +137,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const res = await fetch(API(`/projects/${id}`));
-      const data = await res.json();
+      const data = await readJson<Project>(res);
       set({ activeProject: data, loading: false });
       await get().loadTimeline();
     } catch (e) {
@@ -126,7 +150,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!activeProject) return;
     try {
       const res = await fetch(API(`/projects/${activeProject.id}/timeline`));
-      const data = await res.json();
+      const data = await readJson<{ timeline?: ProjectTimeline }>(res);
       if (data.timeline) {
         const tl = data.timeline;
         const totalFrames = Math.ceil(tl.clips.reduce((s: number, c: Clip) => s + c.duration, 0) * (tl.fps || 24));
@@ -222,7 +246,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         API(`/projects/${activeProject.id}/clips/${clipId}/regenerate`),
         { method: 'POST' }
       );
-      const data = await res.json();
+      const data = await readJson<{ status?: string; error?: string }>(res);
       if (data.status === 'completed') await get().loadTimeline();
       else set({ error: data.error || 'Generation failed' });
     } catch (e) {
@@ -238,7 +262,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         API(`/projects/${activeProject.id}/export`),
         { method: 'POST' }
       );
-      const data = await res.json();
+      const data = await readJson<{ error?: string }>(res);
       if (data.error) {
         set({ error: data.error });
       } else {

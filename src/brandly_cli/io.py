@@ -17,6 +17,7 @@ from typing import Any
 from rich.console import Console
 
 from brandly_cli import layout
+from brandly_cli.async_compat import run_async
 
 #: Directory of the installed brandly_cli package — pip installs carry the
 #: bundled skills here even without a repo-level ``skills/`` folder.
@@ -401,16 +402,26 @@ def save_artifact(
     if not ext:
         ext = ".bin"
     ts = now_iso().replace(":", "-").replace(".", "_")
-    hint = sanitize_filename(prompt_hint)[:20] if prompt_hint else ""
-    fname = filename or f"{type_label}_{ts}_{hint}{ext}"
-    dest = artifacts_dir / fname
-    import asyncio
-
+    # Build destination path
+    if filename:
+        dest = artifacts_dir / filename
+    else:
+        # Build default name: {type_label}_{timestamp}_{hint}{extension}
+        # but only include hint if it's not empty
+        if prompt_hint:
+            dest = artifacts_dir / f"{type_label}_{ts}_{prompt_hint}{ext}"
+        else:
+            dest = artifacts_dir / f"{type_label}_{ts}{ext}"
+    
     try:
-        asyncio.run(download_file(url, dest))
-        return dest
+        result = run_async(download_file(url, dest))
+        # On success, remove any persisted download information
+        remove_persisted_download(project_id, url, str(dest), root=root)
+        return result
     except Exception as e:
         _console.print(f"[yellow]⚠ Could not save artifact: {e}[/yellow]")
+        # On failure, persist the download information for later retry
+        persist_failed_download(project_id, url, str(dest), root=root)
         return None
 
 
@@ -460,7 +471,7 @@ def fetch_image_atomic(
                     resp.raise_for_status()
                     return resp.content
 
-            raw = asyncio.run(_dl(url))
+            raw = downloaded_file = run_async(_dl(url))
         elif b64_json:
             try:
                 raw = base64.b64decode(b64_json)
@@ -488,3 +499,115 @@ def fetch_image_atomic(
     except Exception as e:
         tmp.unlink(missing_ok=True)
         raise ImageFetchError(f"could not fetch/validate image into {dest.name}: {e}") from e
+
+
+def persist_failed_download(project_id: str, url: str, dest_path: str, root: Path | None = None) -> None:
+    """Persist failed download information for later retry.
+
+    Args:
+        project_id: The project ID
+        url: The URL that failed to download
+        dest_path: The destination path where it should be saved
+        root: The project root directory
+    """
+    if root is None:
+        root = Path(".")
+    project_dir = layout.resolve_project_dir(root, project_id)
+    persistence_file = project_dir / ".brandly" / "downloads.json"
+
+    # Load existing persistence data
+    persistence_data = {}
+    if persistence_file.exists():
+        try:
+            import json
+            persistence_data = json.loads(persistence_file.read_text())
+        except Exception:
+            persistence_data = {}
+
+    # Add or update the failed download entry
+    # Use a hash of the URL and dest_path as the key for deduplication
+    import hashlib
+    key = hashlib.sha256(f"{url}:{dest_path}".encode()).hexdigest()[:16]
+    persistence_data[key] = {
+        "url": url,
+        "dest_path": dest_path,
+        "project_id": project_id,
+        "timestamp": now_iso(),
+        "attempts": persistence_data.get(key, {}).get("attempts", 0) + 1
+    }
+
+    # Save back to file
+    try:
+        import json
+        persistence_file.write_text(json.dumps(persistence_data, indent=2))
+    except Exception:
+        pass  # Fail silently to avoid disrupting the main flow
+
+
+def get_persisted_downloads(project_id: str, root: Path | None = None) -> list[dict]:
+    """Get all persisted download information for a project.
+
+    Args:
+        project_id: The project ID
+        root: The project root directory
+
+    Returns:
+        List of dictionaries containing download information
+    """
+    if root is None:
+        root = Path(".")
+    project_dir = layout.resolve_project_dir(root, project_id)
+    persistence_file = project_dir / ".brandly" / "downloads.json"
+
+    if not persistence_file.exists():
+        return []
+
+    try:
+        import json
+        data = json.loads(persistence_file.read_text())
+        # Return list of download info dictionaries
+        return list(data.values())
+    except Exception:
+        return []
+
+
+def remove_persisted_download(project_id: str, url: str, dest_path: str, root: Path | None = None) -> None:
+    """Remove persisted download information after successful download.
+
+    Args:
+        project_id: The project ID
+        url: The URL that was downloaded
+        dest_path: The destination path where it was saved
+        root: The project root directory
+    """
+    if root is None:
+        root = Path(".")
+    project_dir = layout.resolve_project_dir(root, project_id)
+    persistence_file = project_dir / ".brandly" / "downloads.json"
+
+    if not persistence_file.exists():
+        return
+
+    try:
+        import json
+        persistence_data = json.loads(persistence_file.read_text())
+
+        # Remove matching entries
+        to_remove = []
+        for key, info in persistence_data.items():
+            if info.get("url") == url and info.get("dest_path") == dest_path:
+                to_remove.append(key)
+
+        for key in to_remove:
+            del persistence_data[key]
+
+        # Save back to file
+        if persistence_data:
+            persistence_file.write_text(json.dumps(persistence_data, indent=2))
+        else:
+            # Remove file if empty
+            persistence_file.unlink(missing_ok=True)
+    except Exception:
+        pass  # Fail silently
+
+

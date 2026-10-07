@@ -13,17 +13,16 @@ from pathlib import Path
 from typing import Any
 
 from brandly_cli import layout
+from brandly_cli.async_compat import run_async
 from brandly_cli.io import read_json, write_json
 from brandly_cli.types import ProjectData
 
+"""File-based project state manager."""
 
 class ProjectManager:
-    """File-based project state manager."""
-
     def __init__(self, root_dir: str | Path) -> None:
         self.root = Path(root_dir)
         # Projects live at .brandly/{id}/ with per-category subfolders.
-
     # ------------------------------------------------------------------
     # Path helpers
     # ------------------------------------------------------------------
@@ -189,11 +188,10 @@ def sync_production_state(
     run. Returns the updated :class:`ProjectData` (or None when the update
     could not be applied).
     """
-    import asyncio
 
     try:
         pm = ProjectManager(root)
-        proj = asyncio.run(pm.read(project_id))
+        proj = run_async(pm.read(project_id))
         updates: dict[str, Any] = {
             "status": status,
             "current_phase": current_phase,
@@ -239,6 +237,6 @@ def sync_production_state(
             )
         updates["phases"] = prev_phases
 
-        return asyncio.run(pm.update(project_id, updates))
+        return run_async(pm.update(project_id, updates))
     except Exception:
         return None

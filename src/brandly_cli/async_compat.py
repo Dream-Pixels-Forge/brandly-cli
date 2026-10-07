@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-from collections.abc import Callable
 from typing import Any
 
 
@@ -22,14 +21,13 @@ def run_async(coro: Any) -> Any:
         The result of the coroutine
     """
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         # No running loop - safe to use asyncio.run()
         return asyncio.run(coro)
     else:
         # Already in an event loop - run in a separate thread with its own loop
         # to avoid "RuntimeError: This event loop is already running"
-        import concurrent.futures
 
         def run_in_thread() -> Any:
             new_loop = asyncio.new_event_loop()
@@ -47,13 +45,12 @@ def run_async(coro: Any) -> Any:
 def async_run_ffmpeg(cmd: list[str]) -> tuple[int, str, str]:
     """Run ffmpeg command asynchronously, compatible with both sync and async contexts."""
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         # No running loop - safe to use asyncio.run()
         return asyncio.run(_async_run_ffmpeg(cmd))
     else:
         # Already in an event loop - run in a separate thread with its own loop
-        import concurrent.futures
 
         def run_in_thread() -> tuple[int, str, str]:
             new_loop = asyncio.new_event_loop()
@@ -70,8 +67,6 @@ def async_run_ffmpeg(cmd: list[str]) -> tuple[int, str, str]:
 
 async def _async_run_ffmpeg(cmd: list[str]) -> tuple[int, str, str]:
     """Actually run ffmpeg command and capture output."""
-    import subprocess
-
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,

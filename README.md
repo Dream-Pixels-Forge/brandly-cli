@@ -120,6 +120,8 @@ brandly run <id> --execute --until publish
 
 ### For AI Agents (Tool-Driven)
 
+Driving brandly from an AI tool — connect through the MCP server or call the tool surface directly:
+
 Brandly exposes **15 agent-callable tools** via MCP server:
 
 `ash
@@ -334,6 +336,22 @@ All state lives in .brandly/<project>/ — **disk is the only shared state**.
 
 ---
 
+## Demos
+
+![Studio preview](assets/studio-preview.png)
+
+Producer videos: [F1tr08UeHLs](https://youtu.be/F1tr08UeHLs) · [7lNt1Y8tAzo](https://youtu.be/7lNt1Y8tAzo)
+
+---
+
+## 🗺️ Roadmap
+
+- ✅ Publish/schedule — supported via `brandly publish` (dry-run, multi-platform posts, stored credentials)
+- ✅ Quality gates — per-scene and element checks via `brandly gate`
+- ✅ Studio shell — visual timeline editor via `brandly timeline`
+
+---
+
 ## 🔧 Development
 
 `ash
@@ -350,6 +368,8 @@ cd web && npm run dev
 # Build wheel
 pip wheel . -w dist/
 `
+
+Pipeline governance: [AUDIT-AGENTIC-PIPELINE.md](dev-notes/AUDIT-AGENTIC-PIPELINE.md) is the single source of truth for open gaps.
 
 ---
 

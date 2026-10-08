@@ -1463,7 +1463,6 @@ def video(
         subject_type = reference_metadata.get("subject_type")
         if subject_type:
             # Determine expected category and location
-            from brandly_cli import layout
             category = layout.image_category_for_subject(subject_type)
             # Images are stored in: pre-production/<project_id>/images/<category>/
             # layout.resolve_media_root gives us pre-production/<project_id>/

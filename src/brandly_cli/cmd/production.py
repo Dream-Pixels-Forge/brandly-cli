@@ -2014,6 +2014,36 @@ def _director_shots_path(root: Path, project_id: str) -> Path:
 
 
 
+#: #255: platform family aliases — a family name in the project's stored
+#: target-platform selection maps to its export variants.
+_PLATFORM_FAMILY_ALIASES: dict[str, tuple[str, ...]] = {
+    "instagram": ("instagram_reel", "instagram_post"),
+    "youtube": ("youtube_short", "youtube_standard"),
+    "facebook": ("facebook_story",),
+}
+
+
+def _publish_platforms(target_platforms: list[str]) -> tuple[str, ...]:
+    """Derive the publish platform list from the project's stored selection (#255).
+
+    ``all`` maps to the full export set; a family name (instagram/youtube/
+    facebook) maps to its export variants; unknown names pass through (the
+    per-platform export fails closed on them). Order-preserving, deduped.
+    """
+    from brandly_cli.export_platforms import PLATFORM_PRESETS
+
+    if not target_platforms:
+        return ()
+    if "all" in [str(p).lower().strip() for p in target_platforms]:
+        return tuple(PLATFORM_PRESETS.keys())
+    resolved: list[str] = []
+    for name in target_platforms:
+        norm = str(name).lower().strip()
+        alias = _PLATFORM_FAMILY_ALIASES.get(norm)
+        resolved.extend(alias if alias else [norm])
+    return tuple(dict.fromkeys(resolved))
+
+
 def _scene_clip_paths(
     root: Path, project_id: str, manifest: dict[str, Any]
 ) -> list[Path]:
@@ -2083,15 +2113,15 @@ PHASE_HANDOFF_SPECS: dict[str, dict[str, Any]] = {
     },
     "audio": {
         "inputs": ["scenes.json", "shots.json"],
-        "outputs": ["audio assets (music, SFX, voiceover) in the media store"],
+        "outputs": ["music track downloaded under audio/ (production/<id>/audio/music.mp3)", "duration derived from scenes.json scene durations"],
         "gate": {
             "command": "brandly status <project_id>",
-            "exit_codes": "0 = phase recorded; audio present (duration ~= scenes)",
+            "exit_codes": "0 = phase recorded; music downloaded under audio/ (or videos present — audio optional)",
         },
     },
     "re_edit": {
-        "inputs": ["scene clips", "audio assets"],
-        "outputs": ["videos/final.mp4"],
+        "inputs": ["scene clips", "music track under audio/"],
+        "outputs": ["videos/final.mp4 (music mixed in when a track exists)"],
         "gate": {
             "command": "brandly stitch <clips...> --output videos/final.mp4",
             "exit_codes": "0 = stitched; clip count matches scenes.json",
@@ -2106,8 +2136,8 @@ PHASE_HANDOFF_SPECS: dict[str, dict[str, Any]] = {
         },
     },
     "publish": {
-        "inputs": ["videos/final.mp4", "gate verdicts", "brandly approve <id> <phase>"],
-        "outputs": ["<project>/export/ platform deliverables"],
+        "inputs": ["videos/final.mp4", "target_platforms (project.json)", "brandly approve <id> <phase>"],
+        "outputs": ["<project>/export/ deliverables for every stored target platform (all -> full set)"],
         "gate": {
             "command": "brandly export-platforms <project_id>",
             "exit_codes": "0 = deliverables written for every target platform",
@@ -2929,9 +2959,47 @@ class Director:
             }
 
         if phase == "audio":
-            music = await self.generate_music("upbeat corporate", duration=30)
+            # #260: the music duration derives from the scene manifest's
+            # scene durations — never a hardcoded 30s.
+            audio_manifest = scenes.load_scenes(proj.id, root=self.cfg.root)
+            duration = 0
+            if audio_manifest is not None:
+                duration = sum(
+                    int(s.get("duration", 0) or 0)
+                    for scene in audio_manifest["scenes"]
+                    for s in scene["shots"]
+                )
+            if duration <= 0:
+                # No manifest or no durations recorded — derive from the
+                # project's shot count at the reliable 4-6s window midpoint.
+                duration = max(1, proj.shot_count) * 5
+
+            music = await self.generate_music("upbeat corporate", duration=duration)
+
+            # #260: the music is a real downloaded asset under audio/.
+            audio_dir = layout.resolve_media_root(Path(self.cfg.root), proj.id, "audio")
+            audio_dir.mkdir(parents=True, exist_ok=True)
+            url = music.get("url") if isinstance(music, dict) else None
+            music_path: Path | None = None
+            if url:
+                from brandly_cli.io import download_file
+
+                try:
+                    music_path = await download_file(url, audio_dir / "music.mp3")
+                except Exception as e:
+                    # Fail-honest: the download failure is reported, never a
+                    # fake asset.
+                    return {
+                        "error": (
+                            f"music download failed: {type(e).__name__}: {e} — "
+                            "re-run the audio phase to resume"
+                        )
+                    }
+
             return {
                 "music_task": music,
+                "music_path": str(music_path) if music_path else None,
+                "duration_seconds": duration,
                 "estimated_credits": round(base * 0.15),
             }
 
@@ -2973,10 +3041,48 @@ class Director:
             )
             if "error" in result:
                 return {"error": f"stitch failed: {result['error']}"}
+
+            # #260: mix the downloaded music track into final.mp4 when one
+            # exists — a real ffmpeg mix, never a no-op claim. A project
+            # without music ships the silent stitch (audio is optional when
+            # videos exist).
+            audio_dir = layout.resolve_media_root(Path(self.cfg.root), proj.id, "audio")
+            music_path = audio_dir / "music.mp3"
+            if music_path.is_file() and music_path.stat().st_size > 0:
+                from brandly_cli.async_compat import async_run_ffmpeg
+
+                mixed_output = videos_root / "final_music.mp4"
+                # async_run_ffmpeg is a SYNC dual-context helper (it returns
+                # the tuple directly) — never await it.
+                exit_code, _out, err = async_run_ffmpeg(
+                    [
+                        "ffmpeg", "-y",
+                        "-i", str(output),
+                        "-i", str(music_path),
+                        "-map", "0:v:0", "-map", "1:a:0",
+                        "-c:v", "copy", "-shortest",
+                        str(mixed_output),
+                    ]
+                )
+                if exit_code != 0 or not mixed_output.exists():
+                    detail = err.strip()[-200:] if err.strip() else ""
+                    return {
+                        "error": (
+                            f"audio mix failed (exit {exit_code})"
+                            + (f" {detail}" if detail else "")
+                            + " — the stitched (silent) final is kept; re-run "
+                            "re_edit to retry the mix"
+                        )
+                    }
+                mixed_output.replace(output)
+
+            music_attached = music_path.is_file()
             return {
                 "output": str(output),
                 "clips": len(clips),
                 "duration_seconds": result.get("duration_seconds", 0.0),
+                "music": str(music_path) if music_attached else None,
+                "music_mixed": music_attached,
             }
 
         if phase == "validate":
@@ -3130,7 +3236,18 @@ class Director:
                     }
                 source = found
             out_dir = layout.export_dir(root_path, proj.id)
-            platforms = ("tiktok", "youtube_standard")
+            # #255: the platform list derives from the project's stored
+            # target-platform selection — `all` maps to the full set.
+            platforms = _publish_platforms(
+                list(getattr(proj, "target_platforms", []) or [])
+            )
+            if not platforms:
+                return {
+                    "error": (
+                        "no target platforms selected — set target_platforms "
+                        "in project.json, then re-run the publish phase"
+                    )
+                }
             outputs: list[dict[str, Any]] = []
             for platform in platforms:
                 result = await export_platforms.export_for_platform(

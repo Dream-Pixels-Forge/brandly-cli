@@ -754,8 +754,10 @@ def test_publish_phase_exports_platforms(
     result = asyncio.run(_director(tmp_path).run_phase(PID, "publish"))
 
     assert "error" not in result, result
-    assert result["result"]["platforms"] == ["tiktok", "youtube_standard"]
-    assert len(calls) == 2
+    assert result["result"]["platforms"] == [
+        "tiktok", "instagram_reel", "instagram_post",
+    ]  # derived from target_platforms (P4 #255: family alias maps instagram)
+    assert len(calls) == 3
     assert all(Path(c[0]) == final for c in calls)  # exports the stitched final
     assert all(Path(c[2]) == export_dir for c in calls)
     for _, platform, _ in calls:
@@ -875,10 +877,11 @@ def test_run_execute_completes_full_pipeline_to_done(
     assert proj.status == "completed"
     assert len(runner_calls) == 1
     assert verify_calls == _clip_paths(tmp_path, pid)
-    assert export_calls == ["tiktok", "youtube_standard"]
+    assert export_calls == ["tiktok", "instagram_reel", "instagram_post"]
     final = layout.resolve_media_root(tmp_path, pid, "videos") / "final.mp4"
     assert final.is_file()
     export_dir = layout.export_dir(tmp_path, pid)
     assert (export_dir / "final_tiktok.mp4").is_file()
-    assert (export_dir / "final_youtube_standard.mp4").is_file()
+    assert (export_dir / "final_instagram_reel.mp4").is_file()
+    assert (export_dir / "final_instagram_post.mp4").is_file()
 

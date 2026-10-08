@@ -109,7 +109,7 @@ def build_scenes(
             scene_number = shot_runner.as_int(shot.get("scene"), 1)
             index = shot_runner.as_int(shot.get("shot"), position)
             shot_id = str(shot.get("id") or shot.get("name") or f"shot-{position}")
-            entry = {
+            entry: dict[str, Any] = {
                 "id": shot_id,
                 "clip": shot_runner.clip_filename(scene_number, index),
                 "folder": "scenes",

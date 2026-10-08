@@ -142,7 +142,7 @@ def team_list(json_out: bool, root: str | None) -> None:
             "admin": "yellow",
             "editor": "blue",
             "viewer": "green"
-        }.get(user_role, "white")
+        }.get(user_role or "", "white")
 
         table.add_row(
             team_obj.team_id[:8] + "...",
@@ -187,6 +187,10 @@ def team_invite(
     # Resolve team and check permissions
     root_dir, team_file = _resolve_team(ctx, team_id, root)
     team_obj = asyncio.run(load_team(team_id, root=root_dir))
+    if team_obj is None:
+        # _resolve_team verified the file exists, so None = corrupt/unparseable
+        console.print(f"[red]Team file is corrupt or unreadable: {team_id}[/red]")
+        sys.exit(1)
 
     if not user_can_manage_team(team_obj, user_id):
         console.print("[red]Permission denied: Only owners and admins can invite members[/red]")
@@ -258,6 +262,10 @@ def team_members(
     """List members of a team."""
     root_dir, team_file = _resolve_team(ctx, team_id, root)
     team_obj = asyncio.run(load_team(team_id, root=root_dir))
+    if team_obj is None:
+        # _resolve_team verified the file exists, so None = corrupt/unparseable
+        console.print(f"[red]Team file is corrupt or unreadable: {team_id}[/red]")
+        sys.exit(1)
 
     if json_out:
         members_data = []
@@ -323,6 +331,10 @@ def team_role(
     """Change a member's role in a team."""
     root_dir, team_file = _resolve_team(ctx, team_id, root)
     team_obj = asyncio.run(load_team(team_id, root=root_dir))
+    if team_obj is None:
+        # _resolve_team verified the file exists, so None = corrupt/unparseable
+        console.print(f"[red]Team file is corrupt or unreadable: {team_id}[/red]")
+        sys.exit(1)
 
     # Get current user info for permission check
     import getpass
@@ -371,6 +383,10 @@ def team_projects(
     """List projects shared with a team."""
     root_dir, team_file = _resolve_team(ctx, team_id, root)
     team_obj = asyncio.run(load_team(team_id, root=root_dir))
+    if team_obj is None:
+        # _resolve_team verified the file exists, so None = corrupt/unparseable
+        console.print(f"[red]Team file is corrupt or unreadable: {team_id}[/red]")
+        sys.exit(1)
 
     if json_out:
         print(json.dumps({
@@ -414,6 +430,10 @@ def team_add_project(
     """Add a project to a team's shared projects."""
     root_dir, team_file = _resolve_team(ctx, team_id, root)
     team_obj = asyncio.run(load_team(team_id, root=root_dir))
+    if team_obj is None:
+        # _resolve_team verified the file exists, so None = corrupt/unparseable
+        console.print(f"[red]Team file is corrupt or unreadable: {team_id}[/red]")
+        sys.exit(1)
 
     # Get current user info for permission check
     import getpass
@@ -457,6 +477,10 @@ def team_remove_project(
     """Remove a project from a team's shared projects."""
     root_dir, team_file = _resolve_team(ctx, team_id, root)
     team_obj = asyncio.run(load_team(team_id, root=root_dir))
+    if team_obj is None:
+        # _resolve_team verified the file exists, so None = corrupt/unparseable
+        console.print(f"[red]Team file is corrupt or unreadable: {team_id}[/red]")
+        sys.exit(1)
 
     # Get current user info for permission check
     import getpass
@@ -490,6 +514,10 @@ def team_delete(
     """Delete a team."""
     root_dir, team_file = _resolve_team(ctx, team_id, root)
     team_obj = asyncio.run(load_team(team_id, root=root_dir))
+    if team_obj is None:
+        # _resolve_team verified the file exists, so None = corrupt/unparseable
+        console.print(f"[red]Team file is corrupt or unreadable: {team_id}[/red]")
+        sys.exit(1)
 
     # Get current user info for permission check
     import getpass

@@ -183,8 +183,8 @@ def status(ctx: click.Context, project_id: str, root: str | None) -> None:
     if root:
         ctx.ensure_object(dict)
         ctx.obj["root"] = root
-    root = _get_root(ctx)
-    pm = ProjectManager(root)
+    root_path = _get_root(ctx)
+    pm = ProjectManager(root_path)
     proj = run_async(pm.read(project_id))
     if not proj:
         console.print(f"[red]Project not found: {project_id}[/red]")
@@ -205,7 +205,7 @@ def status(ctx: click.Context, project_id: str, root: str | None) -> None:
         "created_at": proj.created_at,
         "updated_at": proj.updated_at,
     }
-    _print_project_summary(summary, root=root)
+    _print_project_summary(summary, root=root_path)
 
 @click.command(name="list")
 @click.pass_context

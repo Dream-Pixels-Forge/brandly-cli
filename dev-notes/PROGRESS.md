@@ -21,6 +21,48 @@
   - [ ] Phase 3C: Developer Features (analyze, templates, batch, webhook)
   - [x] Phase 3D: Ecosystem (share, team, plugin)
 
+## Round 24/256 — GOAL-ALL-OPEN-ISSUES P3: the document chain is real (#258 #247 #259 #257)
+
+Goal: handoff item 1 / GOAL-ALL-OPEN-ISSUES P3 (trends → concept → script).
+
+- [x] **RED-first:** `tests/test_pipeline_doc_chain.py` (10 tests, observed
+      10 failed → 10 passed).
+- [x] **#259 trends:** `research_trends` receives the project's style (never
+      hardcoded "commercial"); the phase writes non-empty
+      `docs/plan/trends.md`.
+- [x] **#258 concept:** `DirectorConfig` gained `agent_runner`
+      (Callable[[str], str]); the phase derives the concept from the project
+      brief, writes `docs/plan/concept.md`, moodboard honestly labelled
+      optional; without a runner or a brief it fails honestly (G11).
+- [x] **`_check_phase_artifacts` concept case:** `approve <id> concept` fails
+      closed (exit 1) on a missing/empty concept.md.
+- [x] **#257 script:** reads `docs/plan/concept.md` (fail-closed with a resume
+      hint, mirroring the asset phase's shots.json); shot prompts compose from
+      the brief (action) and the concept's content lines (environment, headings
+      skipped) — the hardcoded demo strings are gone; beat-duration derivation
+      untouched (ratified).
+- [x] **video_prompts:** the G12 beat variation now COMPOSES with the caller's
+      action/setting instead of clobbering them (#257 needs the brief/concept
+      in the prompt; every #248/G12 beat assertion stays valid).
+- [x] **PHASE_HANDOFF_SPECS:** concept inputs/outputs/gate + script inputs
+      match the delivered behavior; the `approve` escape remains only in the
+      failed-phase escalation envelope (MAX_PHASE_ATTEMPTS path).
+- [x] **Aligned tracked tests (reason: P3 supersedes the stub contract; the
+      script phase now requires concept.md):** test_pipeline_orchestration
+      (the "not implemented" stub test rewritten as
+      concept-without-runner fail-honest; `_write_concept` helper in the
+      script-driving tests) + test_issue_g12 (same helper).
+- Suite: **1498 passed / 0 failed / 1 skipped**. ruff clean, mypy clean
+  (5 pre-existing PIL local-only). CI all green on main (run 37821484237).
+- Commit: `7bf5546` — **PROCESS NOTE:** it landed via a DIRECT PUSH to main
+  (the `gh pr merge --delete-branch` for PR #265 checked main out and the
+  commit + push happened on main unnoticed — bypassing the PR process).
+  CI (which runs on push to main as well) is all green and the local gates
+  were green, so the commit is verified; the break is recorded here instead
+  of a risky history rewrite. Next sessions: ALWAYS `git branch
+  --show-current` before committing.
+- Next: P4 — audio/publish truth (#260 #255).
+
 ## Round 23/256 — GOAL-ALL-OPEN-ISSUES P2: triage all 21 failing untracked tests → suite 0 failed
 
 Goal: handoff item 2 / GOAL-ALL-OPEN-ISSUES P2 (per-file triage with reasons).

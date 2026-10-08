@@ -16,7 +16,6 @@ from typing import Any
 
 import click
 from rich.table import Table
-from brandly_cli.async_compat import run_async
 
 from brandly_cli import inflight, layout, shot_runner
 from brandly_cli.agnes_client import (
@@ -24,6 +23,7 @@ from brandly_cli.agnes_client import (
     generate_image,
     poll_video,
 )
+from brandly_cli.async_compat import run_async
 from brandly_cli.audio_client import generate_music, generate_tts, list_voices
 from brandly_cli.cli import (
     REFERENCE_SUBJECTS,
@@ -85,7 +85,7 @@ def _maybe_llm_enhance(
     from brandly_cli.prompt_enhance import llm_enhance_prompt
 
     try:
-        enhanced = asyncio.run(llm_enhance_prompt(prompt, model=model, context=context))
+        enhanced = run_async(llm_enhance_prompt(prompt, model=model, context=context))
     except Exception:
         enhanced = None
     if enhanced is None:
@@ -487,6 +487,7 @@ def reference(
             sys.exit(1)
         console.print("[green]✓ Project primary_reference metadata updated.[/green]")
 
+        gate_result = None
         if run_gate:
             from brandly_cli import quality_gate
 
@@ -509,7 +510,10 @@ def reference(
 
         # Human-in-the-loop gate: confirm the result matches expectations
         approved, note = _human_review_gate(
-            "reference", f"the {subject_type} reference for '{subject}'"
+            "reference",
+            f"the {subject_type} reference for '{subject}'",
+            ai_verdict=gate_result.status if gate_result else None,
+            ai_score=gate_result.score if gate_result else None,
         )
         if note:
             _write_review_note(root, project_id, "reference", note, extra=f"subject: {subject}")
@@ -1447,27 +1451,57 @@ def video(
                 f"[yellow]⚠ No images found in category '{auto_ref_category}' — "
                 "auto references are empty for this run.[/yellow]"
             )
-    # Per-shot auto-ref scoping: filter the auto-detected plates down to the
-    # ones this shot is concerned with (character anchor presence, prompt
-    # relevance) instead of merging the whole images tree into every shot.
-    if auto_ref_filter is not None:
-        auto_refs = auto_ref_filter(auto_refs)
-
     # Read the project's primary_reference metadata (set by `brandly reference`)
-    reference: dict[str, Any] | None = _load_project_reference(project_id, root)
+    reference_metadata: dict[str, Any] | None = _load_project_reference(project_id, root)
 
     # Build the list of paths to pass as the FIRST reference (strongest influence).
-    # Include the local file path (if on disk) and the source URL (if any).
+    # Use layout-based discovery to validate the reference (like require_clip_media_file)
     ref_paths: list[str] = []
-    if reference is not None:
-        path = reference.get("image_path", "")
+    reference: dict[str, Any] | None = None  # Track if we have a valid reference
+    if reference_metadata is not None:
+        # Extract information from metadata to locate the reference via layout
+        subject_type = reference_metadata.get("subject_type")
+        if subject_type:
+            # Determine expected category and location
+            category = layout.image_category_for_subject(subject_type)
+            # Images are stored in: pre-production/<project_id>/images/<category>/
+            # layout.resolve_media_root gives us pre-production/<project_id>/
+            # So we need to go one level deeper into images/
+            images_root = layout.resolve_media_root(root, project_id, "images")
+            expected_dir = images_root / "images" / category
+
+            # Look for reference files matching the pattern in the expected location
+            # The reference filename should start with "reference_<subject_type>_"
+            expected_prefix = f"reference_{subject_type}_"
+            if expected_dir.is_dir():
+                for candidate_path in expected_dir.iterdir():
+                    if (candidate_path.is_file() and
+                        candidate_path.name.startswith(expected_prefix) and
+                        candidate_path.suffix.lower() in {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'}):
+                        # Found a matching reference file
+                        ref_paths.append(str(candidate_path))
+                        # Use the first matching file as the reference
+                        reference = reference_metadata.copy()
+                        reference["image_path"] = str(candidate_path)  # Update with actual path
+                        break  # We found the best match, stop looking
+
+    # Fallback: if we haven't found a reference yet, try the original path (for backward compatibility)
+    if reference is None and reference_metadata is not None:
+        path = reference_metadata.get("image_path", "")
         if path and Path(path).exists():
             ref_paths.append(path)
-        src_url = reference.get("source_url", "")
+            reference = reference_metadata
+
+    # If we still haven't found a reference, try the source URL
+    if reference is None and reference_metadata is not None:
+        src_url = reference_metadata.get("source_url", "")
         if src_url:
             ref_paths.append(src_url)
-        if not ref_paths:
-            reference = None  # stale metadata, no usable path
+            reference = reference_metadata  # For source_url, the metadata is already correct
+
+    # If we still haven't found a reference, it's missing
+    if reference is None:
+        reference = None  # explicit for clarity, but it's already None
 
     missing = reference is None
     if missing and not allow_referenceless:

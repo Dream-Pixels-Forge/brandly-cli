@@ -18,17 +18,33 @@ from brandly_cli.io import now_iso
 console = Console()
 
 
-def human_review_gate(stage: str, label: str, default: bool = True) -> tuple[bool, str]:
+def human_review_gate(
+    stage: str,
+    label: str,
+    default: bool = True,
+    *,
+    ai_verdict: str | None = None,
+    ai_score: int | None = None,
+    ai_threshold: int = 90,
+) -> tuple[bool, str]:
     """Human-in-the-loop gate: ask up to 3 questions before continuing.
 
     Confirms the generated result matches what's expected. In
     non-interactive mode (EOF on stdin) the defaults are used, so piped
     runs auto-approve unless input is provided.
 
+    If an AI verdict and score are provided and the AI verdict is "pass"
+    with a score at or above the threshold, the gate auto-approves without
+    prompting.
+
     Returns:
         (approved, note) — ``approved`` is False when the result was
         rejected, ``note`` carries the optional free-text issue.
     """
+    # If AI verdict is pass and score meets threshold, auto-approve
+    if ai_verdict == "pass" and ai_score is not None and ai_score >= ai_threshold:
+        return True, ""
+
     try:
         q1 = click.confirm(
             f"[{stage} gate] Does {label} match what you expected?", default=default

@@ -2,7 +2,6 @@
 
 The canonical layout stores each project directly under
 ``.brandly/{project_id}/`` with eagerly created sub-folders for
-from brandly_cli.async_compat import run_async
 ``docs/`` (plan, bible, storyboard, tmp), ``images/``, ``videos/``,
 ``audio/``. See :mod:`brandly_cli.layout` for the single source of truth
 on paths.
@@ -14,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from brandly_cli import layout
+from brandly_cli.async_compat import run_async
 from brandly_cli.io import read_json, write_json
 from brandly_cli.types import ProjectData
 
@@ -190,7 +190,6 @@ def sync_production_state(
     run. Returns the updated :class:`ProjectData` (or None when the update
     could not be applied).
     """
-    import asyncio
 
     try:
         pm = ProjectManager(root)

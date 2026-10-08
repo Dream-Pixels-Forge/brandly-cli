@@ -74,7 +74,10 @@ async def _async_run_ffmpeg(cmd: list[str]) -> tuple[int, str, str]:
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await process.communicate()
-        return process.returncode, stdout.decode(), stderr.decode()
+        # communicate() implies termination, but returncode is Optional —
+        # narrow it instead of asserting (mypy return-value fix, PR #264).
+        returncode = process.returncode if process.returncode is not None else 1
+        return returncode, stdout.decode(), stderr.decode()
     except FileNotFoundError:
         return 1, "", "ffmpeg not found"
     except Exception as e:

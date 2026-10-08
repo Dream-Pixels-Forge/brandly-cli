@@ -288,6 +288,10 @@ class _LazyCommandGroup(click.Group):
         self._ensure_registered()
         return super().list_commands(ctx)
 
+    def get_params(self, ctx: click.Context) -> list[click.Parameter]:
+        self._ensure_registered()
+        return super().get_params(ctx)
+
 
 @click.group(cls=_LazyCommandGroup)
 @click.option("--root", default=None, help="Working directory (default: cwd)")

@@ -35,6 +35,10 @@ from brandly_cli import layout, shot_runner
 SCENES_FILE = "scenes.json"
 SCENES_VERSION = 1
 
+#: The four canonical narrative beats every validated shot list must cover
+#: (referenced by ``cmd/production.py`` beat-completeness validation).
+REQUIRED_BEATS = frozenset({"setup", "turn", "consequence", "resolve"})
+
 #: Returns "pass" | "warn" | "fail" for one clip path (case-insensitive).
 QualityRunner = Callable[[Path], str]
 

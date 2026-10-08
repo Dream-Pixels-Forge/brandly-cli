@@ -15,10 +15,12 @@ from brandly_cli.cmd import (
     gate,
     generation,
     metrics,
+    plugin,
     post,
     production,
     providers,
     publish,
+    team,
     tools,
 )
 
@@ -36,5 +38,7 @@ def register(cli: click.Group) -> None:
         publish,
         brand,
         metrics,
+        team,
+        plugin,
     ):
         module.register(cli)

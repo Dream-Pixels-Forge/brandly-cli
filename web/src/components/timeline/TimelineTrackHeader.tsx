@@ -109,9 +109,9 @@ export function TimelineTrackHeader(_props: TimelineTrackHeaderProps) {
       >
         Tracks · {clips.length} clips
       </div>
-      <TrackRow label="VIDEO" muted={false} solo={false} onToggleMute={() => {}} onToggleSolo={() => {}} />
-      <TrackRow label="A1" muted={false} solo={false} onToggleMute={() => {}} onToggleSolo={() => {}} />
-      <TrackRow label="A2" muted={false} solo={false} onToggleMute={() => {}} onToggleSolo={() => {}} />
+      <TrackRow label="VIDEO (M/S disabled)" muted={false} solo={false} onToggleMute={() => {}} onToggleSolo={() => {}} />
+      <TrackRow label="A1 (M/S disabled)" muted={false} solo={false} onToggleMute={() => {}} onToggleSolo={() => {}} />
+      <TrackRow label="A2 (M/S disabled)" muted={false} solo={false} onToggleMute={() => {}} onToggleSolo={() => {}} />
     </div>
   );
 }

@@ -21,6 +21,79 @@
   - [ ] Phase 3C: Developer Features (analyze, templates, batch, webhook)
   - [x] Phase 3D: Ecosystem (share, team, plugin)
 
+## Round 23/256 — GOAL-ALL-OPEN-ISSUES P2: triage all 21 failing untracked tests → suite 0 failed
+
+Goal: handoff item 2 / GOAL-ALL-OPEN-ISSUES P2 (per-file triage with reasons).
+
+- [x] **G7 duration truth (keystone, implemented):** `run_shots` measures the
+      canonical clip after every successful take and records
+      measured_s/delta_s/duration_status (standard + fallback paths);
+      `get_timeline` had two real bugs — hardcoded `Path('.')` instead of root
+      AND `completed_ids([])` empty known-set (nothing ever completed).
+- [x] **G8 continuation take (implemented):** `_stitch_clips` (ffmpeg concat
+      demuxer) + bounded continuation takes in `run_shots` (-cont<N> id,
+      build_continuation_prompt identity anchor, history recorded, stitched
+      clip ships, honest SHORT at the bound). 3.10 nested f-strings fixed.
+- [x] **G9 vision gate (implemented):** `RunnerConfig.gate_ai` +
+      `vision_gate_runner` wired into `run_shots`; fail blocks the SCENE
+      (FAIL recorded before OK so the trust model holds, scene skipped,
+      other scenes run, exit 1); gate_ai='off' restores pre-G9 behavior.
+- [x] **G11 UNVERIFIED (implemented):** `verify_element` gained `ai_runner`
+      (precedence over API; string verdicts mapped directly; recorded as
+      `{"verdict": word}` so reports read `.ai.get('verdict')`); an AI
+      failure (exception) now sets ai_unavailable -> UNVERIFIED.
+- [x] **G12 narrative beats (implemented):** `build_scenes` validates beats
+      against REQUIRED_BEATS (ValueError on invalid), carries beat + derives
+      duration from BEAT_DURATIONS (setup 5 / turn 6 / consequence 6 /
+      resolve 5); shots without beats keep the legacy schema.
+- [x] **Aligned (tracked test, reason recorded):**
+      `test_ratio_policy.py::test_run_shots_ignores_legacy_aspect_ratio` — the
+      G4 "never shell out to ffmpeg/ffprobe" assertion predates G7 and is
+      broader than its intent (no CROP); now forbids only ffmpeg transform
+      calls, ffprobe (read-only measurement) allowed.
+- [x] **Survivors committed + lint-cleaned:** test_g10/g11/g12/g13 + test_f2 ×3
+      (F821 missing Any imports, 15× F841 dead assignments, duplicate
+      clip_filename, B007/B011, whitespace; `test_g13`'s vacuous resume stub
+      made real against the shipped run_shots skip behavior; g9's committed
+      file lint-fixed).
+- [x] **`web/pnpm-lock.yaml` deleted + gitignored** (web/ is npm-managed).
+- Suite: **1488 passed / 0 failed / 1 skipped** (Windows-only platform skip).
+      ruff `src/ tests/` clean; mypy clean (5 pre-existing PIL local-only).
+- Commits: `174365f` (G7+G8) · `985bc98` (G9) · P2 completion on
+  `feat/p2-g7-g8-continuation` (branched after the PR #264 merge deleted the
+  old branch; local main was reset to origin/main first — NOTE: that reset
+  wiped the uncommitted Round 22 PROGRESS.md entry, re-added below).
+- Next: P3 — document chain (#258 #247 #259 #257).
+
+## Round 22/256 — GOAL-ALL-OPEN-ISSUES: CI green on PR #264 (mypy + latent pytest regression) → merged
+
+Goal: handoff item 1 — "Fix mypy errors → CI green → merge PR #264".
+
+- [x] **RED observed:** mypy 36 errors in 8 files (CI: 31 in 3 — CI has no PIL
+      import-untyped noise; 31 = team(26) + production(4) + async_compat(1)).
+- [x] **RED-first contract tests** `tests/test_mypy_union_guards.py` (8 tests:
+      7 team commands fail-honest on corrupt team file + `scenes.REQUIRED_BEATS`
+      constant) — observed 8 failed → 8 passed.
+- [x] **Fixes:** `cmd/team.py` fail-honest guards after `load_team` in 7 team
+      commands (`_resolve_team` verified the file exists, so None = corrupt →
+      clean SystemExit, never AttributeError) + `user_role or ""`; `scenes.py`
+      added `REQUIRED_BEATS` frozenset; `cmd/production.py` status uses
+      `root_path = _get_root(ctx)`; `async_compat.py` narrows
+      `process.returncode`.
+- [x] **Latent CI regression exposed + fixed:** once mypy passed, pytest ran in
+      CI for the first time on this branch and
+      `test_production_plan.py::TestKeyframeArchiving` failed —
+      `UnboundLocalError: cannot access local variable 'layout'`. Root cause:
+      `4e3172d` added a redundant local `from brandly_cli import layout`
+      (generation.py:1466) shadowing the module-level import (line 20); the
+      keyframe branch read it where the local import never ran. Verified
+      failing on c2112ae via `git worktree`. Fix = delete the shadow import.
+- [x] **All CI green on 9750c4c:** quality 3.10/3.11/3.12 + web-quality PASS →
+      **PR #264 squash-merged as `caa8b8c`**, branch deleted.
+- Suite: **1467 passed / 21 failed / 1 skipped** (21 + skip pre-existing in
+  UNTRACKED aspirational files — P2 scope).
+- Commits: `108da22` (mypy) + `9750c4c` (layout shadow regression).
+
 ## Round 21/256 — GOAL-ALL-OPEN-ISSUES P1: land in-flight fixes (#246 #249 #245 #252 #250 #248 #251 #253)
 
 Goal: `dev-notes/GOAL-ALL-OPEN-ISSUES.md` (16 open issues: #245–#253 + #255–#261).

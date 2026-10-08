@@ -39,6 +39,12 @@ SCENES_VERSION = 1
 #: (referenced by ``cmd/production.py`` beat-completeness validation).
 REQUIRED_BEATS = frozenset({"setup", "turn", "consequence", "resolve"})
 
+#: G12: duration derived from the beat role (hand-edited durations are
+#: overridden — the beat gives the film its shape). Midpoints of the
+#: ranges printed by the script phase (setup:4-6s, turn:5-7s,
+#: consequence:5-7s, resolve:4-6s).
+BEAT_DURATIONS = {"setup": 5, "turn": 6, "consequence": 6, "resolve": 5}
+
 #: Returns "pass" | "warn" | "fail" for one clip path (case-insensitive).
 QualityRunner = Callable[[Path], str]
 
@@ -103,13 +109,26 @@ def build_scenes(
             scene_number = shot_runner.as_int(shot.get("scene"), 1)
             index = shot_runner.as_int(shot.get("shot"), position)
             shot_id = str(shot.get("id") or shot.get("name") or f"shot-{position}")
-            grouped.setdefault(("", scene_number), []).append(
-                {
-                    "id": shot_id,
-                    "clip": shot_runner.clip_filename(scene_number, index),
-                    "folder": "scenes",
-                }
-            )
+            entry: dict[str, Any] = {
+                "id": shot_id,
+                "clip": shot_runner.clip_filename(scene_number, index),
+                "folder": "scenes",
+            }
+            # G12: beat labels are validated and carried; the duration is
+            # derived from the beat role (a hand-edited duration is
+            # overridden — the beat gives the film its shape). Shots without
+            # a beat keep the legacy schema (back-compat).
+            beat = shot.get("beat")
+            if beat is not None:
+                beat_norm = str(beat).strip().lower()
+                if beat_norm not in REQUIRED_BEATS:
+                    raise ValueError(
+                        f"Invalid beat {beat!r} for shot {shot_id!r} — "
+                        f"must be one of {sorted(REQUIRED_BEATS)}"
+                    )
+                entry["beat"] = beat_norm
+                entry["duration"] = BEAT_DURATIONS[beat_norm]
+            grouped.setdefault(("", scene_number), []).append(entry)
     else:
         for shot_obj in shot_runner.flatten_shots(data, images_dir):
             grouped.setdefault((shot_obj.act, shot_obj.scene), []).append(

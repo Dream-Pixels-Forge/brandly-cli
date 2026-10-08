@@ -110,17 +110,23 @@ shipped behavior, or is deleted with a documented reason — no red tests left
 on the branch.
 
 **Deliverables**
-- [ ] Per-file triage recorded (implement / align / delete + reason) in this goal's completion notes:
-  - `test_g11_fail_honest.py` — expects `verify_element` to return `UNVERIFIED` (not `warn`) when AI requested but unavailable. DECISION DEFAULT: implement (matches the already-shipped G11 philosophy "UNVERIFIED is never PASS"; the literal exists in `quality_gate.py:37` but `verify_element` never returns it) — RED first.
-  - `test_g7_duration_truth.py`, `test_g8_continuation.py`, `test_g9_vision_gate.py`, `test_g10_scorecard_rework.py`, `test_g12_narrative_beats.py`, `test_g13_quota_aware.py` — triage each failure: if the behavior is genuinely missing and part of the shipped G7–G13 contract, implement it (RED first); if the test contradicts shipped behavior, align the test and document why.
-  - `test_issues_31_43.py::test_sync_production_state`, `test_production_plan.py::TestKeyframeArchiving` — triage (likely side effects of the run_async conversions or layout changes — verify which is true).
-- [ ] Untracked test files that survive triage are committed (they are currently invisible to CI)
-- [ ] `web/pnpm-lock.yaml` — this repo is npm-managed (AGENTS.md gates use `npm --prefix web`); delete it or add to `.gitignore` with a note (do not leave an untracked pnpm lock in an npm repo)
+- [x] Per-file triage recorded (implement / align / delete + reason) in this goal's completion notes:
+  - `test_g11_fail_honest.py` — **IMPLEMENTED**: `verify_element` gained an `ai_runner` param (takes precedence over the API path; string verdicts map fail->issue/warn->warning/pass->clean) and an AI failure (exception) now sets `ai_unavailable` -> `UNVERIFIED` — matches the shipped G11 philosophy "UNVERIFIED is never PASS".
+  - `test_g7_duration_truth.py` — **IMPLEMENTED** (keystone): `run_shots` now measures the canonical clip after every successful take (`_probe_video_duration`) and records `measured_s`/`delta_s`/`duration_status` on the Shot (standard + fallback paths); `get_timeline` had two real bugs — progress/clips resolved against hardcoded `Path('.')` instead of root, and `completed_ids([])` passed an empty known-set so nothing was ever completed.
+  - `test_g8_continuation.py` — **IMPLEMENTED**: `_stitch_clips` (ffmpeg concat demuxer) + bounded continuation takes wired into `run_shots` (`-cont<N>` id, `build_continuation_prompt` identity anchor, history recorded, stitched clip ships in the canonical slot, honest SHORT at the bound). Also fixed 3.10-incompatible nested f-strings.
+  - `test_g9_vision_gate.py` — **IMPLEMENTED**: `RunnerConfig.gate_ai` (`off`/`scene-first`/`all`) + `vision_gate_runner` wired into `run_shots`; a `fail` verdict blocks the SCENE (recorded FAIL, remaining shots of the scene skipped, other scenes run, exit 1); gate runs BEFORE the OK record so a fail never leaves an OK line.
+  - `test_g10_scorecard_rework.py`, `test_g13_quota_aware.py` — **already passing** (committed as survivors; lint-cleaned; `test_g13`'s vacuous resume stub made real against the shipped `run_shots` skip behavior).
+  - `test_g12_narrative_beats.py` — **IMPLEMENTED**: `build_scenes` validates beat labels against `REQUIRED_BEATS` (invalid -> `ValueError("Invalid beat …")`), carries the beat, and derives `duration` from `BEAT_DURATIONS` (hand-edited durations overridden; shots without beats keep the legacy schema).
+  - `test_issues_31_43.py::test_sync_production_state` — was fixed in P1 (`c2112ae`: run_async import); passes.
+  - `test_production_plan.py::TestKeyframeArchiving` — was a latent CI failure exposed by the mypy fix (Round 22): redundant local `layout` import shadowing the module-level import (`4e3172d` regression); fixed by deleting the shadow import.
+  - `test_ratio_policy.py::test_run_shots_ignores_legacy_aspect_ratio` — **ALIGNED** (tracked test, regression surfaced by G7): the G4 assertion "never shell out to ffmpeg/ffprobe" predates G7 and is broader than its intent (no CROP); G7's ffprobe measurement is read-only metadata, so the assertion now forbids only ffmpeg transform calls — ffprobe allowed.
+- [x] Untracked test files that survive triage are committed (they are currently invisible to CI)
+- [x] `web/pnpm-lock.yaml` — deleted + added to `.gitignore` with a note (web/ is npm-managed)
 
 **Definition of Done**
-- [ ] `python3 -m pytest tests/ -q --ignore=tests/test_architecture_contracts.py` — **0 failed** (or every remaining failure has a written, reviewed justification)
-- [ ] No untracked test files remain (`git status --short tests/` clean)
-- [ ] `ruff check src/ tests/` clean
+- [x] `python3 -m pytest tests/ -q --ignore=tests/test_architecture_contracts.py` — **0 failed** (1488 passed / 1 skipped: Windows-only platform skip)
+- [x] No untracked test files remain (`git status --short tests/` clean)
+- [x] `ruff check src/ tests/` clean
 
 **Verification Steps**
 1. `python3 -m pytest tests/ -q --ignore=tests/test_architecture_contracts.py` — 0 failed

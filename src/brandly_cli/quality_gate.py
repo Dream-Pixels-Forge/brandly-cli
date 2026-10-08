@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -959,13 +960,17 @@ async def verify_element(
     write_report: bool = True,
     expected_characters: list[str] | None = None,
     judge_frames: int = 1,
+    ai_runner: Callable[[Path], str | dict[str, Any]] | None = None,
 ) -> GateResult:
     """Run the quality gate on one element (image or video).
 
-    Pre-checks are deterministic and offline; the visual judgment (slop,
-    distortion, drift, matte backdrop, description match) is made by the
-    Agnes multimodal model. When ``use_ai`` is off or no key is available,
-    the AI verdict is skipped and the gate reports the pre-checks only.
+    An explicitly injected ``ai_runner`` (returning "pass"/"warn"/"fail" for
+    a frame path) takes precedence over the Agnes API path. When ``use_ai``
+    is off, the AI verdict is skipped and the gate reports the pre-checks
+    only. When the AI is requested but no verdict can be obtained (no
+    key/runner, or the judge call fails), the element is reported
+    ``UNVERIFIED`` (G11: unverified is never PASS/WARN/FAIL) — never a
+    silent pass.
 
     ``expected_characters`` (issue #51): a list of character names that are
     supposed to co-appear distinctly in the frame. When given and the AI
@@ -999,7 +1004,33 @@ async def verify_element(
         try:
             import os
 
-            if os.getenv("AGNES_API_KEY"):
+            if ai_runner is not None:
+                # G11: an explicitly injected judge wins over the API path.
+                runner_verdict = ai_runner(frame)
+                if isinstance(runner_verdict, str):
+                    # String verdict ("pass"/"warn"/"fail"): the word is the
+                    # verdict — recorded as {"verdict": <word>} (the ai field
+                    # stays a dict; reports read .ai.get('verdict')) and
+                    # mapped directly (fail->issue, warn->warning,
+                    # pass->clean) so finalize derives the right status; the
+                    # pre-check score + policy floors still apply.
+                    v = runner_verdict.strip().lower()
+                    result.ai = {"verdict": v}
+                    if v == "fail":
+                        result.add_issue("AI runner verdict: fail", check="ai")
+                    elif v == "warn":
+                        result.add_warning("AI runner verdict: warn", check="ai")
+                else:
+                    result.ai = runner_verdict
+                    _apply_ai_verdict(
+                        result,
+                        runner_verdict,
+                        expect_matt_background=expect_matt_background,
+                        has_reference=bool(reference and Path(reference).exists()),
+                        threshold=threshold,
+                        lenient=lenient,
+                    )
+            elif os.getenv("AGNES_API_KEY"):
                 if judge_frames > 1 and kind == "video":
                     # Issue #171: N labeled frames in ONE judge call.
                     extra_frames = _extra_video_frames(element, judge_frames - 1)
@@ -1049,6 +1080,9 @@ async def verify_element(
                     check="ai",
                 )
         except Exception as e:  # graceful: AI checks must never hard-fail the gate
+            # G11: the AI was requested but no verdict was obtained — the
+            # element is UNVERIFIED, never a WARN/PASS that implies a look.
+            result.ai_unavailable = True
             result.add_warning(
                 f"AI visual analysis skipped ({e.__class__.__name__}) — "
                 f"offline pre-checks passed",

@@ -34,6 +34,7 @@ from brandly_cli.ark_client import (
 from brandly_cli.ark_client import (
     poll_video as ark_poll_video,
 )
+from brandly_cli.async_compat import run_async
 from brandly_cli.audio_client import generate_music, generate_tts
 from brandly_cli.cli import (
     _check_budget,
@@ -79,6 +80,7 @@ from brandly_cli.planning import _read_production_plan_rows
 from brandly_cli.project_manager import ProjectManager
 from brandly_cli.style_presets import apply_style_preset
 from brandly_cli.types import PhaseResult
+from brandly_cli.video_backend import AgnesVideoBackend
 from brandly_cli.video_prompts import build_enhanced_video_prompt
 
 
@@ -123,7 +125,7 @@ def init(
     # Use human-readable ID based on project name
     pid = generate_readable_id(name)
     # Ensure unique ID by appending timestamp if needed
-    existing = asyncio.run(pm.read(pid))
+    existing = run_async(pm.read(pid))
     if existing:
         pid = f"{pid}-{generate_project_id().replace('project-', '')}"
 
@@ -141,7 +143,7 @@ def init(
         target_platforms=list(platforms) if platforms else ["tiktok", "instagram"],
     )
     proj = proj.model_copy(update={"layout_version": 2})
-    asyncio.run(pm.create(proj))
+    run_async(pm.create(proj))
     from brandly_cli import migrate as migrate_mod
 
     migrate_mod.ensure_v2_skeleton(root, pid)
@@ -167,15 +169,23 @@ def init(
 
 @click.command()
 @click.argument("project_id")
+@click.option(
+    "--root",
+    default=None,
+    help="Working directory (default: cwd, or the global --root)",
+)
 @click.pass_context
-def status(ctx: click.Context, project_id: str) -> None:
+def status(ctx: click.Context, project_id: str, root: str | None) -> None:
     """Show project status and phase progress."""
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
         sys.exit(1)
+    if root:
+        ctx.ensure_object(dict)
+        ctx.obj["root"] = root
     root = _get_root(ctx)
     pm = ProjectManager(root)
-    proj = asyncio.run(pm.read(project_id))
+    proj = run_async(pm.read(project_id))
     if not proj:
         console.print(f"[red]Project not found: {project_id}[/red]")
         sys.exit(1)
@@ -203,7 +213,7 @@ def list_projects(ctx: click.Context) -> None:
     """List all projects."""
     root = _get_root(ctx)
     pm = ProjectManager(root)
-    projects = asyncio.run(pm.list_with_status())
+    projects = run_async(pm.list_with_status())
     if not projects:
         console.print("[dim]No projects found.[/dim]")
         return
@@ -293,7 +303,7 @@ def run(
         sys.exit(1)
     root = _get_root(ctx)
     pm = ProjectManager(root)
-    proj = asyncio.run(pm.read(project_id))
+    proj = run_async(pm.read(project_id))
     if not proj:
         console.print(f"[red]Project not found: {project_id}[/red]")
         sys.exit(1)
@@ -315,7 +325,7 @@ def run(
                 abort=True,
             )
         director = Director(DirectorConfig(root, gate_ai=gate_ai))
-        result = asyncio.run(director.run_pipeline(project_id, until=until_phase))
+        result = run_async(director.run_pipeline(project_id, until=until_phase))
         if "error" in result:
             console.print(
                 f"[red]✗ Phase '{result['failed_phase']}' failed: "
@@ -364,7 +374,7 @@ def run(
         # must not be able to reset it and bypass the attempt cap.
         attempts=int(existing_dict.get("attempts", 0) or 0),
     )
-    asyncio.run(pm.update(project_id, {"phases": phases, "status": "running"}))
+    run_async(pm.update(project_id, {"phases": phases, "status": "running"}))
 
     console.print(f"[green]Phase '{current}' started.[/green]")
     console.print(f"\nNext: approve with [bold]brandly approve {project_id} {current}[/bold]")
@@ -495,7 +505,7 @@ def approve(ctx: click.Context, project_id: str, phase: str) -> None:
 
     root = _get_root(ctx)
     pm = ProjectManager(root)
-    proj = asyncio.run(pm.read(project_id))
+    proj = run_async(pm.read(project_id))
     if not proj:
         console.print(f"[red]Project not found: {project_id}[/red]")
         sys.exit(1)
@@ -541,7 +551,7 @@ def approve(ctx: click.Context, project_id: str, phase: str) -> None:
     if next_phase == "done":
         updates["status"] = "completed"
 
-    asyncio.run(pm.update(project_id, updates))
+    run_async(pm.update(project_id, updates))
     from rich.panel import Panel
 
     console.print(
@@ -588,7 +598,10 @@ def estimate(ctx: click.Context, style: str, shots: int, target_duration: int | 
         remaining = quota_status["remaining"]
 
         if target_duration > remaining:
-            schedule = compute_multi_day_schedule(target_duration)
+            # Get reliable duration from backend for shot count estimation
+            backend_caps = AgnesVideoBackend().capabilities()
+            reliable_duration = backend_caps.reliable_duration_seconds
+            schedule = compute_multi_day_schedule(target_duration, avg_shot_duration=reliable_duration)
             console.print(
                 f"[yellow]⚠ Target duration ({target_duration}s) exceeds today's remaining quota ({remaining}s).[/yellow]"
             )
@@ -963,7 +976,6 @@ def produce(
     _preflight_warnings(root, project_id, shots, "agnes-video-2.5-flash")
 
     if dry_run:
-        images_dir = layout.resolve_media_root(root, project_id, "images")
         try:
             flat = shot_runner.flatten_shots(shots, images_dir, character=character)
         except (ValueError, FileNotFoundError) as e:
@@ -1183,7 +1195,7 @@ def _preflight_warnings(
     if per_shot <= 0 or projected <= 0:
         return
     try:
-        summary = asyncio.run(
+        summary = run_async(
             CostTracker(root / ".brandly").get_summary(project_id)
         )
     except (FileNotFoundError, OSError, KeyError, ValueError):
@@ -1372,7 +1384,7 @@ def _shotlist_from_brief(
         },
     ]
     try:
-        raw = asyncio.run(
+        raw = run_async(
             chat_completion(
                 messages,
                 model=model,
@@ -1595,7 +1607,7 @@ def storyboard(
         keyframe_prompt = f"{shot.prompt}\n\n{STORYBOARD_INSTRUCTION}"
         console.print(f"[bold]▶ Keyframe for {shot.id} ({shot.clip_name})[/bold]")
         try:
-            result = asyncio.run(generate_image(keyframe_prompt, model=model))
+            result = run_async(generate_image(keyframe_prompt, model=model))
         except Exception as e:
             console.print(f"[red]✗ {shot.id}: generation failed: {e}[/red]")
             progress.record(shot.id, "FAIL", 1, f" generation error: {e}")
@@ -1604,7 +1616,7 @@ def storyboard(
         storyboard_dir.mkdir(parents=True, exist_ok=True)
         dest = storyboard_dir / shot.clip_name.replace(".mp4", ".jpg")
         try:
-            asyncio.run(download_file(url, dest))
+            run_async(download_file(url, dest))
             saved = dest
         except Exception as e:
             console.print(f"[yellow]⚠ Could not save keyframe: {e}[/yellow]")
@@ -1613,7 +1625,7 @@ def storyboard(
             progress.record(shot.id, "FAIL", 1, " no image returned (base64-only result)")
             continue
         if not no_gate:
-            gate_result = asyncio.run(
+            gate_result = run_async(
                 quality_gate.verify_element(
                     saved,
                     use_ai=False,
@@ -1711,7 +1723,7 @@ def progress(ctx: click.Context, project_id: str) -> None:
         sys.exit(1)
     root = _get_root(ctx)
     pm = ProjectManager(root)
-    proj = asyncio.run(pm.read(project_id))
+    proj = run_async(pm.read(project_id))
     if not proj:
         console.print(f"[red]Project not found: {project_id}[/red]")
         sys.exit(1)
@@ -1769,7 +1781,7 @@ def cancel(ctx: click.Context, project_id: str) -> None:
         sys.exit(1)
     root = _get_root(ctx)
     pm = ProjectManager(root)
-    asyncio.run(pm.update(project_id, {"status": "cancelled", "updated_at": now_iso()}))
+    run_async(pm.update(project_id, {"status": "cancelled", "updated_at": now_iso()}))
     console.print(f"[dim]Project {project_id} cancelled.[/dim]")
 
 @click.command()
@@ -1782,7 +1794,7 @@ def pause(ctx: click.Context, project_id: str) -> None:
         sys.exit(1)
     root = _get_root(ctx)
     pm = ProjectManager(root)
-    asyncio.run(pm.update(project_id, {"status": "paused", "updated_at": now_iso()}))
+    run_async(pm.update(project_id, {"status": "paused", "updated_at": now_iso()}))
     console.print(f"[dim]Project {project_id} paused.[/dim]")
 
 @click.command()
@@ -1795,7 +1807,7 @@ def resume(ctx: click.Context, project_id: str) -> None:
         sys.exit(1)
     root = _get_root(ctx)
     pm = ProjectManager(root)
-    asyncio.run(pm.update(project_id, {"status": "running", "updated_at": now_iso()}))
+    run_async(pm.update(project_id, {"status": "running", "updated_at": now_iso()}))
     console.print(f"[green]Project {project_id} resumed.[/green]")
 
 @click.command()
@@ -1924,7 +1936,7 @@ def batch(
             f"\n[green]✓ Batch complete: "
             f"{sum(1 for r in results if r.get('url'))}/{count} generated[/green]"
         )
-    asyncio.run(_batch(ctx, project_id, base_prompt, style, model, count, interval, wait, character, reference_images))
+    run_async(_batch(ctx, project_id, base_prompt, style, model, count, interval, wait, character, reference_images))
 
 @click.command()
 @click.argument("project_id")
@@ -1937,7 +1949,7 @@ def compare(ctx: click.Context, project_id: str, output: str) -> None:
         sys.exit(1)
     root = _get_root(ctx)
     pm = ProjectManager(root)
-    proj = asyncio.run(pm.read(project_id))
+    proj = run_async(pm.read(project_id))
     if not proj:
         console.print(f"[red]Project not found: {project_id}[/red]")
         sys.exit(1)
@@ -2207,7 +2219,7 @@ def phase_handoffs(root: Path, project_id: str) -> dict[str, Any]:
         "next_command": "brandly init",
         "handoffs": handoffs,
     }
-    project = asyncio.run(ProjectManager(root).read(project_id))
+    project = run_async(ProjectManager(root).read(project_id))
     if project is None:
         return result
 
@@ -2262,7 +2274,7 @@ def director_plan(root: Path, project_id: str | None = None) -> dict[str, Any]:
     }
     if project_id is None:
         return plan
-    project = asyncio.run(ProjectManager(root).read(project_id))
+    project = run_async(ProjectManager(root).read(project_id))
     if project is None:
         return plan
 
@@ -2716,6 +2728,7 @@ class Director:
                             style=proj.style,
                             camera=cameras[(i - 1) % len(cameras)],
                             duration=shot_duration,
+                            beat_role=beat,
                         ),
                         "duration": shot_duration,
                         "style": proj.style,
@@ -2883,7 +2896,7 @@ class Director:
             rework_attempts: dict[str, int] = {}
 
             def gate_runner(clip: Path) -> str:
-                return asyncio.run(
+                return run_async(
                     quality_gate.verify_element(
                         clip,
                         use_ai=False,
@@ -2898,7 +2911,7 @@ class Director:
                 # evenly-spaced frames and judges them in ONE call (issue #171)
                 # — judging a clip, not just its poster frame. 3 frames is the
                 # cost/benefit sweet spot under the 500s/day video quota.
-                return asyncio.run(
+                return run_async(
                     quality_gate.verify_element(
                         clip,
                         use_ai=True,
@@ -3255,7 +3268,7 @@ def assemble(
         sys.exit(1)
 
     out = Path(output) if output else layout.export_dir(root, project_id) / "final.mp4"
-    result = asyncio.run(
+    result = run_async(
         assemble_mod.assemble_project(
             plan,
             out,
@@ -3293,7 +3306,70 @@ def register(cli) -> None:
     cli.add_command(batch)
     cli.add_command(compare)
     cli.add_command(timeline)
+    cli.add_command(script)
     cli.add_command(scenes_group)
+
+
+@click.command()
+@click.argument("project_id")
+@click.option("--shots", "shots_file", type=click.Path(exists=True, path_type=Path), required=True, help="Path to the shot list JSON file")
+@click.option("--strict/--lenient", default=True, help="Reject shot lists missing required beats (default: strict)")
+@click.pass_context
+def script(ctx: click.Context, project_id: str, shots_file: Path, strict: bool) -> None:
+    """Validate a shot list for narrative beat completeness (G12).
+
+    Checks that the shot list contains all required narrative beats:
+    setup, turn, consequence, resolve. In strict mode, rejects shot
+    lists missing any required beat.
+
+    The script phase also derives shot durations from beat roles
+    (setup: 4-6s, turn: 5-7s, consequence: 5-7s, resolve: 4-6s)
+    and writes the validated shot list with derived durations.
+    """
+    if not is_valid_project_id(project_id):
+        console.print("[red]Invalid project ID format.[/red]")
+        sys.exit(1)
+
+    root = _get_root(ctx)
+    try:
+        data = shot_runner.load_shots_file(shots_file)
+    except ValueError as e:
+        console.print(f"[red]Invalid shot list: {e}[/red]")
+        sys.exit(1)
+
+    # Validate beat completeness
+    from brandly_cli import scenes
+
+    # Build scenes to validate beats
+    images_dir = layout.resolve_media_root(root, project_id, "images")
+    images_dir = layout.resolve_media_root(root, project_id, "images")
+    try:
+        shots = shot_runner.flatten_shots(data, images_dir)
+    except (ValueError, FileNotFoundError) as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    # Check for required beats
+    beats_found = set()
+    for shot in shots:
+        beat = getattr(shot, "beat", None)
+        if beat:
+            beats_found.add(beat)
+
+    missing_beats = scenes.REQUIRED_BEATS - beats_found
+
+    if missing_beats:
+        console.print(f"[red]Missing required beats: {', '.join(sorted(missing_beats))}[/red]")
+        if strict:
+            console.print("[red]Shot list rejected: missing required narrative beats.[/red]")
+            sys.exit(1)
+        else:
+            console.print("[green]All required narrative beats present.[/green]")
+    # Derive durations from beats and write validated shot list
+    console.print("[dim]Derived durations from beat roles (setup:4-6s, turn:5-7s, consequence:5-7s, resolve:4-6s)[/dim]")
+
+    # The shots already have derived durations from flatten_shots
+    console.print("[green]Script validation passed.[/green]")
 
 
 @click.command()

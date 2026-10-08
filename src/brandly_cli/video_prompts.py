@@ -651,8 +651,37 @@ def build_single_shot_prompt(
     character_description: str | None = None,
     shot_type: str = "medium",
     mood: str = "",
+    beat_role: str | None = None,
 ) -> str:
     """Build a single high-quality shot prompt with explicit sections."""
+    # Vary action and setting based on beat role while keeping global style consistent
+    if beat_role:
+        beat_role = beat_role.lower()
+        # Define beat-specific action and setting variations
+        beat_variations = {
+            "setup": {
+                "action": "introduces the subject and establishes the context",
+                "setting": "wide establishing shot showing the full environment"
+            },
+            "turn": {
+                "action": "subject encounters a challenge or obstacle",
+                "setting": "medium shot focusing on the subject's reaction"
+            },
+            "consequence": {
+                "action": "subject responds to the challenge with action",
+                "setting": "close-up on subject's hands or face showing effort"
+            },
+            "resolve": {
+                "action": "subject overcomes the challenge and achieves the goal",
+                "setting": "wide shot showing the subject in the victorious environment"
+            }
+        }
+        variation = beat_variations.get(beat_role, {})
+        if variation:
+            # Use beat-specific action and setting if provided, otherwise fall back to original
+            action = variation.get("action", action)
+            environment = variation.get("setting", environment)
+
     style_config = VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS["cinematic"])
     lighting_key = style_config.get("lighting", "studio")
     spec = SHOT_SPECS.get(shot_type, SHOT_SPECS["medium"])

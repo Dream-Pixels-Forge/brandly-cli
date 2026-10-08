@@ -37,7 +37,6 @@ function lockIcon() {
 export default function PropsInspectorPanel() {
   const { selectedClipId, updateClip, timeline } = useAppStore();
   const clip = timeline?.clips.find((c: Clip) => c.id === selectedClipId) ?? null;
-  const [seedLocked, setSeedLocked] = useState(true);
   const [spatialChecked, setSpatialChecked] = useState(false);
   const [beatSync, setBeatSync] = useState(false);
 
@@ -147,35 +146,35 @@ export default function PropsInspectorPanel() {
           </label>
           {spatialChecked && (
             <div style={{ marginTop: 6, padding: '6px 8px', background: 'var(--md-surface-container-lowest)', borderRadius: 4, border: '1px solid var(--md-outline-variant)', fontSize: 10, fontFamily: 'var(--md-font-code-inline)', color: '#4cd7f6', lineHeight: 1.7 }}>
-              <div>Cam: 120° CCW</div>
-              <div>Focal: 50mm</div>
-              <div>Samples: 128</div>
+              <div>Cam: not available</div>
+              <div>Focal: not available</div>
+              <div>Samples: not available</div>
             </div>
           )}
         </div>
 
         {/* Seed */}
-        <ControlRow label="Seed" right={seedLocked ? 'LOCKED' : 'FREE'}>
+        <ControlRow label="Seed (not available)" right="FREE">
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <input
               type="number"
-              value={42}
+              value={''}
               disabled
-              style={{ flex: 1, opacity: seedLocked ? 1 : 0.5, cursor: seedLocked ? 'not-allowed' : 'text' }}
+              style={{ flex: 1, opacity: 0.5, cursor: 'not-allowed' }}
             />
             <button
-              onClick={() => setSeedLocked((v) => !v)}
+              onClick={() => {}}
               style={{
-                background: seedLocked ? 'var(--md-primary)' : 'var(--md-surface-container-highest)',
+                background: 'var(--md-surface-container-highest)',
                 border: 'none',
                 borderRadius: 4,
                 padding: '4px 6px',
-                cursor: 'pointer',
+                cursor: 'not-allowed',
                 display: 'flex',
                 alignItems: 'center',
-                color: seedLocked ? 'var(--md-on-primary)' : '#888',
+                color: '#888',
               }}
-              title={seedLocked ? 'Unlock seed' : 'Lock seed'}
+              title="Seed not available"
             >
               {lockIcon()}
             </button>
@@ -183,10 +182,10 @@ export default function PropsInspectorPanel() {
         </ControlRow>
 
         {/* CFG Guidance */}
-        <ControlRow label="CFG Guidance">
+        <ControlRow label="CFG Guidance (disabled - to prevent volume corruption)">
           <CfgSlider
             value={1.5}
-            onChange={(v) => updateClip(clip.id, { volume: v })}
+            onChange={() => {}}
           />
         </ControlRow>
 
@@ -200,7 +199,7 @@ export default function PropsInspectorPanel() {
           </label>
           {beatSync && (
             <div style={{ marginTop: 6, fontSize: 10, fontFamily: 'var(--md-font-code-inline)', color: '#4cd7f6', padding: '4px 8px', background: 'var(--md-surface-container-lowest)', borderRadius: 4, border: '1px solid var(--md-outline-variant)' }}>
-              BPM: 120 · Bar: 4/4
+              BPM and Bar values not available
             </div>
           )}
         </div>

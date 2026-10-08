@@ -4,10 +4,11 @@
 - Project: brandly-cli
 - Started: 2026-09-07
 - Version: 0.10.2 (cut 2026-10-04; prior 0.10.1; #197 #208 #210)
-- Current Phase: Phase 3 (Engineer) — Feature Implementation
-- Status: in-progress (backlog closed; publish path shipped across all three F9 platforms)
-- Test Count: 1294 passed (0 xfail/xpass)
-- Lint: clean (ruff + mypy + import-linter)
+- Current Phase: Phase 3 (Engineer) — GOAL-ALL-OPEN-ISSUES.md (16 open issues)
+- Status: in-progress (P1 landed; P2–P6 remaining)
+- Branch: fix/f2-reference-injection-245-252
+- Test Count: 1456 passed (24 pre-existing failures from untracked aspirational tests — P2 triage)
+- Lint: clean on touched files (repo-wide pre-existing in untracked files)
 
 ## Phase Completion
 - [x] Phase 0: Bootstrap (AUDIT.md + GOAL.md)
@@ -18,7 +19,58 @@
   - [in_progress] Phase 3A: Core Pipeline (stitch, export-platforms, thumbnails)
   - [ ] Phase 3B: Quality Enhancements (dubbing, beat-sync, auto-direct, trends)
   - [ ] Phase 3C: Developer Features (analyze, templates, batch, webhook)
-  - [ ] Phase 3D: Ecosystem (share, team, plugin)
+  - [x] Phase 3D: Ecosystem (share, team, plugin)
+
+## Round 21/256 — GOAL-ALL-OPEN-ISSUES P1: land in-flight fixes (#246 #249 #245 #252 #250 #248 #251 #253)
+
+Goal: `dev-notes/GOAL-ALL-OPEN-ISSUES.md` (16 open issues: #245–#253 + #255–#261).
+
+- [x] **Recon (verified, not assumed):** origin/main @ f632931 has PR #263
+      (async_compat) + #254 merged — production.py on main still had ~15
+      asyncio.run sites (partial #246/#249); working tree had the #245/#252
+      reference fix committed + uncommitted in-flight fixes; #248's beat_role
+      implementation was DEAD CODE (no caller passed it); #251's status --root
+      was never added (old goal's F4 [x] was aspirational); concept phase is
+      STILL A STUB (old goal F6 [x] aspirational)
+- [x] **Stabilized the tree:** cmd/__init__.py was BROKEN (imported
+      non-existent `brandly_cli.cmd.agent_surface` — broke ALL test
+      collection) → repaired to the committed convention + plugin/team
+      registered; tests/test_reference_detection_logic.py had broken DEBUG
+      prints (IndentationError) + missing mkdir → repaired (3/3 green);
+      junk removed (=2.0, *.bak, *.debug)
+- [x] **RED-first proof** (`tests/test_open_issues_p1.py`, 17 tests): stash →
+      **13 failed / 4 passed** on the pre-fix tree → unstash → **17 passed**.
+      The tests genuinely test the fixes.
+- [x] **#251**: `status` gains `--root` (per-command override via
+      `ctx.obj["root"]`; global `brandly --root X <cmd>` path unchanged)
+- [x] **#246/#249**: ALL 13 bare `asyncio.run(` sites in cmd/production.py
+      converted to `async_compat.run_async` (pipeline path never crashes
+      inside a running loop); `_maybe_llm_enhance` (generation.py) converted —
+      it runs on the produce→video path and silently degraded today
+- [x] **#250**: gates.py `human_review_gate` auto-approves on AI verdict
+      "pass" + score >= threshold (no prompt); below-threshold and no-AI
+      paths still prompt (fail-honest G11 preserved); reference command wires
+      gate_result status/score into the gate
+- [x] **#248**: `beat_role=beat` wired into the script-phase caller
+      (production.py) — the per-beat action/setting variation is now live;
+      global style block stays shared (consistency test)
+- [x] **#245/#252**: `_load_project_reference` reads the primary_reference
+      extra from project.json (fix commit 4e3172d) — regression tests added
+- [x] **plugin/team lint**: cmd/plugin.py had `get_plugin_commands` NEVER
+      imported (info command would NameError) → imported; fabricated "0"
+      commands in `plugin list` (data-honesty violation) → real
+      `get_plugin_commands` data; dead try/except + unused vars removed;
+      185 ruff errors fixed (whitespace from the earlier session)
+- [x] **Web bundle**: oxlint 0/0 + vite build (51 modules) →
+      `src/brandly_cli/web/static/` refreshed (old CB9p882h removed,
+      DlXfHZIm current)
+- [x] **Gates**: full suite **1456 passed / 24 failed** (vs baseline 1439/24 —
+      +17 new passing, ZERO NEW failures; all 24 verified pre-existing on the
+      stash, from untracked aspirational tests — P2 triage); ruff clean on
+      touched files; web contract tests 14 passed
+- NEXT: commit + PR; then P2 (triage the 24 untracked-test failures), P3
+      (concept/trends/script document chain), P4 (audio/publish truth), P5
+      (agent manifest), P6 (close #261 + goal-met audit)
 
 ## Progress Tracking
 
@@ -212,8 +264,8 @@
   - [x] Subagent #11: webhook (CI/CD integration) - 8 tests
 - [x] Phase 3D features implemented:
   - [x] Subagent #12: share (cloud export) - 8 tests
-  - [ ] Subagent #13: team (multi-user)
-  - [ ] Subagent #14: plugin (extensibility)
+  - [x] Subagent #13: team (multi-user)
+  - [x] Subagent #14: plugin (extensibility)
 - [x] Total tests: 303 passed
 - [x] Ruff lint: clean
 - [x] Python syntax: clean

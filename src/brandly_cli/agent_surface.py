@@ -39,7 +39,9 @@ MANIFEST_VERSION = 1
 
 #: Handlers that only read state — safe for an agent to call unprompted.
 READ_ONLY_TOOLS = frozenset(
-    {"list_projects", "get_project", "list_jobs", "list_models", "get_timeline", "run_gate", "plan"}
+    {"list_projects", "get_project", "list_jobs", "list_models", "get_timeline", "run_gate", "plan",
+     # P5 (#256): pipeline-control read-only surface
+     "status", "progress", "estimate"}
 )
 
 
@@ -105,6 +107,68 @@ def _build_job_poll(args: dict[str, Any]) -> list[str]:
     argv = ["job-poll", str(_require(args, "job_id")), "--json"]
     argv += _opt(args, "max_age", "--max-age")
     argv += _opt(args, "output", "--output")
+    return argv
+
+
+def _build_init(args: dict[str, Any]) -> list[str]:
+    """P5 (#256): map a project-init tool call to `brandly init` argv."""
+    argv = ["init"]
+    if args.get("name"):
+        argv += ["--name", str(args["name"])]
+    if args.get("idea"):
+        argv += ["--idea", str(args["idea"])]
+    if args.get("style"):
+        argv += ["--style", str(args["style"])]
+    if args.get("budget") is not None:
+        argv += ["--budget", str(args["budget"])]
+    if args.get("shots") is not None:
+        argv += ["--shots", str(args["shots"])]
+    return argv
+
+
+def _build_status(args: dict[str, Any]) -> list[str]:
+    """P5 (#256): map a status tool call to `brandly status <project_id>`."""
+    return ["status", _require(args, "project_id")]
+
+
+def _build_progress(args: dict[str, Any]) -> list[str]:
+    """P5 (#256): map a progress tool call to `brandly progress <project_id>`."""
+    return ["progress", _require(args, "project_id")]
+
+
+def _build_approve(args: dict[str, Any]) -> list[str]:
+    """P5 (#256): map an approve tool call to `brandly approve <id> <phase>`."""
+    return ["approve", _require(args, "project_id"), _require(args, "phase")]
+
+
+def _build_estimate(args: dict[str, Any]) -> list[str]:
+    """P5 (#256): map an estimate tool call to `brandly estimate` argv."""
+    argv = ["estimate"]
+    if args.get("style"):
+        argv += ["--style", str(args["style"])]
+    if args.get("shots") is not None:
+        argv += ["--shots", str(args["shots"])]
+    if args.get("target_duration") is not None:
+        argv += ["--target-duration", str(args["target_duration"])]
+    return argv
+
+
+def _build_record_cost(args: dict[str, Any]) -> list[str]:
+    """P5 (#256): map a record-cost tool call to `brandly record-cost` argv."""
+    return [
+        "record-cost",
+        _require(args, "project_id"),
+        _require(args, "phase"),
+        _require(args, "action"),
+        str(_require(args, "credits")),
+    ]
+
+
+def _build_memory(args: dict[str, Any]) -> list[str]:
+    """P5 (#256): map a memory tool call to `brandly memory <action> [hook]`."""
+    argv = ["memory", _require(args, "action")]
+    if args.get("hook"):
+        argv.append(str(args["hook"]))
     return argv
 
 
@@ -225,6 +289,118 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
                 "json": {"type": "boolean", "description": "Emit the machine-readable handoff document."},
             },
             "required": ["project_id"],
+        },
+    },
+    "init": {
+        "command": "init",
+        "builder": _build_init,
+        "description": (
+            "Start a new Brandly video project (writes project.json + AGENTS.md "
+            "at the project root). Writes state — confirm first."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Product name."},
+                "idea": {"type": "string", "description": "Product idea / brief."},
+                "style": {"type": "string", "description": "Video style (default cinematic)."},
+                "budget": {"type": "integer", "description": "Max credits (default 500)."},
+                "shots": {"type": "integer", "description": "Shot count (default 5)."},
+            },
+            "required": ["name", "idea"],
+        },
+    },
+    "status": {
+        "command": "status",
+        "builder": _build_status,
+        "description": (
+            "Read project status and phase progress (read-only; supports the "
+            "global --root)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project id."},
+            },
+            "required": ["project_id"],
+        },
+    },
+    "progress": {
+        "command": "progress",
+        "builder": _build_progress,
+        "description": "Read detailed pipeline progress for a project (read-only).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project id."},
+            },
+            "required": ["project_id"],
+        },
+    },
+    "approve": {
+        "command": "approve",
+        "builder": _build_approve,
+        "description": (
+            "Approve a phase and advance the pipeline — the human gate (NOT "
+            "read-only; requires explicit approval)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project id."},
+                "phase": {"type": "string", "description": "Phase to approve."},
+            },
+            "required": ["project_id", "phase"],
+        },
+    },
+    "estimate": {
+        "command": "estimate",
+        "builder": _build_estimate,
+        "description": (
+            "Estimate credit cost before starting (read-only; one formula, "
+            "shared with the plan handoffs)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "style": {"type": "string", "description": "Video style."},
+                "shots": {"type": "integer", "description": "Shot count."},
+                "target_duration": {"type": "integer", "description": "Target total seconds (quota-aware)."},
+            },
+        },
+    },
+    "record_cost": {
+        "command": "record-cost",
+        "builder": _build_record_cost,
+        "description": (
+            "Record actual credit spend for a phase operation (writes the cost "
+            "ledger — never fabricate telemetry)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "phase": {"type": "string"},
+                "action": {"type": "string"},
+                "credits": {"type": "integer"},
+            },
+            "required": ["project_id", "phase", "action", "credits"],
+        },
+    },
+    "memory": {
+        "command": "memory",
+        "builder": _build_memory,
+        "description": (
+            "Read or set the agent memory hook (list/show/set; writes state "
+            "on set)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "description": "list|show|set"},
+                "hook": {"type": "string", "description": "Hook value for set."},
+            },
+            "required": ["action"],
         },
     },
 }

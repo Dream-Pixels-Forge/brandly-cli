@@ -6,7 +6,6 @@ Tests that the produce phase runs vision gate on first clip of each scene.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 from brandly_cli import shot_runner
 
@@ -148,10 +147,14 @@ class TestG9VisionGate:
             return True, 0, ""
 
         shots = _shots(["s1", "s2", "s3", "s4"])
-        shots[0].scene = 1; shots[0].index_in_scene = 1
-        shots[1].scene = 1; shots[1].index_in_scene = 2
-        shots[2].scene = 2; shots[2].index_in_scene = 1
-        shots[3].scene = 2; shots[3].index_in_scene = 2
+        shots[0].scene = 1
+        shots[0].index_in_scene = 1
+        shots[1].scene = 1
+        shots[1].index_in_scene = 2
+        shots[2].scene = 2
+        shots[2].index_in_scene = 1
+        shots[3].scene = 2
+        shots[3].index_in_scene = 2
 
         config = _make_config(tmp_path, shots, generate_one, gate_ai="off", vision_gate_runner=vision_gate_runner)
         result = shot_runner.run_shots(config)
@@ -192,8 +195,10 @@ class TestG9GateAiOptions:
             return True, 0, ""
 
         shots = _shots(["s1", "s2"])
-        shots[0].scene = 1; shots[0].index_in_scene = 1
-        shots[1].scene = 1; shots[1].index_in_scene = 2
+        shots[0].scene = 1
+        shots[0].index_in_scene = 1
+        shots[1].scene = 1
+        shots[1].index_in_scene = 2
 
         config = _make_config(tmp_path, shots, generate_one, gate_ai="all", vision_gate_runner=vision_gate_runner)
         result = shot_runner.run_shots(config)
@@ -208,6 +213,6 @@ class TestG9GateAiOptions:
         # Should validate at config creation or run time
         try:
             shot_runner.run_shots(config)
-            assert False, "Should have raised"
+            raise AssertionError("Should have raised")
         except ValueError:
             pass

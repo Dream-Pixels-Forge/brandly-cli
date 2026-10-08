@@ -61,3 +61,6 @@ web/preview.png
 
 # 21st-design local preview + registry caches
 *.21st/
+
+# web/ is npm-managed (AGENTS.md web gates use `npm --prefix web`) — never a pnpm lock
+web/pnpm-lock.yaml

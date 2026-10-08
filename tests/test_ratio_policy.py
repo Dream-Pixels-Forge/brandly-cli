@@ -222,7 +222,11 @@ class TestExportRatioPolicy:
 class TestProductionKeepsSource:
     def test_run_shots_ignores_legacy_aspect_ratio(self, tmp_path: Path) -> None:
         """Even with a legacy RunnerConfig.aspect_ratio set, the shot loop
-        must never shell out to ffmpeg/ffprobe (G4: no production crop)."""
+        must never shell out to ffmpeg for a CROP (G4: no production crop).
+
+        Aligned for G7 duration truth: measuring the returned clip shells out
+        to ffprobe (read-only metadata, no transform), so ffprobe calls are
+        allowed here — an ffmpeg transform call is still forbidden."""
         _needs_ffmpeg()
         scenes = tmp_path / "videos" / "scenes"
         scenes.mkdir(parents=True, exist_ok=True)
@@ -257,7 +261,12 @@ class TestProductionKeepsSource:
         with patch("subprocess.run", side_effect=fake_run):
             rc = shot_runner.run_shots(config)
         assert rc == 0
-        assert not calls, f"production shelled out to ffmpeg/ffprobe: {calls}"
+        # G4: no production CROP — an ffmpeg transform call is forbidden.
+        # G7 legitimately shells out to ffprobe (read-only clip measurement),
+        # so ffprobe is allowed; only ffmpeg calls fail this assertion.
+        assert not [c for c in calls if c[0] == "ffmpeg"], (
+            f"production shelled out to ffmpeg (crop?): {calls}"
+        )
 
     def test_produce_aspect_ratio_prints_deprecation_notice(self, tmp_path: Path) -> None:
         """produce --aspect-ratio survives as a deprecated alias for one

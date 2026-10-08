@@ -21,6 +21,42 @@
   - [ ] Phase 3C: Developer Features (analyze, templates, batch, webhook)
   - [x] Phase 3D: Ecosystem (share, team, plugin)
 
+## Round 25/256 — GOAL-ALL-OPEN-ISSUES P4: audio + publish truth (#260 #255)
+
+Goal: handoff item 1 / GOAL-ALL-OPEN-ISSUES P4.
+
+- [x] **RED-first:** `tests/test_audio_publish_truth.py` (9 tests, observed
+      8 failed → 9 passed).
+- [x] **#260 audio:** the music duration derives from the scene manifest's
+      scene durations (fallback: shot_count × 5) — hardcoded `duration=30`
+      gone; the generated music is DOWNLOADED into
+      `production/<id>/audio/music.mp3` (fail-honest: download failure
+      errors, no url → honest None).
+- [x] **#260 re_edit mix:** the downloaded music is mixed into `final.mp4`
+      (ffmpeg `-map 0:v:0 -map 1:a:0 -c:v copy -shortest`); a mix failure
+      fails closed (the silent stitch is kept); no music → silent final
+      ships (audio optional); the result reports music/music_mixed honestly.
+- [x] **#255 publish:** the platform list derives from the project's stored
+      `target_platforms` — `_publish_platforms` maps `all` → the full export
+      set + family names (instagram/youtube/facebook) → variants; empty
+      selection fails closed; the hardcoded `("tiktok",
+      "youtube_standard")` tuple is gone.
+- [x] **PHASE_HANDOFF_SPECS:** audio outputs honest (music only —
+      SFX/voiceover removed, unimplemented); publish matches the real
+      platform contract.
+- [x] **Aligned tracked publish tests** (reason: platforms now derive from
+      the project): test_publish_phase_exports_platforms + the full-pipeline
+      test.
+- [x] **REAL BUG caught by the full-src mypy run:** `async_run_ffmpeg` is a
+      SYNC dual-context helper — an `await` on it (masked by an async test
+      fake that did not mirror the real signature) would have broken the mix
+      at runtime. The fake now mirrors the real signature.
+- Suite: **1507 passed / 0 failed / 1 skipped**. ruff clean, mypy clean
+  (5 pre-existing PIL local-only). CI green on main (run 37845861187).
+- Commits: `5d2eb18` (P4) on main (direct-push path again — CI runs on push
+  to main; the branch-show-current rule from Round 24 applies).
+- Next: P5 — agent manifest (#256).
+
 ## Round 24/256 — GOAL-ALL-OPEN-ISSUES P3: the document chain is real (#258 #247 #259 #257)
 
 Goal: handoff item 1 / GOAL-ALL-OPEN-ISSUES P3 (trends → concept → script).

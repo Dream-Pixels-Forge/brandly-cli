@@ -936,6 +936,16 @@ class RunnerConfig:
     """Number of text-to-video submit attempts made after the i2v budget is
     exhausted and a fallback variant has been produced."""
 
+    # G9: vision gate wiring
+    gate_ai: str = "scene-first"
+    """Vision-gate policy: ``off`` (no vision judging — pre-G9 behaviour),
+    ``scene-first`` (judge the FIRST clip of every scene; a fail blocks that
+    scene's remaining shots) or ``all`` (judge every clip). Only active when
+    ``vision_gate_runner`` is wired; with no runner nothing is judged."""
+    vision_gate_runner: Callable[[Path], str] | None = None
+    """Returns "pass" | "warn" | "fail" for one clip path. Wired by the CLI
+    layer from the configured judge; ``None`` = no vision judging."""
+
     # G14: Provider seam - video backend protocol
     video_backend: VideoBackend = field(default_factory=AgnesVideoBackend)
     """Video generation backend implementing the VideoBackend protocol.
@@ -1378,6 +1388,10 @@ def run_shots(config: RunnerConfig) -> int:
     progress file either way.
     """
     shots = config.shots
+    if config.gate_ai not in ("off", "scene-first", "all"):
+        raise ValueError(
+            f"invalid gate_ai: {config.gate_ai!r} (expected off | scene-first | all)"
+        )
     done = config.progress.completed_ids(s.id for s in shots)
     if config.only:
         # `--only` means "redo exactly these takes": drop them from the
@@ -1394,6 +1408,10 @@ def run_shots(config: RunnerConfig) -> int:
     failed: list[Shot] = []
     consecutive_failures = 0
     parked = False
+    # G9: a vision-gate fail blocks the SCENE (its remaining shots are
+    # skipped, other scenes still run) and counts as a run failure.
+    blocked_scenes: set[int] = set()
+    vision_failures = 0
     backoff = config.retry_backoff or config.interval
     max_attempts = 1 + max(config.retries, 0)
     # i2v -> t2v fallback: when a hook is set, a reference-bearing shot gets
@@ -1407,6 +1425,12 @@ def run_shots(config: RunnerConfig) -> int:
             # Issue #124: parked on a previous iteration - stop the shot
             # loop here (the break inside the attempt loop alone cannot).
             break
+        if shot.scene in blocked_scenes:
+            config.say(
+                f"{shot.id}: scene {shot.scene} blocked by a vision-gate fail - "
+                "skipping (fix the scene look and re-run to resume)"
+            )
+            continue
         if i > 0:
             config.say(
                 f"rate limit: waiting {config.interval:.0f}s before {shot.id}..."
@@ -1516,6 +1540,45 @@ def run_shots(config: RunnerConfig) -> int:
             if ok and not succeeded:
                 note = (note + " " if note else "") + "(clip downloaded; post-gen step failed)"
             if ok:
+                # Deterministic Scene-XX-Shot-X-Y name, then any transition move.
+                config.move_shot_clips(shot, name_clips(shot, new_clips, config.say))
+                # G4: no production-time cropping — clips keep source aspect;
+                # the ratio decision happens once, in assembly
+                # (`stitch --ratio R --fit crop|pad` / `export-platforms`).
+                # G9: vision gate on the generated clip — runs BEFORE the OK
+                # record so a fail can never leave an OK line behind.
+                vision_blocked = False
+                if (
+                    config.gate_ai != "off"
+                    and config.vision_gate_runner is not None
+                    and (config.gate_ai == "all" or shot.index_in_scene == 1)
+                ):
+                    canonical = scenes / clip_filename(shot.scene, shot.index_in_scene)
+                    if canonical.exists():
+                        try:
+                            verdict = config.vision_gate_runner(canonical)
+                        except Exception as e:
+                            config.say(f"{shot.id}: vision gate error (non-blocking): {e}")
+                            verdict = None
+                        if verdict == "fail":
+                            vision_blocked = True
+                if vision_blocked:
+                    config.progress.record(
+                        shot.id, "FAIL", 0,
+                        " vision gate blocked the scene [vision:fail]",
+                    )
+                    config.say(
+                        f"{shot.id} FAIL vision gate: scene {shot.scene} blocked - "
+                        "remaining shots of this scene are skipped"
+                    )
+                    blocked_scenes.add(shot.scene)
+                    vision_failures += 1
+                    _fire_hook(config, shot, False)
+                    # Leave the attempt loop; the shot loop above skips the
+                    # remaining shots of the blocked scene.
+                    break
+                # G7/G8: measure the returned clip; continue short takes.
+                _measure_and_maybe_continue(config, shot, scenes)
                 retries_used = attempt - 1
                 # Final OK line: retry count only when a retry actually happened.
                 config.progress.record(
@@ -1524,13 +1587,6 @@ def run_shots(config: RunnerConfig) -> int:
                 config.say(
                     f"{shot.id} OK exit={exit_code}" + (f" (retry {retries_used})" if retries_used else "")
                 )
-                # Deterministic Scene-XX-Shot-X-Y name, then any transition move.
-                config.move_shot_clips(shot, name_clips(shot, new_clips, config.say))
-                # G4: no production-time cropping — clips keep source aspect;
-                # the ratio decision happens once, in assembly
-                # (`stitch --ratio R --fit crop|pad` / `export-platforms`).
-                # G7/G8: measure the returned clip; continue short takes.
-                _measure_and_maybe_continue(config, shot, scenes)
                 _fire_hook(config, shot, True)
                 consecutive_failures = 0
                 break
@@ -1585,9 +1641,9 @@ def run_shots(config: RunnerConfig) -> int:
                 # below breaks the SHOT loop - a plain break would only exit
                 # the attempt loop and keep burning shots.
                 break
-    if failed:
+    if failed or vision_failures:
         config.say(
-            f"run complete: {len(failed)} of {len(pending)} shot(s) failed — re-run with:"
+            f"run complete: {len(failed) + vision_failures} of {len(pending)} shot(s) failed — re-run with:"
         )
         for shot in failed:
             config.say(f"  --only {shot.id}")

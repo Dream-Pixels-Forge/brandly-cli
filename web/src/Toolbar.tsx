@@ -120,7 +120,7 @@ export default function Toolbar() {
           search
         </span>
         <span style={{ flex: 1, fontSize: 11, fontFamily: 'var(--md-font-body-md)', color: 'var(--md-outline)' }}>
-          Search shots, commands…
+          Search shots, commands… (not interactive yet)
         </span>
         <span
           style={{
@@ -131,8 +131,9 @@ export default function Toolbar() {
             borderRadius: 3,
             padding: '1px 5px',
           }}
+          aria-hidden
         >
-          ⌘K
+          {/* #253: the Cmd+K shortcut is unimplemented — no badge until search is real */}
         </span>
       </div>
 
@@ -163,9 +164,10 @@ export default function Toolbar() {
         </button>
         <button
           type="button"
-          style={{ ...iconBtn, border: '1px solid var(--md-outline)', borderRadius: '50%', fontFamily: 'var(--md-font-code-inline)', fontSize: 11 }}
-          title="Keyboard shortcuts"
-          aria-label="Help and shortcuts"
+          disabled
+          style={{ ...iconBtn, border: '1px solid var(--md-outline)', borderRadius: '50%', fontFamily: 'var(--md-font-code-inline)', fontSize: 11, cursor: 'not-allowed', opacity: 0.5 }}
+          title="Shortcuts help is not implemented"
+          aria-label="Help and shortcuts (not implemented)"
         >
           ?
         </button>

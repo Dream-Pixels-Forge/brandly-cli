@@ -239,32 +239,6 @@ export default function PropsInspectorPanel() {
           />
         </ControlRow>
       </div>
-
-      {/* Footer */}
-      <div style={{ padding: '10px 14px', borderTop: '1px solid var(--md-surface-container-highest)', flexShrink: 0 }}>
-        <button
-          onClick={() => updateClip(clip.id, {
-            prompt: clip.prompt,
-            duration: clip.duration,
-            volume: clip.volume,
-            transition_in: clip.transition_in,
-          })}
-          style={{
-            width: '100%',
-            padding: '8px 12px',
-            background: 'var(--md-primary)',
-            color: 'var(--md-on-primary)',
-            border: 'none',
-            borderRadius: 4,
-            fontSize: 11,
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: 'var(--md-font-code-inline)',
-          }}
-        >
-          Update Shot Props (Hot Reload)
-        </button>
-      </div>
     </div>
   );
 }

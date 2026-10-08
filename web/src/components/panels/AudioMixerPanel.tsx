@@ -113,7 +113,8 @@ export default function AudioMixerPanel() {
           </label>
           {studioClarity && (
             <div style={{ marginTop: 6, fontSize: 10, fontFamily: 'var(--md-font-code-inline)', color: '#4cd7f6', padding: '4px 8px', background: 'var(--md-surface-container-lowest)', borderRadius: 4, border: '1px solid var(--md-outline-variant)' }}>
-              De-esser engaged · 6kHz shelf −2.4dB
+              {/* #253: local preference only — the de-esser/EQ pass is not implemented; no fabricated telemetry */}
+              Marked locally — the de-esser/EQ pass is not implemented yet
             </div>
           )}
         </div>

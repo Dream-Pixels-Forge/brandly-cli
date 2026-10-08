@@ -288,8 +288,15 @@ def get_timeline(project_id: str, root: Path | str = ".") -> list[dict[str, Any]
     # Read progress log for completed shots
     from brandly_cli.shot_runner import ProgressLog
 
-    progress_log = ProgressLog(layout.docs_dir(layout.resolve_project_dir(Path("."), project_id), "tmp") / PROGRESS_FILENAME)
-    completed = progress_log.completed_ids([])
+    progress_log = ProgressLog(
+        layout.docs_dir(layout.resolve_project_dir(root_path, project_id), "tmp")
+        / PROGRESS_FILENAME
+    )
+    # Only OK lines whose id is in the plan are trusted (same trust model
+    # as run_shots) — an empty known-set would make every shot "pending".
+    completed = progress_log.completed_ids(
+        shot.get("id") or shot.get("name") for shot in shots
+    )
 
     timeline = []
     for shot in shots:
@@ -304,7 +311,7 @@ def get_timeline(project_id: str, root: Path | str = ".") -> list[dict[str, Any]
         }
         if shot_id in completed:
             # Try to find the clip and measure it
-            videos_root = layout.resolve_media_root(Path("."), project_id, "videos") / "scenes"
+            videos_root = layout.resolve_media_root(root_path, project_id, "videos") / "scenes"
             clip_path = videos_root / clip_filename(shot.get("scene", 1), shot.get("index_in_scene", 1))
             if clip_path.exists():
                 measured = _probe_video_duration(clip_path)
@@ -1227,6 +1234,140 @@ def _new_clips(scenes: Path, before: Mapping[str, int]) -> list[Path]:
     return [p for p in fresh if p.stat().st_size > 0]
 
 
+def _stitch_clips(
+    head: Path,
+    tail: Path,
+    scenes_dir: Path,
+    config: RunnerConfig,
+    shot_id: str,
+) -> Path | None:
+    """G8: concat ``head``+``tail`` into ``<head-stem>_stitched<ext>``.
+
+    Uses the ffmpeg concat demuxer with stream copy. Returns the stitched
+    path, or None when ffmpeg is unavailable or the concat fails — the
+    caller keeps the honest pre-continuation state (never a fake success).
+    """
+    from brandly_cli.async_compat import async_run_ffmpeg
+
+    stitched = scenes_dir / f"{head.stem}_stitched{head.suffix or '.mp4'}"
+    list_file = scenes_dir / f"{head.stem}_stitch_list.txt"
+    try:
+        list_file.write_text(
+            f"file '{head.resolve().as_posix()}'\n"
+            f"file '{tail.resolve().as_posix()}'\n",
+            encoding="utf-8",
+        )
+        exit_code, _out, err = async_run_ffmpeg(
+            [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                "-i", str(list_file), "-c", "copy",
+                str(stitched),
+            ]
+        )
+        if exit_code != 0 or not stitched.exists():
+            detail = err.strip()[-200:] if err.strip() else ""
+            config.say(
+                f"{shot_id}: stitch failed exit={exit_code}"
+                + (f" {detail}" if detail else "")
+            )
+            return None
+        return stitched
+    except OSError as e:
+        config.say(f"{shot_id}: stitch failed: {e}")
+        return None
+    finally:
+        try:
+            list_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _measure_and_maybe_continue(
+    config: RunnerConfig,
+    shot: Shot,
+    scenes: Path,
+) -> None:
+    """G7 duration truth + G8 continuation take for one finished shot.
+
+    Measures the canonical clip (requested vs measured is recorded — a short
+    clip is never silently shipped as OK) and, when it comes up short beyond
+    tolerance, triggers bounded continuation takes that are stitched onto the
+    tail. Mutates ``shot`` in place (measured_s/delta_s/duration_status and
+    the continuation_* fields); never raises — probe/stitch/generation
+    failures keep the honest measured state.
+    """
+    canonical = scenes / clip_filename(shot.scene, shot.index_in_scene)
+    measured = _probe_video_duration(canonical) if canonical.exists() else None
+    requested = shot.requested_s if shot.requested_s is not None else shot.duration
+    shot.measured_s = measured
+    shot.delta_s = round(measured - requested, 2) if measured is not None else None
+    shot.duration_status = duration_status(requested, measured)
+    if measured is None:
+        return
+
+    shortfall = continuation_shortfall(requested, measured)
+    while (
+        should_trigger_continuation(requested, measured)
+        and not max_continuations_reached(shot.continuation_attempts)
+    ):
+        attempt_number = shot.continuation_attempts + 1
+        before_cont = _clip_snapshot(scenes)
+        cont_shot = replace(
+            shot,
+            id=f"{shot.id}-cont{attempt_number}",
+            prompt=build_continuation_prompt(shot, shortfall),
+            duration=max(1, math.ceil(shortfall)),
+            measured_s=None,
+            delta_s=None,
+            duration_status="ok",
+        )
+        config.say(
+            f"{shot.id}: clip is short by {shortfall:.1f}s - continuation take "
+            f"{attempt_number} ({cont_shot.id}, +{max(1, math.ceil(shortfall))}s)"
+        )
+        succeeded, _exit_code, _note = config.generate_one(cont_shot)
+        cont_clips = _new_clips(scenes, before_cont)
+        if not cont_clips:
+            config.say(
+                f"{cont_shot.id}: continuation produced no clip"
+                + ("" if succeeded else f" exit={_exit_code}")
+                + " - keeping honest SHORT status"
+            )
+            break
+        stitched = _stitch_clips(canonical, cont_clips[0], scenes, config, shot.id)
+        if stitched is None:
+            break
+        stitched_measured = _probe_video_duration(stitched)
+        if stitched_measured is None:
+            config.say(
+                f"{shot.id}: stitched clip unmeasurable - keeping honest SHORT status"
+            )
+            break
+        shot.continuation_attempts = attempt_number
+        shot.continuation_history.append(
+            {
+                "attempt_number": attempt_number,
+                "requested_s": round(shortfall, 2),
+                "measured_s": stitched_measured,
+                "shortfall_s": round(shortfall, 2),
+                "status": CONTINUATION_STATUS,
+            }
+        )
+        # The stitched clip is what ships: move it into the canonical slot.
+        shutil.copyfile(stitched, canonical)
+        try:
+            stitched.unlink()
+            for c in cont_clips:
+                c.unlink()
+        except OSError:
+            pass
+        measured = stitched_measured
+        shot.measured_s = measured
+        shot.delta_s = round(measured - requested, 2)
+        shortfall = continuation_shortfall(requested, measured)
+    shot.duration_status = duration_status(requested, measured)
+
+
 def run_shots(config: RunnerConfig) -> int:
     """Run every pending shot; stop on first unrecovered failure by default.
 
@@ -1337,6 +1478,9 @@ def run_shots(config: RunnerConfig) -> int:
                     success, fail_code, fail_note = _phase(shot, fallback, t2v_attempts, "fallback t2v")
                     total_attempts += t2v_attempts
             if success:
+                # G7/G8: measure the logical shot's clip; continue short takes
+                # (same safeguards as the standard path).
+                _measure_and_maybe_continue(config, shot, scenes)
                 consecutive_failures = 0
                 continue
             reason = f" {fail_note}" if fail_note else ""
@@ -1385,6 +1529,8 @@ def run_shots(config: RunnerConfig) -> int:
                 # G4: no production-time cropping — clips keep source aspect;
                 # the ratio decision happens once, in assembly
                 # (`stitch --ratio R --fit crop|pad` / `export-platforms`).
+                # G7/G8: measure the returned clip; continue short takes.
+                _measure_and_maybe_continue(config, shot, scenes)
                 _fire_hook(config, shot, True)
                 consecutive_failures = 0
                 break

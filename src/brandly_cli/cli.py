@@ -335,6 +335,8 @@ def _check_phase_artifacts(
     """Return a list of (label, path) for artifacts that a phase requires but does not have.
 
     Currently covers the most common cases:
+    - ``concept``: a non-empty ``docs/plan/concept.md`` (#258 — the approve
+      gate fails closed on a missing/empty concept document).
     - ``asset``: at least one video clip OR at least one image in the project tree.
     - ``audio``: at least one audio file under ``audio/``.
     - ``re_edit``: at least one video under ``videos/`` (already present from asset).
@@ -344,7 +346,20 @@ def _check_phase_artifacts(
     root_proj = Path(root)
     missing: list[tuple[str, Path]] = []
 
-    if phase == "asset":
+    if phase == "concept":
+        concept = (
+            layout.resolve_project_dir(root_proj, project_id)
+            / "docs"
+            / "plan"
+            / "concept.md"
+        )
+        if (
+            not concept.is_file()
+            or not concept.read_text(encoding="utf-8").strip()
+        ):
+            missing.append(("concept document", concept))
+
+    elif phase == "asset":
         videos = list((root_proj / "production" / project_id / "videos").rglob("*.mp4"))
         images = list((root_proj / "pre-production" / project_id).rglob("*"))
         images = [p for p in images if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]

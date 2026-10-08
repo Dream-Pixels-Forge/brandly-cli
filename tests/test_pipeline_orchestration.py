@@ -14,8 +14,8 @@ contract:
   G3 scene gate (``scenes.evaluate_all`` + deterministic quality runner),
   and ``publish`` calls the platform exporters (``export_platforms``) —
   all fail closed.
-* The remaining fabricated stub (``concept``) reports "not implemented"
-  instead of pretending to succeed.
+* ``concept`` (P3 #258) derives the concept from the brief via the injected
+  agent runner and fails honest (G11) without one.
 """
 
 from __future__ import annotations
@@ -238,30 +238,32 @@ def test_run_help_lists_execute_flags() -> None:
 
 
 # asset became a real produce-runner phase in PR B; re_edit/validate/publish
-# became real phases in PR C. The remaining fabricated stub (concept) must
-# still report "not implemented".
-@pytest.mark.parametrize("phase", ["concept"])
-def test_stub_phases_report_not_implemented(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str
+# became real phases in PR C; concept became real in P3 (#258) — it derives
+# the concept from the brief via the injected agent runner and fails honest
+# (G11) without one.
+def test_concept_without_runner_fails_honest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pid = _make_project(tmp_path)
     generate_calls: list[str] = []
 
     async def fake_generate(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        generate_calls.append(phase)
+        generate_calls.append("concept")
         return {}
 
-    # A stub worker must never kick off a private generation loop.
+    # A fail-honest phase must never kick off a private generation loop.
     monkeypatch.setattr(Director, "generate_video", fake_generate)
     monkeypatch.setattr(Director, "generate_music", fake_generate)
 
     director = Director(DirectorConfig(tmp_path))
     proj = _read(tmp_path, pid)
-    result = asyncio.run(director._run_phase_real(phase, proj))
+    result = asyncio.run(director._run_phase_real("concept", proj))
 
-    assert "error" in result, f"{phase} returned fabricated success: {result}"
-    assert "not implemented" in result["error"]
-    # A stub worker must never kick off a private generation loop.
+    assert "error" in result, f"concept returned fabricated success: {result}"
+    # G11: the error explains what is missing — never a stale
+    # "not implemented" stub.
+    assert "not implemented" not in result["error"]
+    # A fail-honest phase must never kick off a private generation loop.
     assert generate_calls == []
 
 
@@ -278,8 +280,20 @@ def _shots_json_path(root: Path, pid: str = PID) -> Path:
     return root / ".brandly" / pid / "shots.json"
 
 
+def _write_concept(root: Path, pid: str = PID) -> Path:
+    """Write a minimal concept.md (#257: the script phase requires it)."""
+    concept = layout.resolve_project_dir(root, pid) / "docs" / "plan" / "concept.md"
+    concept.parent.mkdir(parents=True, exist_ok=True)
+    concept.write_text(
+        "# Concept\n\nA precision espresso machine in a minimalist cafe at dawn\n",
+        encoding="utf-8",
+    )
+    return concept
+
+
 def test_script_phase_writes_real_shots_json(tmp_path: Path) -> None:
     _make_project(tmp_path)
+    _write_concept(tmp_path)
     director = _director(tmp_path)
 
     result = asyncio.run(director.run_phase(PID, "script"))
@@ -300,6 +314,7 @@ def test_script_phase_writes_real_shots_json(tmp_path: Path) -> None:
 
 def test_script_phase_shots_json_yields_g3_scene_ids(tmp_path: Path) -> None:
     _make_project(tmp_path)
+    _write_concept(tmp_path)
     director = _director(tmp_path)
     asyncio.run(director.run_phase(PID, "script"))
 
@@ -355,6 +370,7 @@ def test_asset_phase_invokes_produce_runner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _make_project(tmp_path)
+    _write_concept(tmp_path)
     director = _director(tmp_path)
     asyncio.run(director.run_phase(PID, "script"))
     expected = shot_runner.load_shots_file(_shots_json_path(tmp_path))
@@ -389,6 +405,7 @@ def test_asset_phase_fails_closed_when_runner_stops_then_resumes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _make_project(tmp_path)
+    _write_concept(tmp_path)
     director = _director(tmp_path)
     asyncio.run(director.run_phase(PID, "script"))
     state = {"calls": 0}
@@ -416,8 +433,8 @@ def test_run_execute_runs_real_script_and_asset_phases(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pid = _make_project(tmp_path)
-    # concept is still an honest "not implemented" phase in this PR, so the
-    # run is resumed from script (the first real generation phase).
+    # The concept document exists (P3: the script phase requires it).
+    _write_concept(tmp_path)
     asyncio.run(
         ProjectManager(tmp_path).update(
             pid,
@@ -508,6 +525,7 @@ def _make_assets(
 ) -> Director:
     """Create the project, then run the real script + asset phases."""
     _make_project(tmp_path)
+    _write_concept(tmp_path)
     director = _director(tmp_path)
     script_result = asyncio.run(director.run_phase(PID, "script"))
     assert "error" not in script_result, script_result
@@ -619,6 +637,7 @@ def test_re_edit_phase_fails_closed_without_scene_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _make_project(tmp_path)
+    _write_concept(tmp_path)
     director = _director(tmp_path)
     asyncio.run(director.run_phase(PID, "script"))  # manifest written by asset only
 
@@ -784,8 +803,8 @@ def test_run_execute_completes_full_pipeline_to_done(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pid = _make_project(tmp_path)
-    # init/trends/concept stay completed from the state-only era (concept is
-    # still an honest stub in this PR), so the real run starts at script.
+    # The concept document exists (P3: the script phase requires it).
+    _write_concept(tmp_path)
     asyncio.run(
         ProjectManager(tmp_path).update(
             pid,

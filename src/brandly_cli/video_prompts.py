@@ -678,9 +678,17 @@ def build_single_shot_prompt(
         }
         variation = beat_variations.get(beat_role, {})
         if variation:
-            # Use beat-specific action and setting if provided, otherwise fall back to original
-            action = variation.get("action", action)
-            environment = variation.get("setting", environment)
+            # Compose with the caller's action/setting: the beat adds its
+            # per-beat motion guidance without clobbering the shot's own
+            # action/environment (#257 — the brief/concept drive the prompt).
+            beat_action = variation.get("action", "")
+            beat_setting = variation.get("setting", "")
+            if beat_action:
+                action = f"{action} — {beat_action}" if action else beat_action
+            if beat_setting:
+                environment = (
+                    f"{environment} — {beat_setting}" if environment else beat_setting
+                )
 
     style_config = VIDEO_STYLE_MODELS.get(style, VIDEO_STYLE_MODELS["cinematic"])
     lighting_key = style_config.get("lighting", "studio")

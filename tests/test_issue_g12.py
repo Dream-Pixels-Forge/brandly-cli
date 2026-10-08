@@ -49,12 +49,26 @@ def _director(root: Path) -> Director:
     return Director(DirectorConfig(root))
 
 
+def _write_concept(root: Path, pid: str = PID) -> Path:
+    """Write a minimal concept.md (P3 #257: the script phase requires it)."""
+    from brandly_cli import layout
+
+    concept = layout.resolve_project_dir(root, pid) / "docs" / "plan" / "concept.md"
+    concept.parent.mkdir(parents=True, exist_ok=True)
+    concept.write_text(
+        "# Concept\n\nA precision espresso machine in a minimalist cafe at dawn\n",
+        encoding="utf-8",
+    )
+    return concept
+
+
 class TestNarrativeBeats:
     """Test narrative beats in script phase."""
 
     def test_script_phase_emits_beat_labels(self, tmp_path: Path):
         """Script phase should add beat labels to each shot."""
         _make_project(tmp_path, shot_count=4)
+        _write_concept(tmp_path)
         director = _director(tmp_path)
 
         result = asyncio.run(director.run_phase(PID, "script"))
@@ -75,6 +89,7 @@ class TestNarrativeBeats:
     def test_script_phase_has_all_required_beats(self, tmp_path: Path):
         """Script phase output must include all four beat types."""
         _make_project(tmp_path, shot_count=4)
+        _write_concept(tmp_path)
         director = _director(tmp_path)
 
         asyncio.run(director.run_phase(PID, "script"))
@@ -93,6 +108,7 @@ class TestNarrativeBeats:
         # This will be tested at the script phase level - the phase should
         # ensure its output contains all required beats
         _make_project(tmp_path, shot_count=4)
+        _write_concept(tmp_path)
         director = _director(tmp_path)
 
         result = asyncio.run(director.run_phase(PID, "script"))
@@ -107,6 +123,7 @@ class TestNarrativeBeats:
     def test_beat_determines_duration(self, tmp_path: Path):
         """Shot duration should derive from beat role, not be fixed."""
         _make_project(tmp_path, shot_count=4)
+        _write_concept(tmp_path)
         director = _director(tmp_path)
 
         asyncio.run(director.run_phase(PID, "script"))
@@ -133,6 +150,7 @@ class TestNarrativeBeats:
     def test_backward_compat_no_beat_labels(self, tmp_path: Path):
         """Existing projects without beat labels should still load."""
         _make_project(tmp_path, shot_count=3)
+        _write_concept(tmp_path)
         director = _director(tmp_path)
 
         asyncio.run(director.run_phase(PID, "script"))

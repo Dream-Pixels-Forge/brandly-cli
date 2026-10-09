@@ -21,6 +21,44 @@
   - [ ] Phase 3C: Developer Features (analyze, templates, batch, webhook)
   - [x] Phase 3D: Ecosystem (share, team, plugin)
 
+## Round 27/256 — Release v0.12.0: code + GitHub + PyPI all verified as latest
+
+- [x] **Root cause of the 0.11.1 PyPI drift found:** the v0.11.1 GitHub
+      release existed but its publish workflow FAILED at the version-check
+      gate — the tag said 0.11.1 while `__about__.py` still said 0.11.0 (the
+      bump never landed in code; GOAL-PIPELINE-DEMO notes it as a lost
+      uncommitted diff). PyPI never got 0.11.1 (404 on the version
+      endpoint); GitHub showed v0.11.1 as Latest while PyPI showed 0.11.0.
+- [x] **Release prep (PR #267 → `5a2c356`, all 4 CI checks green):**
+      `__about__.py` 0.11.0 → 0.12.0 (single source — hatch dynamic
+      versioning propagates to wheel/sdist, CLI --version, MCP server, web
+      config API); CHANGELOG `[0.12.0]` entry (GOAL-ALL-OPEN-ISSUES program:
+      16 issues closed, goal-met audit MET); `[Unreleased]` emptied;
+      README rewritten (less technical, more comprehensive — fixed BOM +
+      corrupted code fences + eaten characters, updated to the real
+      83-command / 22-tool surface, new How-it-works + Built-in-safety
+      sections, quota surfaced honestly via `estimate --target-duration` —
+      no standalone `brandly quota` command exists); README contract tests
+      9/9 green (the "Driving brandly from an AI tool" anchor restored).
+- [x] **Release shipped:** tag `v0.12.0` + GitHub release (Notes: program
+      summary + the 0.11.1-superseded note) → the Release-to-PyPI workflow
+      auto-ran: version-check gate OK, build + twine check, trusted
+      publishing (OIDC) with **PEP 740 attestations** (DSSE in-toto
+      statements naming both dist files with sha256 digests), verify-
+      installable step — **all 12 steps success** (run 37883635924).
+- [x] **All three surfaces verified as 0.12.0:** code (`__about__.py`),
+      GitHub release `v0.12.0` marked Latest, PyPI latest = 0.12.0 (2 files:
+      `brandly_cli-0.12.0-py3-none-any.whl` + `.tar.gz`, not yanked).
+      Smoke test: fresh venv `pip install brandly-cli==0.12.0` → import OK,
+      `brandly --version` = 0.12.0.
+- [x] **README command validation:** all 69 referenced commands validated
+      against the real CLI help (caught 3 fake `brandly quota` references
+      the old README had — quota is a preflight warning in
+      `estimate`/`produce`, not a command).
+- Gates: version-check OK (tag matches source), 1528 passed / 0 failed /
+  1 skipped, ruff clean, mypy 5 pre-existing PIL-only (CI-clean), CI green
+  on the PR (quality 3.10/3.11/3.12 + web-quality).
+
 ## Round 26/256 — GOAL-ALL-OPEN-ISSUES P5 + P6 + program close-out (#256 #261 #253) — COMPLETE
 
 Goal: handoff items 1–3 / GOAL-ALL-OPEN-ISSUES P5–P6. **The 16-issue program

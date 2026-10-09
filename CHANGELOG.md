@@ -25,6 +25,35 @@ All notable changes to this project are documented here.
 
 - Type annotations and imports cleaned up across `video_backend.py`, `shot_runner.py`, `cost_tracker.py`, `production.py`.
 
+## [0.12.0] - 2026-10-08
+
+### Added — GOAL-ALL-OPEN-ISSUES program (16 issues closed, goal-met audit MET)
+
+- **Agent tool manifest (#256)**: 7 pipeline-control tools (init, status, progress, approve, estimate, record_cost, memory) added to `agent_surface.CLI_TOOLS`, mapped to existing CLI commands; `brandly tools --json` serves 22 tools with correct read-only flags; MCP `tools/list` serves them (the manifest is the single source). `approve` is NOT read-only (the human gate).
+- **Document chain (#259 #258 #257)**: the automated pipeline is real end-to-end — `research_trends` receives the project's style and writes `docs/plan/trends.md`; the concept derives from the project brief (`DirectorConfig.agent_runner`) and writes `docs/plan/concept.md`; the script reads the concept (fail-closed with resume hint) and composes prompts from brief + concept — hardcoded demo strings gone.
+- **Audio truth (#260)**: music duration derives from `scenes.json` scene durations (hardcoded `duration=30` gone); the generated music downloads into `production/<id>/audio/music.mp3` and is mixed into `final.mp4` (ffmpeg `-shortest`); mix failure fails closed; no music → silent final ships.
+- **Publish truth (#255)**: platform list derives from the project's stored `target_platforms` (`all` → full set; instagram/youtube/facebook → variants; empty fails closed) — hardcoded tuple gone.
+
+### Changed
+
+- **G7 Duration truth (keystone)**: `run_shots` measures the canonical clip after every successful take (ffprobe read-only) and records `measured_s`/`delta_s`/`duration_status` on standard and fallback paths; short takes trigger bounded continuation takes (#G8, ffmpeg concat) that stitch and ship — honest `SHORT` at the bound.
+- **G9 Vision gate**: `RunnerConfig.gate_ai` (`off`|`scene-first`|`all`) wires the vision gate to video clips; a FAIL blocks the scene (FAIL recorded before OK, scene skipped, other scenes run, exit 1).
+- **G11 Fail-honest**: `verify_element` gained `ai_runner` (precedence over the API); AI failure → `ai_unavailable` → `UNVERIFIED` (never `PASS`).
+- **G12 Narrative beats**: `build_scenes` validates beats against `REQUIRED_BEATS`, derives duration from `BEAT_DURATIONS` (setup 5/turn 6/consequence 6/resolve 5); no-beat shots keep the legacy schema.
+
+### Fixed
+
+- **#251**: `status` gains `--root` (per-command override).
+- **#246/#249**: all 13 bare `asyncio.run(` sites in `cmd/production.py` converted to `async_compat.run_async` — the pipeline path never crashes inside a running loop.
+- **#250**: the gate auto-approves when the AI verdict is `pass` (no Y/n prompt).
+- **#248**: `beat_role` wired into shot prompts — duplicated content across shots gone.
+- **#253**: web panels data-honesty close-out — PropsInspectorPanel's no-op footer button removed; Toolbar's unimplemented Cmd+K badge removed; the dead `?` help button disabled with an honest title.
+- mypy 31 CI errors cleared (team guards, `scenes.REQUIRED_BEATS`, async_compat return type); latent `UnboundLocalError: layout` regression fixed.
+
+### Note
+
+- **v0.11.1 was GitHub-only** — its PyPI publish failed at the version-check gate (the tag said 0.11.1 while `__about__.py` still said 0.11.0; the bump never landed in code) and was superseded by this release. PyPI skips 0.11.1 entirely; `pip install brandly-cli==0.12.0` is the upgrade path.
+
 ## [Unreleased]
 
 ## [0.10.2] - 2026-10-04

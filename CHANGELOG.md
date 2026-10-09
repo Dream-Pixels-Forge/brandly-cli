@@ -54,6 +54,13 @@ All notable changes to this project are documented here.
 
 - **v0.11.1 was GitHub-only** — its PyPI publish failed at the version-check gate (the tag said 0.11.1 while `__about__.py` still said 0.11.0; the bump never landed in code) and was superseded by this release. PyPI skips 0.11.1 entirely; `pip install brandly-cli==0.12.0` is the upgrade path.
 
+## [0.12.1] - 2026-10-09
+
+### Added
+
+- **`brandly-casting` bundled Agent Skill**: the casting pipeline — **cast from production bible → try wardrobe → character sheet from cast**. Per character, the skill generates the cast set (character image hero `3:2`, portrait headshot `3:4`, full-body portrait for wardrobe `2:3`), then wardrobe variations (image-to-image via project auto-refs, one per bible-listed outfit), then the GOLD character reference plate (16:9 multi-view) from the cast. Ships inside the wheel (`brandly_cli/skills/brandly-casting/`) — pip users get the same skill. Prompt templates in `references/prompt-variants.md`; cast paths follow the real layout (`pre-production/<id>/character/`, `char_` prefix convention — auto-injectable + resolvable by stem); pacing respects the image RPM table (2K: 10 RPM) and never bypasses the 1 req/min production limit.
+- `skills/README.md` skill map gains the `brandly-casting` row.
+
 ## [Unreleased]
 
 ## [0.10.2] - 2026-10-04

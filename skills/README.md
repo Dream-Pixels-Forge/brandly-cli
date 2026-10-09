@@ -23,6 +23,7 @@ resumable) → `brandly gate` → `brandly stitch` → `brandly export`.
 | `brandly-production-bible` | `docs/bible/` + every generation command | Campaign source of truth |
 | `brandly-concept-art` | `brandly reference` / `brandly image` concepts | Pre-production visual development |
 | `brandly-character-sheet` | `brandly reference --subject-type character` (+ `brandly image`) | Matte-grey multi-view plates, `char_*` |
+| `brandly-casting` | `brandly image` + `brandly reference` + `brandly gate` | Cast from the bible → try wardrobe → character sheet from cast |
 | `brandly-location-sheet` | `brandly reference --subject-type location` | `loc_*` plates |
 | `brandly-object-sheet` | `brandly reference --subject-type object` | `prop_*` plates |
 | `brandly-vehicle-sheet` | `brandly reference --subject-type vehicle` | `veh_*` plates |

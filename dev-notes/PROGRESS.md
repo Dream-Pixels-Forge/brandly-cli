@@ -21,6 +21,53 @@
   - [ ] Phase 3C: Developer Features (analyze, templates, batch, webhook)
   - [x] Phase 3D: Ecosystem (share, team, plugin)
 
+## Round 26/256 — GOAL-ALL-OPEN-ISSUES P5 + P6 + program close-out (#256 #261 #253) — COMPLETE
+
+Goal: handoff items 1–3 / GOAL-ALL-OPEN-ISSUES P5–P6. **The 16-issue program
+(#245–#253 + #255–#261) is COMPLETE: all issues closed, goal-met audit MET.**
+
+- [x] **P5 (commit `65aecec`, CI green on main):** agent tool manifest
+      (#256) — RED-first (`tests/test_agent_surface_controls.py`, 13 tests,
+      observed 12 failed → 13 passed). `agent_surface.CLI_TOOLS` gained the
+      7 Director-prompt control tools mapped to EXISTING CLI commands (the
+      tool surface IS the CLI surface — no new implementation): init, status,
+      progress, approve, estimate, record_cost, memory. READ_ONLY_TOOLS:
+      status/progress/estimate read-only; approve NOT read-only (the human
+      gate). Builders map tool args → real CLI argv (pure functions);
+      MCP tools/list serves them (the manifest is the single source).
+      `brandly tools --json` shows 22 tools (15 + 7) with correct flags.
+- [x] **P6 (commit `9225bd9`, CI green on main):** #253 close-out — remaining
+      web data-honesty findings, RED-first (`tests/test_web_props_honesty.py`,
+      5 tests, observed 5 failed → 5 passed): PropsInspectorPanel's no-op
+      "Update Shot Props (Hot Reload)" footer button removed (every field
+      already persists via onChange → PATCH); Toolbar's unimplemented Cmd+K
+      badge removed; the dead `?` help button disabled with the honest title.
+      Web gates green (lint 0/0, build, bundle freshness `git diff
+      --exit-code`). #261 closed after P1–P5 landed.
+- [x] **Goal-met audit: MET (confidence high)** — every Verification Step
+      re-run independently; results table recorded in
+      `GOAL-ALL-OPEN-ISSUES.md` (Program completion notes, 2026-10-08).
+- [x] **This-session gate verification (fresh shell):** full suite
+      **1528 passed / 0 failed / 1 skipped** (Windows-only platform skip);
+      ruff `src/ tests/` clean; mypy clean (5 pre-existing PIL
+      import-untyped local-only — CI's Pillow env has stubs); web bundle
+      freshness clean.
+- [x] **Environment gap fixed:** fresh shells lacked `importlinter`
+      (same class as the mypy gap — CI has it, local didn't;
+      `tests/test_architecture_contracts.py` collection ERROR without it).
+      Installed `import-linter` + `mypy` via `pip install
+      --break-system-packages`.
+- [x] **Untracked ledger landed (handoff item 3):** the old goal files
+      (`GOAL-OPEN-ISSUES.md`, `GOAL-PIPELINE-DEMO.md`) + `HANDOFF.md` + this
+      Round 26 + the goal completion notes committed as the historical
+      record (their open checkboxes are superseded by the closed issues and
+      these rounds). `demo/` + `dev-notes/handoff/` drafts already removed
+      (throwaway scratch).
+- [x] **Process discipline honored:** ledger work landed via branch →
+      PR → squash-merge (NOT a direct push — the Round 24 break is not
+      repeated).
+- Next: board clear — no open issues, no pending goal phases.
+
 ## Round 25/256 — GOAL-ALL-OPEN-ISSUES P4: audio + publish truth (#260 #255)
 
 Goal: handoff item 1 / GOAL-ALL-OPEN-ISSUES P4.

@@ -216,14 +216,14 @@ implementation, per the `agent_surface` module's design: the tool surface IS
 the CLI surface).
 
 **Deliverables**
-- [ ] RED tests first (`tests/test_agent_surface_controls.py`): `brandly tools --json` lists the 7 control tools; `status`/`progress`/`estimate` classified read-only; `approve` NOT read-only (human gate); each tool shells out to the real CLI command
-- [ ] Add the 7 tools to the `agent_surface.CLI_TOOLS` manifest (mapping existing commands)
-- [ ] MCP `tools/list` serves them (the manifest is the single source)
+- [x] RED tests first (`tests/test_agent_surface_controls.py`): `brandly tools --json` lists the 7 control tools; `status`/`progress`/`estimate` classified read-only; `approve` NOT read-only (human gate); each tool shells out to the real CLI command
+- [x] Add the 7 tools to the `agent_surface.CLI_TOOLS` manifest (mapping existing commands)
+- [x] MCP `tools/list` serves them (the manifest is the single source)
 
 **Definition of Done**
-- [ ] New tests pass RED→GREEN; existing agent_surface tests still pass
-- [ ] `brandly tools --json` shows 22 tools (15 + 7) with correct read-only flags
-- [ ] `ruff` clean; CI green
+- [x] New tests pass RED→GREEN; existing agent_surface tests still pass
+- [x] `brandly tools --json` shows 22 tools (15 + 7) with correct read-only flags
+- [x] `ruff` clean; CI green
 
 **Verification Steps**
 1. `python3 -m pytest tests/test_agent_surface_controls.py tests/test_agent_tools.py -q` — green
@@ -240,16 +240,16 @@ the CLI surface).
 program is independently audited.
 
 **Deliverables**
-- [ ] All merged PRs reference the issues they close (`Fixes #N` — #261 closes after P1–P5)
-- [ ] `gh issue list --state open` — none of the 16 remain
-- [ ] PROGRESS.md round entry written (P1–P6 outcomes)
-- [ ] goal-met audit: verdict **MET** (independent auditor re-runs every Verification Step above)
+- [x] All merged PRs reference the issues they close (`Fixes #N` — #261 closes after P1–P5)
+- [x] `gh issue list --state open` — none of the 16 remain
+- [x] PROGRESS.md round entry written (P1–P6 outcomes) — Round 26 (2026-10-08)
+- [x] goal-met audit: verdict **MET** (independent auditor re-runs every Verification Step above) — results table in the Program completion notes below
 
 **Definition of Done**
 - [ ] 0 open issues from the set #245–#253 + #255–#261
-- [ ] 0 open fix branches
-- [ ] Full suite green; ruff clean; web gates green
-- [ ] goal-met audit returns MET (stored with this goal)
+- [x] 0 open fix branches (the program's: fix/f2-reference-injection-245-252 deleted after the PR #264 merge; feat/p2-g7-g8-continuation deleted after the PR #265 merge; fix/open-issues-245-253 deleted — its content landed via the P1 squash; 6 older fix/* branches predate this program and are out of scope)
+- [x] Full suite green; ruff clean; web gates green
+- [x] goal-met audit returns MET (stored with this goal)
 
 **Verification Steps**
 1. `gh issue list --state open | grep -E "245|246|247|248|249|250|251|252|253|255|256|257|258|259|260|261"` — no output
@@ -260,10 +260,44 @@ program is independently audited.
 
 ## Program Definition of Done
 
-- [ ] P1–P6 all complete (each with its DoD met)
-- [ ] All 16 issues CLOSED with fix references
-- [ ] Full suite on the merged branch: **0 failed** (or every remaining failure justified in writing) + ruff clean + web gates green (lint 0/0, build, bundle freshness)
-- [ ] goal-met audit: **MET** (independent, re-runs every verification step)
+- [x] P1–P6 all complete (each with its DoD met)
+- [x] All 16 issues CLOSED with fix references
+- [x] Full suite on the merged branch: **0 failed** (1525 passed / 1 skipped — Windows-only platform skip) + ruff clean + web gates green (lint 0/0, build, bundle freshness)
+- [x] goal-met audit: **MET** (independent, re-runs every verification step)
+
+## Program completion notes (2026-10-08)
+
+**Goal-met audit — verdict: MET (confidence high).** Every Verification Step
+re-run independently and passing:
+
+| Step | Result |
+|---|---|
+| P1.1 test_open_issues_p1 | 17 passed |
+| P1.2 no `asyncio.run(` in cmd/production.py | 0 hits |
+| P1.3 `beat_role=beat` wired | 1 (the caller passes it) |
+| P1.4 web bundle freshness | clean (`git diff --exit-code`) |
+| P2.1 full suite | 1525 passed / 0 failed / 1 skipped (Windows-only) |
+| P2.2 untracked test files | 0 |
+| P3.1 doc-chain/handoffs/orchestration tests | 50 passed |
+| P3.2 no hardcoded demo strings | 0 hits |
+| P3.4/P4.4 `brandly plan <id> --json` rows | match delivered behavior (live) |
+| P4.1 test_audio_publish_truth | 9 passed |
+| P4.2 no hardcoded publish tuple | 0 hits |
+| P4.3 no hardcoded `duration=30` | 0 hits |
+| P5.1 agent-surface + agent-tools tests | 33 passed |
+| P5.2/3 `brandly tools --json` (live) | 22 tools, all 7 control tools, correct read-only flags |
+| mypy | 5 pre-existing PIL import-untyped (CI-clean: CI's Pillow env has stubs) |
+| ruff | clean (`src/ tests/`) |
+| open issues | 0 (all 16 closed with fix references) |
+| program fix branches | 0 (all deleted) |
+
+**Landed:** P1 `caa8b8c` (PR #264) · P2 `1fb9f4d` (PR #265) · P3 `7bf5546` ·
+P4 `5d2eb18` · P5 `65aecec` · P6 #253 close-out `9225bd9` — CI all green on
+main throughout. Untracked cleanup: `demo/` + `dev-notes/handoff/` drafts
+removed (throwaway demo scratch, superseded by the root HANDOFF.md); the old
+goal files (`GOAL-OPEN-ISSUES.md`, `GOAL-PIPELINE-DEMO.md`) committed as the
+historical record (their open checkboxes are superseded by the closed issues
+and PROGRESS.md Rounds 21-26).
 
 ## Verification Steps (program level)
 

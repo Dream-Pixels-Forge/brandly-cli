@@ -46,54 +46,60 @@ production bible (Section 4: Characters)
 ### P1 — the `brandly-casting` skill (RED → GREEN)
 
 **Deliverables**
-- [ ] `skills/brandly-casting/SKILL.md` — frontmatter `name: brandly-casting`,
+- [x] `skills/brandly-casting/SKILL.md` — frontmatter `name: brandly-casting`,
       description = single activation sentence with trigger phrases; states
       which `brandly` command(s) it drives (the skills/README.md rule 3);
       SKILL.md ≤ ~100 lines with long material in `references/`
-- [ ] `skills/brandly-casting/references/prompt-variants.md` — the cast /
+- [x] `skills/brandly-casting/references/prompt-variants.md` — the cast /
       portrait / full-body-wardrobe / wardrobe-try prompt templates (linked
       from SKILL.md; the link must exist — test_skills.py checks)
-- [ ] `skills/README.md` — skill map row for `brandly-casting` (drives
+- [x] `skills/README.md` — skill map row for `brandly-casting` (drives
       `brandly image` + `brandly reference` + `brandly gate`)
-- [ ] Installed copy `~/.agents/skills/brandly-casting/` (identical to the
-      bundled one — the two trees stay in sync)
-- [ ] RED-first proof: create the skill dir and observe
-      `tests/test_skills.py` FAIL (missing SKILL.md / frontmatter) before
-      writing the real SKILL.md, then observe PASS
+- [x] Installed copy `~/.agents/skills/brandly-casting/` (identical to the
+      bundled one — the two trees stay in sync; `diff -r` clean)
+- [x] RED-first proof: created the skill dir and observed
+      `tests/test_skills.py` FAIL (5 failed, missing SKILL.md) before
+      writing the real SKILL.md, then observed PASS (5 passed)
 
 **Definition of Done**
-- [ ] `tests/test_skills.py` green — all 5 contract tests over every bundled
+- [x] `tests/test_skills.py` green — all 5 contract tests over every bundled
       skill including `brandly-casting` (folder==name, description, referenced
       docs exist, mentions the CLI)
-- [ ] Full suite green; ruff clean; mypy clean (5 pre-existing PIL-only)
-- [ ] The skill teaches the cast → wardrobe → sheet pipeline and never
-      bypasses the production plan or the 1 req/min rate limit (README rule 4)
-- [ ] Cast image paths follow the real layout: `pre-production/<id>/character/`
+- [x] Full suite green (1528 passed / 1 skipped); ruff clean; mypy clean (5
+      pre-existing PIL-only)
+- [x] The skill teaches the cast → wardrobe → sheet pipeline and never
+      bypasses the production plan or the 1 req/min rate limit (README rule 4
+      — the never-bypass rule lives in prompt-variants.md:112 AND ships in
+      the wheel; verified in the released 0.12.1 wheel)
+- [x] Cast image paths follow the real layout: `pre-production/<id>/character/`
       with the `char_` prefix convention (auto-injectable + resolvable by stem)
 
 **Verification Steps**
-1. `python3 -m pytest tests/test_skills.py -v` — green
+1. `python3 -m pytest tests/test_skills.py -v` — green (5/5)
 2. `diff -r skills/brandly-casting ~/.agents/skills/brandly-casting` — identical
 3. `grep -c "brandly" skills/brandly-casting/SKILL.md` — ≥1 (drives the CLI)
 
 ### P2 — release v0.12.1 (code + GitHub + PyPI all match)
 
 **Deliverables**
-- [ ] `src/brandly_cli/__about__.py` → `0.12.1` (single source)
-- [ ] `CHANGELOG.md` → `[0.12.1]` entry (the casting skill); `[Unreleased]` emptied
-- [ ] Commit via branch → PR → squash-merge (all CI checks green, zero warnings)
-- [ ] Tag `v0.12.1` + GitHub release (triggers the Release-to-PyPI workflow)
-- [ ] PyPI publish lands (trusted publishing; version-check gate passes)
-- [ ] Wheel contains the new skill (`brandly_cli/skills/brandly-casting/`)
+- [x] `src/brandly_cli/__about__.py` → `0.12.1` (single source)
+- [x] `CHANGELOG.md` → `[0.12.1]` entry (the casting skill); `[Unreleased]` emptied
+- [x] Commit via branch → PR #269 → squash-merge `987de37` (all 4 CI checks green, zero warnings)
+- [x] Tag `v0.12.1` + GitHub release (triggers the Release-to-PyPI workflow)
+- [x] PyPI publish lands (trusted publishing; version-check gate passes;
+      PEP 740 attestations; 2 files, not yanked)
+- [x] Wheel contains the new skill (`brandly_cli/skills/brandly-casting/`
+      verified in a fresh venv install)
 
 **Definition of Done**
-- [ ] Version 0.12.1 = the same latest on code, GitHub, and PyPI
-- [ ] Version-check gate: `tag v0.12.1 matches single source 0.12.1`
-- [ ] Full workflow run success (all steps); attestations published
-- [ ] Smoke test: fresh venv `pip install brandly-cli==0.12.1` → import OK,
-      the bundled skill present in the wheel install
-- [ ] goal-met audit: verdict **MET** (independent, re-runs every Verification
-      Step; confidence 10/10)
+- [x] Version 0.12.1 = the same latest on code, GitHub, and PyPI
+- [x] Version-check gate: `tag v0.12.1 matches single source 0.12.1`
+- [x] Full workflow run success (all steps); attestations published (run 37890500187)
+- [x] Smoke test: fresh venv `pip install brandly-cli==0.12.1` → import OK,
+      `brandly --version` = 0.12.1, the bundled skill + never-bypass rule
+      present in the wheel install
+- [x] goal-met audit: verdict **MET** (independent, 16 checks re-run via
+      `check_goal.py all`; confidence 10/10; gate PASS)
 
 **Verification Steps**
 1. `python3 scripts/version_check.py --tag v0.12.1` — OK
@@ -119,3 +125,50 @@ production bible (Section 4: Characters)
 
 One session: P1 ~30 min (skill + RED proof), P2 ~45 min (bump + release +
 verification, paced by CI runs).
+
+## Live pipeline test (2026-10-09) — idea → production, 2 characters presenting
+
+Real end-to-end run (project `brewmaster-one` at `/tmp/brandly-demo`, real
+`AGNES_API_KEY`, ~100 credits): **cast from the bible → try wardrobe →
+character sheet from cast — all verified working.** Video generation BLOCKED
+by a provider-side outage (consistent HTTP 503 from
+`apihub.agnes-ai.com/v1/videos` over 521s of retries + WriteTimeout; the
+IMAGE service worked 10/10 throughout — matches the closed #191/#192
+provider-503 class; external, not a code bug).
+
+**Verified working:**
+- init → trends → concept (agent-driven) → script — the phase chain runs
+- CAST: 6 images (hero 3:2 / portrait 3:4 / full-body 2:3 × Maya + Theo) via
+  the new skill's flow, cost-tracked (10 credits each)
+- TRY WARDROBE: 2 variations (i2i via project auto-refs) in the dedicated
+  `wardrobe/` REF_CATEGORY
+- CHARACTER SHEET FROM CAST: 2 GOLD reference plates (16:9 multi-view,
+  `char_<slug>_<ts>.jpg`), auto-injected as primary references
+- The reference gate caught a real mismatch honestly (plate 68/100 — missing
+  wardrobe render; AI verdict warn; exit 1) and the #250 auto-approve
+  auto-approved the passing plate
+- The reference cap (model limit 5) capped cleanly with a drop list
+
+**Issues found on the road — filed (git-driven-development):**
+- [#270] `current_phase="video"` (invalid phase) poisons project.json →
+  run/approve/run --execute all crash with unhandled ValueError (3 sites)
+- [#271] `cli.py:125` bare `asyncio.run(` — GOLD reference silently dropped
+  on pipeline-path video calls (the #249 fix missed this site)
+- [#272] `--output` resolves relative to the CLI cwd, ignoring `--root` —
+  6 cast images landed in the brandly-cli repo itself
+- [#273] trends phase silently writes an empty trends.md (style passed as
+  research category; TREND_DATABASE only has product categories)
+- [#274] script phase hardcodes beat_durations conflicting with
+  scenes.BEAT_DURATIONS + the beat cycle wraps the closing shot to "setup"
+- [#275] reference command updates primary_reference BEFORE the gate — a
+  gate-FAILED plate becomes the auto-injected identity anchor
+- [#276] the requested film duration never reaches the pipeline (no
+  --target-duration on init/project.json; 30s request produced 24s unchecked)
+- [#277] `run --execute` dead-ends at concept — the CLI never wires
+  DirectorConfig.agent_runner (agnes-chat could be the default)
+- [#278] reference/image --help docstrings state wrong save paths + prefix;
+  `brandly reference` lacks `--json`
+
+**Demo state:** pipeline bricked at asset by #270 (repaired manually for
+diagnosis: current_phase reset to "asset"); video blocked by the provider
+503. The 9 issues are the fix queue.

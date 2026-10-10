@@ -94,6 +94,19 @@ Phase 3 engineer (six RED→GREEN increments on `fix/open-issues-270-283`).
       (reason recorded — the phase joins the chain).
 - Gates: full suite **1573 passed / 0 failed** (baseline 1528 + 45 new);
       ruff clean repo-wide.
+- [x] **PR #285 MERGED** — <https://github.com/Dream-Pixels-Forge/brandly-cli/pull/285>
+      (squash `5822a1e`, 2026-10-10T15:34Z, 22 files +2308/−133). First CI
+      run failed at the mypy gate (5 dict/arg typing errors the local gate
+      missed on the first run) → fixed + pushed → **all 4 checks PASS**
+      (run 38063784628) → merged; branch deleted, pruned.
+- [x] **All 13 issues CLOSED** — #270 auto-closed by the PR; #271–#283
+      closed with per-issue fix comments (the PR's space-separated `Fixes`
+      line only parsed #270 — recorded for future PR bodies: use one
+      `Fixes` keyword per line).
+- [x] **I7 goal-met audit: MET (confidence high)** — every verification
+      step re-run independently on merged main (results table in
+      GOAL-OPEN-ISSUES-270-283.md Program close-out).
+- Next: board clear — 0 open issues, 0 open PRs.
 
 ## Phase Completion
 - [x] Phase 0: Bootstrap (AUDIT.md + GOAL.md)

@@ -206,11 +206,10 @@ class TimelineState:
         full_path = resolve_media_file(self.root, self.project_id, clip.clip_path or "")
         if full_path is None:
             return None
-        import asyncio
-
+        from brandly_cli.async_compat import run_async  # issue #271: dual-context
         from brandly_cli.quality_gate import PASS, verify_element
         try:
-            result = asyncio.run(
+            result = run_async(
                 verify_element(
                     full_path,
                     use_ai=False,

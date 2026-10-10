@@ -26,10 +26,12 @@ from brandly_cli.types import ProjectData
 
 PID = "plan-proj"
 
+# I6 (#270-#283) alignment: the screenplay phase joins the chain (#280).
 EXPECTED_PHASES = [
     "init",
     "trends",
     "concept",
+    "screenplay",
     "script",
     "asset",
     "audio",

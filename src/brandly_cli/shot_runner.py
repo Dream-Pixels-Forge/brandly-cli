@@ -953,10 +953,13 @@ class RunnerConfig:
 
     def move_shot_clips(self, shot: Shot, new_clips: Sequence[Path]) -> list[Path]:
         """After generating ``shot``, relocate its clips when the shot is a
-        transition (``folder: "transition"``)."""
-        if shot.folder != "transition" or not new_clips:
+        folder-routed role (issue #283): ``folder: "transition"`` clips land
+        in ``videos/transition/`` and ``folder: "insert"`` clips in
+        ``videos/insert/`` — the layout's declared VIDEO_CATEGORIES. Scene
+        shots stay in ``videos/scenes/``."""
+        if shot.folder not in ("transition", "insert") or not new_clips:
             return []
-        target_dir = self.scenes_dir.parent / "transition"
+        target_dir = self.scenes_dir.parent / shot.folder
         target_dir.mkdir(parents=True, exist_ok=True)
         moved: list[Path] = []
         for clip in new_clips:

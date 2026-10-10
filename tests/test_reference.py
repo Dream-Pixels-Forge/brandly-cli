@@ -273,9 +273,21 @@ def test_reference_generates_image_and_saves_metadata(
         target.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         return target
 
+    # I1 (#270-#283) alignment: the fixture's fake plate bytes are not a
+    # decodable image, so the REAL quality gate fails them — pre-fix the
+    # metadata was written BEFORE the gate (the #275 bug this program
+    # fixes), so the test still saw the metadata. The test's intent is the
+    # SUCCESS path — mock the gate to pass; gate-FAIL behavior is covered
+    # by tests/test_open_issues_270_283.py::TestReferenceGateBeforePromotion.
     with (
         patch("brandly_cli.cmd.generation.generate_image", AsyncMock(return_value=fake_result)),
         patch("brandly_cli.cmd.generation._save_artifact", side_effect=fake_save),
+        patch(
+            "brandly_cli.quality_gate.verify_element",
+            return_value=__import__("brandly_cli.quality_gate", fromlist=["GateResult"]).GateResult(
+                status="pass", score=95, element="reference", kind="image"
+            ),
+        ),
     ):
         result = runner.invoke(
             cli,
@@ -335,9 +347,18 @@ def test_reference_plate_has_single_extension(runner: CliRunner, project_dir: Pa
         target.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         return target
 
+    # I1 (#270-#283) alignment: same as the object test above — the fake
+    # plate fails the real gate; the test's intent is the
+    # extension-regression happy path, so the gate is mocked to pass.
     with (
         patch("brandly_cli.cmd.generation.generate_image", AsyncMock(return_value=fake_result)),
         patch("brandly_cli.cmd.generation._save_artifact", side_effect=fake_save),
+        patch(
+            "brandly_cli.quality_gate.verify_element",
+            return_value=__import__("brandly_cli.quality_gate", fromlist=["GateResult"]).GateResult(
+                status="pass", score=95, element="reference", kind="image"
+            ),
+        ),
     ):
         result = runner.invoke(
             cli,

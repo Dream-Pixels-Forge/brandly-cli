@@ -204,6 +204,13 @@ def _print_gate_threshold_summary(gate_scores: dict[str, int], threshold: int) -
         "for plates smaller than 512px on the short side."
     ),
 )
+@click.option(
+    "--json",
+    "json_out",
+    is_flag=True,
+    help="Emit only a machine-readable JSON result instead of human-readable "
+    "console output (issue #278 — parity with `brandly image --json`).",
+)
 @click.pass_context
 def reference(
     ctx: click.Context,
@@ -218,21 +225,32 @@ def reference(
     import_image: str | None,
     no_generate: bool,
     ref_format: str,
+    json_out: bool = False,
 ) -> None:
     """Generate the primary reference image for a project.
 
     The primary reference is a GOLD-grade image that locks the appearance of a
-    key asset (object, character, location, etc.) across all subsequent
-    `brandly video` generations. Should be the FIRST generation step.
+    key asset (object, character, wardrobe, location, etc.) across all
+    subsequent `brandly video` generations. Should be the FIRST generation
+    step.
 
-    The generated image is saved to
-    .brandly/<project_id>/images/<category>/ (e.g. images/prop/ for objects)
-    with the prefix `reference_<subject_type>_*` and is auto-detected by
-    `brandly video` (auto-injected as the strongest reference image).
+    The generated image is saved to the v2 media tree —
+    pre-production/<project_id>/<category>/ (e.g. pre-production/<id>/prop/
+    for objects) — named with the layout prefix from IMAGE_NAME_PREFIXES
+    (character -> char_*, location -> loc_*, object/prop -> prop_*, other
+    types keep <subject_type>_*). It is auto-detected by `brandly video`
+    (auto-injected as the strongest reference image).
     """
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
         sys.exit(1)
+
+    # Issue #278: in --json mode, suppress rich console output so stdout
+    # carries only the machine-readable result object (same pattern as the
+    # image command, issue #73).
+    quiet_original = console.quiet
+    if json_out:
+        console.quiet = True
 
     subject_skill = REFERENCE_SUBJECTS[subject_type]
     prompt = build_reference_prompt(subject_type, subject)
@@ -308,16 +326,6 @@ def reference(
             "style_preset": style_preset,
             "imported_from": str(src),
         }
-        pm = ProjectManager(root)
-        update_result = asyncio.run(
-            pm.update(  # type: ignore[arg-type]
-                project_id, {"primary_reference": reference_meta}
-            )
-        )
-        if update_result is None:
-            console.print("[red]✗ Failed to update project metadata.[/red]")
-            sys.exit(1)
-        console.print("[green]✓ Project primary_reference metadata updated.[/green]")
 
         approved, note = _human_review_gate(
             "reference", f"the imported {subject_type} reference for '{subject}'"
@@ -331,6 +339,19 @@ def reference(
             )
             sys.exit(1)
         console.print("[green]✓ Human gate passed — reference approved.[/green]")
+
+        # Issue #275 (import path): the promotion happens AFTER the human gate
+        # — a REJECTED import is never promoted to the identity anchor.
+        pm = ProjectManager(root)
+        update_result = asyncio.run(
+            pm.update(  # type: ignore[arg-type]
+                project_id, {"primary_reference": reference_meta}
+            )
+        )
+        if update_result is None:
+            console.print("[red]✗ Failed to update project metadata.[/red]")
+            sys.exit(1)
+        console.print("[green]✓ Project primary_reference metadata updated.[/green]")
 
         from brandly_cli.planning import write_generation_doc
 
@@ -464,33 +485,13 @@ def reference(
         saved = _standardize_reference_format(saved, ref_format)
         console.print(f"[green]✓ Reference image saved:[/green] {saved}")
 
-        # Persist the primary reference metadata on the project so downstream
-        # tools (e.g. `brandly video`) can read it.
-        reference_meta = {
-            "subject_type": subject_type,
-            "skill": subject_skill,
-            "subject": subject,
-            "image_path": str(saved),
-            "source_url": url,
-            "generated_at": now_iso(),
-            "model": model,
-            "style_preset": style_preset,
-        }
-        pm = ProjectManager(root)
-        result = asyncio.run(
-            pm.update(  # type: ignore[arg-type]
-                project_id, {"primary_reference": reference_meta}
-            )
-        )
-        if result is None:
-            console.print("[red]✗ Failed to update project metadata.[/red]")
-            sys.exit(1)
-        console.print("[green]✓ Project primary_reference metadata updated.[/green]")
-
+        # Issue #275: the primary_reference PROMOTION moved below — after the
+        # quality gate and the human gate. A gate-FAILED plate is never
+        # promoted to the identity anchor.
         gate_result = None
-        if run_gate:
-            from brandly_cli import quality_gate
+        from brandly_cli import quality_gate
 
+        if run_gate:
             gate_result = asyncio.run(
                 quality_gate.verify_element(
                     saved,
@@ -501,7 +502,16 @@ def reference(
                     project_id=project_id,
                 )
             )
-            _print_gate_report(gate_result)
+            if json_out:
+                # Issue #278: the gate report lives on the gates module's own
+                # console — suppress it too so stdout carries only the JSON.
+                from brandly_cli import gates as _gates
+
+                _gates.console.quiet = True
+                _print_gate_report(gate_result)
+                _gates.console.quiet = quiet_original
+            else:
+                _print_gate_report(gate_result)
             if gate_result.status == quality_gate.FAIL:
                 console.print(
                     "[yellow]⚠ Quality gate failed — review or regenerate the "
@@ -524,6 +534,43 @@ def reference(
             )
             sys.exit(1)
         console.print("[green]✓ Human gate passed — reference approved.[/green]")
+
+        # Issue #275: the primary_reference promotion happens AFTER the gate —
+        # a gate-FAILED plate is never promoted to the identity anchor (the
+        # pre-fix ordering voided the gate: a failed plate became the
+        # auto-injected reference for every video call). The metadata records
+        # the gate verdict so consumers can fail-honest.
+        promoted = False
+        if gate_result is not None and gate_result.status == quality_gate.FAIL:
+            console.print(
+                "[yellow]⚠ primary_reference NOT updated — the quality gate "
+                "failed. The plate stays on disk (un-promoted); review or "
+                "regenerate before using it as a reference.[/yellow]"
+            )
+        else:
+            promotion_meta: dict[str, Any] = {
+                "subject_type": subject_type,
+                "skill": subject_skill,
+                "subject": subject,
+                "image_path": str(saved),
+                "source_url": url,
+                "generated_at": now_iso(),
+                "model": model,
+                "style_preset": style_preset,
+                "gate_status": gate_result.status if gate_result else None,
+                "gate_score": gate_result.score if gate_result else None,
+            }
+            pm = ProjectManager(root)
+            result = asyncio.run(
+                pm.update(  # type: ignore[arg-type]
+                    project_id, {"primary_reference": promotion_meta}
+                )
+            )
+            if result is None:
+                console.print("[red]✗ Failed to update project metadata.[/red]")
+                sys.exit(1)
+            console.print("[green]✓ Project primary_reference metadata updated.[/green]")
+            promoted = True
 
         # Only after approval: write the generation doc and flip the plan to
         # COMPLETED in the production plan (a rejection keeps it PENDING so
@@ -550,7 +597,31 @@ def reference(
             f"\n[bold]Next:[/bold] run [cyan]brandly video {project_id} ...[/cyan] — the "
             f"primary reference image will be auto-injected as a reference image."
         )
+        if json_out:
+            # Issue #278: machine-readable result (parity with image --json).
+            console.quiet = quiet_original
+            _print_machine_json(
+                {
+                    "status": "succeeded",
+                    "project_id": project_id,
+                    "subject_type": subject_type,
+                    "subject": subject,
+                    "path": str(saved),
+                    "gate_status": gate_result.status if gate_result else None,
+                    "gate_score": gate_result.score if gate_result else None,
+                    "promoted": promoted,
+                }
+            )
     else:
+        if json_out:
+            console.quiet = quiet_original
+            _print_machine_json(
+                {
+                    "status": "error",
+                    "error_code": "no_artifact",
+                    "error_message": "could not save the reference artifact",
+                }
+            )
         console.print("[yellow]⚠ Could not save reference artifact[/yellow]")
         sys.exit(1)
 
@@ -899,6 +970,11 @@ def image(
             sys.exit(1)
 
         dest = Path(output).expanduser()
+        if not dest.is_absolute():
+            # Issue #272: a relative --output resolves against the project
+            # root (--root / $ROOT / walk-up), never the CLI's cwd — assets
+            # must land in the project tree, not wherever the CLI ran from.
+            dest = root / dest
         try:
             info = fetch_image_atomic(url or None, dest, b64_json=b64 or None)
         except ImageFetchError as e:
@@ -1184,6 +1260,10 @@ def job_poll(
 
         assert rec_path is not None  # result_available above proves it
         dest = Path(output).expanduser()
+        if not dest.is_absolute():
+            # Issue #272 (same class): relative --output resolves against the
+            # project root, never the CLI's cwd.
+            dest = root / dest
         try:
             raw = Path(rec_path).read_bytes()
             fetch_image_atomic(None, dest, b64_json=_base64.b64encode(raw).decode())
@@ -1468,11 +1548,18 @@ def video(
             # layout.resolve_media_root gives us pre-production/<project_id>/
             # So we need to go one level deeper into images/
             images_root = layout.resolve_media_root(root, project_id, "images")
-            expected_dir = images_root / "images" / category
+            # Issue #271 (same chain): plates live DIRECTLY under the images
+            # root — pre-production/<id>/<category>/ — and are named via
+            # IMAGE_NAME_PREFIXES (char_/loc_/prop_). The previous
+            # images/<category> depth + reference_<subject_type>_ prefix
+            # matched nothing on disk.
+            expected_dir = images_root / category
 
             # Look for reference files matching the pattern in the expected location
-            # The reference filename should start with "reference_<subject_type>_"
-            expected_prefix = f"reference_{subject_type}_"
+            # The reference filename starts with the layout prefix (char_/loc_/prop_).
+            expected_prefix = (
+                f"{layout.image_name_prefix(subject_type) or subject_type}_"
+            )
             if expected_dir.is_dir():
                 for candidate_path in expected_dir.iterdir():
                     if (candidate_path.is_file() and
@@ -2333,11 +2420,15 @@ def _run_produce_runner(
     def _sync_project(status: str) -> None:
         from brandly_cli.project_manager import sync_production_state
 
+        # Issue #270: the produce runner belongs to the ``asset`` phase —
+        # the sync must write a VALID phase value. The previous
+        # ``current_phase="video"`` (not in PHASE_ORDER) bricked every
+        # subsequent run/approve/--execute with a raw ValueError.
         result = sync_production_state(
             root,
             project_id,
             status=status,
-            current_phase="video",
+            current_phase="asset",
             shot_count=len(shots),
         )
         if result is not None:

@@ -43,13 +43,13 @@ def _list_projects(
     root: str | None = None,
 ) -> dict[str, Any]:
     """List brandly projects on disk, optionally filtered by status."""
-    import asyncio
+    from brandly_cli.async_compat import run_async
 
     try:
         from brandly_cli.project_manager import ProjectManager
 
         pm = ProjectManager(Path(root or "."))
-        projects = asyncio.run(pm.list_with_status())
+        projects = run_async(pm.list_with_status())
         if status:
             projects = [p for p in projects if p.get("status") == status]
         projects = projects[:limit]
@@ -75,13 +75,13 @@ def _list_projects(
 
 def _get_project(project_id: str, root: str | None = None) -> dict[str, Any]:
     """Fetch a single project by ID from the project manager."""
-    import asyncio
+    from brandly_cli.async_compat import run_async
 
     try:
         from brandly_cli.project_manager import ProjectManager
 
         pm = ProjectManager(Path(root or "."))
-        data = asyncio.run(pm.read(project_id))
+        data = run_async(pm.read(project_id))
         if not data:
             return {"error": f"project {project_id} not found"}
         model_dump = getattr(data, "model_dump", None)
@@ -99,12 +99,12 @@ def _list_jobs(
     limit: int = 10,
 ) -> dict[str, Any]:
     """List recent Agnes video-generation jobs (read-only)."""
-    import asyncio
+    from brandly_cli.async_compat import run_async
 
     try:
         from brandly_cli.agnes_client import list_jobs
 
-        return {"jobs": asyncio.run(list_jobs(status=status, limit=limit))}
+        return {"jobs": run_async(list_jobs(status=status, limit=limit))}
     except Exception as e:
         return {"error": f"list_jobs: {e}"}
 
@@ -120,12 +120,12 @@ def _generate_image(
     ratio: str = "16:9",
 ) -> dict[str, Any]:
     """Generate a single Agnes image.  Synchronous wrapper over async."""
-    import asyncio
+    from brandly_cli.async_compat import run_async
 
     try:
         from brandly_cli.agnes_client import generate_image
 
-        return asyncio.run(
+        return run_async(
             generate_image(prompt, model=model, size=size, ratio=ratio)
         )
     except Exception as e:
@@ -225,7 +225,7 @@ def _run_gate(
     root: str | None = None,
 ) -> dict[str, Any]:
     """Run the deterministic quality gate on a clip (no AI, offline)."""
-    import asyncio
+    from brandly_cli.async_compat import run_async
 
     try:
         from brandly_cli.quality_gate import verify_element
@@ -233,7 +233,7 @@ def _run_gate(
 
         root_path = Path(root or ".").resolve()
         _, media = deps.require_clip_media(root_path, project_id, clip_id)
-        result = asyncio.run(
+        result = run_async(
             verify_element(
                 media,
                 use_ai=False,

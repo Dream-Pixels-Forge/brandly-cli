@@ -27,12 +27,10 @@ from brandly_cli import layout
 #: ``.brandly/<p>/images/<cat>`` → ``pre-production/<p>/<cat>``
 _IMAGE_TO_PREPRODUCTION = True
 
-#: legacy ``videos/<cat>`` → v2 ``production/<p>/videos/<cat>`` with the
-#: issue's folder names (transition → transitions, insert → inserts).
-_VIDEO_CATEGORY_RENAME: dict[str, str] = {
-    "transition": "transitions",
-    "insert": "inserts",
-}
+#: legacy ``videos/<cat>`` → v2 ``production/<p>/videos/<cat>`` — the
+#: LAYOUT's declared (singular) categories are kept verbatim (issue #283:
+#: the previous singular→plural rename created duplicate
+#: transition/transitions and insert/inserts trees with split content).
 
 AUDIO_TOP = "audio"
 
@@ -41,13 +39,7 @@ def _top_dest(root: Path, project_id: str, top: str, category: str) -> Path:
     if top == "images":
         return root / "pre-production" / project_id / category
     if top == "videos":
-        return (
-            root
-            / "production"
-            / project_id
-            / "videos"
-            / _VIDEO_CATEGORY_RENAME.get(category, category)
-        )
+        return root / "production" / project_id / "videos" / category
     return root / "production" / project_id / AUDIO_TOP / category
 
 

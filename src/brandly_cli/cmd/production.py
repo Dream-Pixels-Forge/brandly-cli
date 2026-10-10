@@ -99,6 +99,29 @@ from brandly_cli.video_prompts import build_enhanced_video_prompt
     "--platforms", "-p", multiple=True, help="Target platforms (tiktok, instagram, youtube, all)"
 )
 @click.option("--image", "-img", default=None, help="Optional product image path")
+@click.option(
+    "--category",
+    "product_category",
+    default=None,
+    help="Product category for trend research (issue #273) — style and "
+    "category are different axes. Choices: beauty, fashion, fitness, food, tech.",
+)
+@click.option(
+    "--target-duration",
+    "target_duration",
+    default=None,
+    type=int,
+    help="Requested film duration in seconds (issue #276) — drives the "
+    "script phase's shot plan and the film-level duration truth report.",
+)
+@click.option(
+    "--storyboards",
+    "storyboards",
+    is_flag=True,
+    default=False,
+    help="Run the storyboard keyframe pass in the asset phase before any "
+    "video spend (issue #281) — a failing keyframe blocks that shot's video.",
+)
 @click.pass_context
 def init(
     ctx: click.Context,
@@ -109,6 +132,9 @@ def init(
     shots: int,
     platforms: tuple[str, ...],
     image: str | None,
+    product_category: str | None,
+    target_duration: int | None,
+    storyboards: bool,
 ) -> None:
     """Start a new Brandly video project."""
     if style not in VIDEO_STYLES:
@@ -141,6 +167,9 @@ def init(
         shot_count=shots,
         budget=budget,
         target_platforms=list(platforms) if platforms else ["tiktok", "instagram"],
+        product_category=(product_category or None),
+        target_duration=target_duration,
+        storyboards=storyboards,
     )
     proj = proj.model_copy(update={"layout_version": 2})
     run_async(pm.create(proj))
@@ -159,6 +188,12 @@ def init(
     console.print(f"  Name:      {name}")
     console.print(f"  Style:     {style}")
     console.print(f"  Shots:     {shots}")
+    if product_category:
+        console.print(f"  Category:  {product_category}")
+    if target_duration:
+        console.print(f"  Target:    {target_duration}s film")
+    if storyboards:
+        console.print("  Storyboards: enabled (keyframe pass before video spend)")
     console.print(f"  Budget:    {budget} credits")
     console.print(f"  Platforms: {proj.target_platforms}")
     console.print(
@@ -205,6 +240,16 @@ def status(ctx: click.Context, project_id: str, root: str | None) -> None:
         "created_at": proj.created_at,
         "updated_at": proj.updated_at,
     }
+    # Issue #276: film-level duration truth — the target vs the measured
+    # total (G7-style, data-honest: '—' when nothing is measured yet).
+    target_duration = getattr(proj, "target_duration", None)
+    if target_duration:
+        measured = _film_measured_seconds(root_path, proj.id)
+        summary["duration_truth"] = (
+            f"target {target_duration}s, measured {measured}s"
+            if measured is not None
+            else f"target {target_duration}s, measured —"
+        )
     _print_project_summary(summary, root=root_path)
 
 @click.command(name="list")
@@ -281,6 +326,18 @@ def list_projects(ctx: click.Context) -> None:
         "'all' = judge every clip. Needs AGNES_API_KEY."
     ),
 )
+@click.option(
+    "--agent-runner",
+    "agent_runner_name",
+    type=click.Choice(["agnes", "off"]),
+    default="agnes",
+    show_default=True,
+    help=(
+        "The agent runner for agent-derived phases (issue #277): 'agnes' "
+        "drives the concept phase with the Agnes text model (needs "
+        "AGNES_API_KEY); 'off' fails honestly when a phase needs a runner."
+    ),
+)
 @click.pass_context
 def run(
     ctx: click.Context,
@@ -289,6 +346,7 @@ def run(
     until_phase: str | None,
     yes: bool,
     gate_ai: str,
+    agent_runner_name: str = "agnes",
 ) -> None:
     """Run the next phase of the pipeline.
 
@@ -324,7 +382,13 @@ def run(
                 "spends credits.",
                 abort=True,
             )
-        director = Director(DirectorConfig(root, gate_ai=gate_ai))
+        # Issue #277: the default path DRIVES the concept phase — the agnes
+        # runner derives it from the brief (fail-honest without a key per
+        # G11); 'off' keeps the external-agent workflow.
+        agent_runner = _agnes_concept_runner if agent_runner_name == "agnes" else None
+        director = Director(
+            DirectorConfig(root, gate_ai=gate_ai, agent_runner=agent_runner)
+        )
         result = run_async(director.run_pipeline(project_id, until=until_phase))
         if "error" in result:
             console.print(
@@ -359,6 +423,16 @@ def run(
         return
 
     current = proj.current_phase
+    if current not in PHASE_ORDER:
+        # Issue #270: a poisoned state file (e.g. current_phase='video', the
+        # pre-fix produce-runner sync value) must not crash the CLI with a
+        # raw ValueError — fail-honest (G11) with a repair hint.
+        console.print(
+            f"[red]✗ current_phase '{current}' is not a pipeline phase — "
+            f"repair with `brandly approve {project_id} asset` or edit "
+            f"project.json (valid phases: {', '.join(PHASE_ORDER)})[/red]"
+        )
+        sys.exit(1)
     console.print(f"[bold]Running phase:[/bold] {current}")
     console.print(f"[dim]Agent: {PHASE_ORDER.index(str(current)) + 1}/{len(PHASE_ORDER)}[/dim]")  # type: ignore[arg-type]
 
@@ -511,6 +585,16 @@ def approve(ctx: click.Context, project_id: str, phase: str) -> None:
         sys.exit(1)
     if proj.status == "cancelled":
         console.print("[red]Cannot approve — project is cancelled.[/red]")
+        sys.exit(1)
+    if proj.current_phase not in PHASE_ORDER:
+        # Issue #270: a poisoned state file must surface the repair hint,
+        # never a raw traceback or a bare "not the current phase" without a
+        # way back (G11 fail-honest).
+        console.print(
+            f"[red]✗ current_phase '{proj.current_phase}' is not a pipeline "
+            f"phase — repair with `brandly approve {project_id} asset` or "
+            f"edit project.json (valid phases: {', '.join(PHASE_ORDER)})[/red]"
+        )
         sys.exit(1)
     if proj.current_phase != phase:
         console.print(f"[red]Current phase is '{proj.current_phase}', not '{phase}'.[/red]")
@@ -1525,8 +1609,8 @@ def storyboard(
     Pipeline (issue #33): Reference Import → Storyboard (1-2 credits) →
     Gate → Video Generation (20 credits) → Gate. A keyframe that fails the
     offline composition check is flagged so composition/character errors are
-    caught at image cost, not video cost. Approved keyframes are stored
-    under .brandly/<project>/images/storyboard/ with the canonical
+    caught at image cost, not video cost. Approved keyframes are stored under
+    pre-production/<project>/storyboard/ (the v2 media tree) with the canonical
     Scene-XX-Shot-X-Y name and can be re-used as references for the video
     pass. The run is resumable: an approved keyframe skips regeneration
     (.brandly/<project>/docs/tmp/storyboard_progress.txt).
@@ -2095,6 +2179,17 @@ PHASE_HANDOFF_SPECS: dict[str, dict[str, Any]] = {
             "exit_codes": "0 = phase recorded; concept artifact exists (non-empty docs/plan/concept.md)",
         },
     },
+    "screenplay": {
+        # Issue #280: the screenplay is a produced document (a phase in the
+        # chain) — the film's core shots; inserts/transitions are optional
+        # cinematic elements the Director may add.
+        "inputs": ["product brief (project.json)", "agent runner", "docs/plan/concept.md"],
+        "outputs": ["docs/plan/screenplay.md"],
+        "gate": {
+            "command": "brandly approve <project_id> screenplay",
+            "exit_codes": "0 = phase approved; docs/plan/screenplay.md non-empty (approve fails closed otherwise)",
+        },
+    },
     "script": {
         "inputs": ["docs/plan/concept.md", "product brief (project.json)"],
         "outputs": ["shots.json"],
@@ -2166,7 +2261,8 @@ def phase_costs(style: str, shot_count: int) -> dict[str, int]:
         "init": 0,
         "trends": 10,
         "concept": round(total_base * 0.15),
-        "script": round(total_base * 0.20),
+        "screenplay": round(total_base * 0.10),
+        "script": round(total_base * 0.15),
         "asset": round(total_base * 0.25),
         "audio": round(total_base * 0.15),
         "re_edit": 20,
@@ -2185,6 +2281,112 @@ def _phase_status(project: Any, phase: str) -> tuple[str, str | None]:
     status = str(getattr(entry, "status", "pending") or "pending")
     error = getattr(entry, "error", None)
     return status, (str(error) if error else None)
+
+
+def _agnes_concept_runner(prompt: str) -> str:
+    """Issue #277: the default agent runner for agent-derived phases.
+
+    Prompts the Agnes text model with the phase prompt and returns its
+    markdown. Fails honestly (G11) on a missing key or empty content —
+    never a fake pass. The dual-context helper keeps it loop-safe on the
+    pipeline path.
+    """
+    import os
+
+    if not os.getenv("AGNES_API_KEY"):
+        raise RuntimeError(
+            "AGNES_API_KEY is not set — the agent-derived phase cannot run. "
+            "Set the key, write the phase document yourself, then continue "
+            "the pipeline (or re-run with --agent-runner off for the exact "
+            "fail-honest behavior)."
+        )
+    from brandly_cli.agnes_client import chat_completion
+
+    data = run_async(
+        chat_completion(
+            [{"role": "user", "content": prompt}],
+            model=DEFAULT_AGNES_TEXT_MODEL,
+        )
+    )
+    msg = (data.get("choices") or [{}])[0].get("message") or {}
+    content = str(msg.get("content") or "").strip()
+    if not content:
+        raise RuntimeError(
+            "the Agnes text model returned no content — the phase document "
+            "cannot be derived (fail-honest, G11)"
+        )
+    return content
+
+
+def plan_shots_for_target(
+    target_seconds: int, beat_durations: dict[str, int]
+) -> tuple[list[tuple[str, int]] | None, str | None]:
+    """#276: derive a shot plan that HITS the requested film duration.
+
+    Each shot takes its beat's duration (the beat map IS the reliable window
+    per G7); the remainder is distributed into shots that can still grow, and
+    the LAST beat repeats so a closing shot is never wrapped back to setup
+    (#274). Returns ``(plan, None)`` or ``(None, honest error)`` when the
+    target cannot be met inside the 3-10 shot envelope.
+    """
+    beats = list(beat_durations.keys())
+    window_max = max(beat_durations.values())
+
+    def base_sum(count: int) -> int:
+        return sum(
+            beat_durations[beats[min(i, len(beats) - 1)]] for i in range(count)
+        )
+
+    count: int | None = None
+    for candidate in range(3, 11):
+        if base_sum(candidate) <= target_seconds <= candidate * window_max:
+            count = candidate
+            break
+    if count is None:
+        reachable = [
+            (c, base_sum(c), c * window_max) for c in range(3, 11)
+        ]
+        envelope = " / ".join(f"{lo}-{hi}s" for _, lo, hi in reachable[:2])
+        return None, (
+            f"target duration {target_seconds}s cannot be met within the "
+            f"reliable shot window (3-10 shots; e.g. {envelope}). "
+            "Lower the target or drop --target-duration."
+        )
+
+    plan: list[tuple[str, int]] = [
+        (beats[min(i, len(beats) - 1)], beat_durations[beats[min(i, len(beats) - 1)]])
+        for i in range(count)
+    ]
+    remainder = target_seconds - sum(d for _, d in plan)
+    idx = len(plan) - 1
+    while remainder > 0 and idx >= 0:
+        beat, dur = plan[idx]
+        if dur < window_max:
+            grow = min(window_max - dur, remainder)
+            plan[idx] = (beat, dur + grow)
+            remainder -= grow
+        idx -= 1
+    return plan, None
+
+
+def _film_measured_seconds(root: Path, project_id: str) -> int | None:
+    """#276: the film's measured total from the G7 duration truth timeline.
+
+    Returns None when no clip has been measured yet (data-honest: status
+    shows '—', never a fabricated number)."""
+    try:
+        timeline = shot_runner.get_timeline(str(root), project_id)
+    except Exception:
+        return None
+    measured: list[float] = []
+    for entry in timeline:
+        if isinstance(entry, dict):
+            value = entry.get("measured_s")
+            if value is not None:
+                measured.append(float(value))
+    if not measured:
+        return None
+    return int(round(sum(measured)))
 
 
 MAX_PHASE_ATTEMPTS = 3  # bounded re-dispatch: escalate to a human gate after this (G7 PR G)
@@ -2704,6 +2906,65 @@ class Director:
 
         return {"phase": phase, "next_phase": next_phase, "result": result}
 
+    def _run_storyboard_pass(self, proj: Any, shots_data: Any) -> list[str]:
+        """Issue #281: the asset-phase keyframe pass (issue #33's pipeline).
+
+        Generates one keyframe per shot into the v2 storyboard tree
+        (``pre-production/<id>/storyboard/``, canonical Scene-XX-Shot-X-Y
+        names) and gates each deterministically. Returns the ids of BLOCKED
+        shots — a failed keyframe blocks that shot's video spend (never a
+        silent skip, never a video credit on a failed composition).
+        """
+        from brandly_cli import quality_gate
+
+        root = Path(self.cfg.root)
+        images_dir = layout.resolve_media_root(root, proj.id, "images")
+        storyboard_dir = images_dir / "storyboard"
+        try:
+            shots = shot_runner.flatten_shots(shots_data, images_dir, character=None)
+        except (ValueError, FileNotFoundError) as e:
+            # Fail-honest: a shot list that cannot be flattened produces no
+            # keyframes and no video spend.
+            raise RuntimeError(f"storyboard pass could not flatten the shot list: {e}") from e
+
+        blocked: list[str] = []
+        for shot in shots:
+            keyframe_prompt = f"{shot.prompt}\n\n{STORYBOARD_INSTRUCTION}"
+            try:
+                result = run_async(generate_image(keyframe_prompt))
+            except Exception as e:
+                console.print(f"[dim]{shot.id}: keyframe generation failed: {e}[/dim]")
+                blocked.append(shot.id)
+                continue
+            url = result.get("url") if isinstance(result, dict) else None
+            if not url:
+                console.print(f"[dim]{shot.id}: no keyframe URL returned[/dim]")
+                blocked.append(shot.id)
+                continue
+            storyboard_dir.mkdir(parents=True, exist_ok=True)
+            dest = storyboard_dir / shot.clip_name.replace(".mp4", ".jpg")
+            try:
+                run_async(download_file(url, dest))
+            except Exception as e:
+                console.print(f"[dim]{shot.id}: keyframe download failed: {e}[/dim]")
+                blocked.append(shot.id)
+                continue
+            gate_result = run_async(
+                quality_gate.verify_element(
+                    dest,
+                    use_ai=False,
+                    root=root,
+                    project_id=proj.id,
+                    write_report=True,
+                )
+            )
+            if gate_result.status == quality_gate.FAIL:
+                console.print(
+                    f"[red]✗ {shot.id}: composition gate FAIL — video spend blocked[/red]"
+                )
+                blocked.append(shot.id)
+        return blocked
+
     async def _run_phase_real(self, phase: str, proj: Any) -> dict[str, Any]:
         """Execute the real work for a pipeline phase."""
         from brandly_cli.constants import SHOT_COSTS
@@ -2717,11 +2978,29 @@ class Director:
             return {"message": "Project initialized"}
 
         if phase == "trends":
-            from brandly_cli.trends import research_trends
+            from brandly_cli.trends import list_categories, research_trends
 
-            # #259: the project's style is the research category — never the
-            # hardcoded "commercial".
-            category = (proj.style or "commercial").strip().lower()
+            # #273: style and category are different axes — the research
+            # category is the project's PRODUCT category (TREND_DATABASE is
+            # keyed by product category; a style like 'cinematic' matches
+            # nothing). A zero-format document is never written as success
+            # (G11 fail-honest).
+            category = (getattr(proj, "product_category", "") or "").strip().lower()
+            if not category:
+                return {
+                    "error": (
+                        "trends phase needs a product category — set one with "
+                        "`brandly init --category <category>` or edit project.json "
+                        f"(available: {', '.join(list_categories())})"
+                    )
+                }
+            if category not in list_categories():
+                return {
+                    "error": (
+                        f"product category '{category}' has no trend data — "
+                        f"available: {', '.join(list_categories())}"
+                    )
+                }
             results = await research_trends(category)
 
             # #259: the trends document is a real output of this phase.
@@ -2733,9 +3012,18 @@ class Director:
             )
             trends_path.parent.mkdir(parents=True, exist_ok=True)
             formats = results.get("trending_formats", [])
+            if not formats:
+                # #273: never write a heading-only document as success.
+                return {
+                    "error": (
+                        f"trends research returned no formats for '{category}' — "
+                        "nothing was written; check the category"
+                    )
+                }
             lines = [
                 f"# Trending formats — {category}",
                 "",
+                f"Product category: {category}",
                 f"Recommended style: {proj.style}",
                 "",
             ]
@@ -2796,6 +3084,66 @@ class Director:
                 "moodboard": "optional",
             }
 
+        if phase == "screenplay":
+            # #280: the screenplay is a PRODUCED document — the phase derives
+            # it from the brief + concept via the agent runner (fail-honest
+            # without one, G11). It defines the film's core shots; inserts and
+            # transitions are additional cinematic elements the Director may
+            # add (they route to the videos tree's insert/transition folders).
+            brief = (getattr(proj, "description", "") or "").strip()
+            if not brief:
+                return {
+                    "error": (
+                        "screenplay phase requires a project brief — project.json "
+                        "has no description. Set one, then re-run the screenplay "
+                        "phase."
+                    )
+                }
+            runner = self.cfg.agent_runner
+            if runner is None:
+                return {
+                    "error": (
+                        "screenplay phase needs an agent runner — none is wired. "
+                        "Derive the screenplay from the brief + concept with an "
+                        "agent, write docs/plan/screenplay.md, then continue the "
+                        "pipeline (or re-run with the default --agent-runner agnes)."
+                    )
+                }
+            screenplay_prompt = (
+                "Write a short production screenplay for this film. It defines "
+                "the CORE SHOTS of the film (scene headings, action, shot "
+                "intent). Transitions and inserts are optional cinematic "
+                "elements — include them only where they add cinema.\n\n"
+                f"Brief: {brief}\n\n"
+                f"Style: {proj.style}\n\n"
+                f"Shots: {proj.shot_count}\n\n"
+            )
+            concept_file = (
+                layout.resolve_project_dir(self.cfg.root, proj.id)
+                / "docs"
+                / "plan"
+                / "concept.md"
+            )
+            if concept_file.is_file():
+                concept_text = concept_file.read_text(encoding="utf-8").strip()
+                if concept_text:
+                    screenplay_prompt += f"Concept:\n{concept_text}\n\n"
+            screenplay_md = runner(screenplay_prompt)
+            if not isinstance(screenplay_md, str) or not screenplay_md.strip():
+                return {"error": "agent runner returned an empty screenplay"}
+            screenplay_path = (
+                layout.resolve_project_dir(self.cfg.root, proj.id)
+                / "docs"
+                / "plan"
+                / "screenplay.md"
+            )
+            screenplay_path.parent.mkdir(parents=True, exist_ok=True)
+            screenplay_path.write_text(screenplay_md + "\n", encoding="utf-8")
+            return {
+                "screenplay_path": str(screenplay_path),
+                "message": "Screenplay written",
+            }
+
         if phase == "script":
             from brandly_cli.video_prompts import CAMERA_MOVES, build_single_shot_prompt
 
@@ -2834,22 +3182,35 @@ class Director:
 
             cameras = list(CAMERA_MOVES)
 
-            # G12: Narrative beats — derive durations from beat role
-            # Beat-to-duration mapping (4-6s reliable window per G7)
-            beat_durations = {
-                "setup": 4,
-                "turn": 5,
-                "consequence": 5,
-                "resolve": 6,
-            }
-            beats = list(beat_durations.keys())
+            # G12 + #274: Narrative beats — the beat map has ONE home
+            # (scenes.BEAT_DURATIONS); the local conflicting copy is gone.
+            from brandly_cli.scenes import BEAT_DURATIONS
+
+            # #276: when a target duration is set, the script phase derives
+            # the shot plan to HIT it (every shot stays inside the beat's
+            # reliable window per G7); a target that cannot be met fails
+            # honestly with the proposed envelope.
+            target = getattr(proj, "target_duration", None)
+            shot_plan: list[tuple[str, int]]
+            if target:
+                plan, plan_error = plan_shots_for_target(int(target), BEAT_DURATIONS)
+                if plan is None or plan_error:
+                    return {"error": plan_error or "could not plan the target duration"}
+                shot_plan = plan
+            else:
+                # #274: cycle until all four beats are placed, then repeat the
+                # LAST beat — a closing shot is never wrapped back to setup.
+                beat_cycle = list(BEAT_DURATIONS.keys())
+                shot_plan = [
+                    (
+                        beat_cycle[min(i - 1, len(beat_cycle) - 1)],
+                        BEAT_DURATIONS[beat_cycle[min(i - 1, len(beat_cycle) - 1)]],
+                    )
+                    for i in range(1, proj.shot_count + 1)
+                ]
 
             shot_list: list[dict[str, Any]] = []
-            for i in range(1, proj.shot_count + 1):
-                # Distribute beats across shots
-                beat = beats[(i - 1) % len(beats)]
-                shot_duration = beat_durations[beat]
-
+            for i, (beat, shot_duration) in enumerate(shot_plan, start=1):
                 shot_list.append(
                     {
                         "id": f"shot-{i}",
@@ -2874,9 +3235,9 @@ class Director:
                 )
 
             # G12: Enforce completeness contract — all four beats must be present
-            if proj.shot_count >= 4:
+            if len(shot_plan) >= 4:
                 present_beats = {shot["beat"] for shot in shot_list}
-                required_beats = set(beat_durations.keys())
+                required_beats = set(BEAT_DURATIONS.keys())
                 missing = required_beats - present_beats
                 if missing:
                     return {
@@ -2918,6 +3279,23 @@ class Director:
             # Goal 3: register the scene manifest BEFORE any generation
             # begins — scenes.json is the source of truth for the scene gate.
             manifest = scenes.write_scenes(proj.id, shots_data, root=self.cfg.root)
+
+            # Issue #281: with storyboards enabled, the keyframe pass runs
+            # BEFORE any video spend — a failing keyframe blocks that shot's
+            # video generation (composition errors caught at image cost, per
+            # issue #33's pipeline: Storyboard → Gate → Video).
+            if getattr(proj, "storyboards", False):
+                blocked = self._run_storyboard_pass(proj, shots_data)
+                if blocked:
+                    return {
+                        "error": (
+                            f"storyboard gate blocked {len(blocked)} shot(s) "
+                            f"({', '.join(sorted(blocked))}) — fix the keyframe(s) "
+                            "and re-run the asset phase; no video credits were "
+                            "spent"
+                        ),
+                        "blocked_shots": sorted(blocked),
+                    }
 
             # Drive the real produce runner (shot_runner): Scene-XX-Shot-X-Y
             # naming, identity anchors, retries, production-plan rows, cost
@@ -3287,7 +3665,18 @@ class Director:
         if not proj:
             raise ValueError(f"Project not found: {project_id}")
 
-        current_idx = PHASE_ORDER.index(str(proj.current_phase))  # type: ignore[arg-type]
+        current_phase = str(proj.current_phase)
+        if current_phase not in PHASE_ORDER:
+            # Issue #270: a poisoned state file returns a structured error
+            # (the retry envelope renders it) — never a raw ValueError.
+            return {
+                "error": (
+                    f"current_phase '{current_phase}' is not a pipeline phase "
+                    f"— repair with `brandly approve {project_id} asset` or "
+                    f"edit project.json (valid phases: {', '.join(PHASE_ORDER)})"
+                )
+            }
+        current_idx = PHASE_ORDER.index(current_phase)  # type: ignore[arg-type]
         stop_idx = PHASE_ORDER.index(until) if until else len(PHASE_ORDER) - 1  # type: ignore[arg-type]
         results = []
         for phase in PHASE_ORDER[current_idx : stop_idx + 1]:

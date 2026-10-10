@@ -61,6 +61,74 @@ All notable changes to this project are documented here.
 - **`brandly-casting` bundled Agent Skill**: the casting pipeline — **cast from production bible → try wardrobe → character sheet from cast**. Per character, the skill generates the cast set (character image hero `3:2`, portrait headshot `3:4`, full-body portrait for wardrobe `2:3`), then wardrobe variations (image-to-image via project auto-refs, one per bible-listed outfit), then the GOLD character reference plate (16:9 multi-view) from the cast. Ships inside the wheel (`brandly_cli/skills/brandly-casting/`) — pip users get the same skill. Prompt templates in `references/prompt-variants.md`; cast paths follow the real layout (`pre-production/<id>/character/`, `char_` prefix convention — auto-injectable + resolvable by stem); pacing respects the image RPM table (2K: 10 RPM) and never bypasses the 1 req/min production limit.
 - `skills/README.md` skill map gains the `brandly-casting` row.
 
+## [0.13.0] - 2026-10-10
+
+### Added — GOAL-OPEN-ISSUES-270-283 program (13 issues closed, goal-met audit MET)
+
+- **Screenplay producer (#280)**: a `screenplay` phase joins the pipeline
+  (concept → **screenplay** → script; PHASE_ORDER 10 → 11) — derives the
+  screenplay from the brief + concept via the agent runner (fail-honest
+  without one, G11) and writes `docs/plan/screenplay.md`;
+  `brandly approve <id> screenplay` fails closed on a missing/empty
+  document; the plan/spec/cost tables carry the row.
+- **`--target-duration` drives the film (#276)**: `brandly init
+  --target-duration <seconds>` → stored in project.json; the script phase
+  derives the shot plan to HIT the target (`plan_shots_for_target`:
+  beat-window durations + remainder distribution inside the 4–6s reliable
+  window; impossible targets fail honest with the envelope); `brandly
+  status` reports film-level duration truth (target vs measured, `—` when
+  nothing measured).
+- **Default agent runner (#277)**: `brandly run --agent-runner agnes|off`
+  (default agnes) — the Agnes text model derives agent-driven phases
+  (concept) from the brief; fail-honest (G11) on a missing key or empty
+  content — the CLI alone now passes concept.
+- **Wardrobe reference category (#282)**: `brandly reference
+  --subject-type wardrobe` + a garment-only flat-lay template (no person,
+  no mannequin body, color/material legible); plates land in
+  `pre-production/<id>/wardrobe/` with the `wardrobe_` prefix.
+- **`brandly reference --json` (#278)**: machine-readable result (parity
+  with `brandly image --json`); the reference/storyboard docstrings state
+  the real v2 paths and the real `IMAGE_NAME_PREFIXES` prefixes.
+- **Storyboards in the automated pipeline (#281)**: `brandly init
+  --storyboards` → the asset phase runs the keyframe pass first (generate
+  → download → deterministic composition gate →
+  `pre-production/<id>/storyboard/`); a FAILING keyframe blocks that
+  shot's video spend (issue #33's pipeline: Storyboard → Gate → Video).
+
+### Fixed
+
+- **GOLD reference no longer silently dropped (#271)**: the pipeline path
+  and the agent-tool loop run inside a running event loop — the bare
+  `asyncio.run` sites (`cli._load_project_reference`, the 5 `agent_tools`
+  handlers, the web helpers) now go through `async_compat.run_async`;
+  `brandly video`'s metadata lookup searches the real plate path with the
+  real prefix (the dead `images/<category>` depth is gone).
+- **Poisoned phase state (#270)**: the produce runner syncs
+  `current_phase="asset"` (never the invalid `"video"`); the three
+  `.index()` sites (`run`/`approve`/`run --execute`) fail honest with a
+  repair hint — a poisoned state file never crashes the CLI with a raw
+  traceback.
+- **Gate-before-promotion (#275)**: a gate-FAILED reference plate is never
+  promoted to `primary_reference`; the metadata records
+  `gate_status`/`gate_score` so consumers can fail-honest (the `--image`
+  import path got the same treatment).
+- **Layout contract (#272 #283)**: a relative `--output` resolves against
+  `--root` (never the CLI cwd); `migrate` keeps the layout's singular
+  video categories (no duplicate `transition/transitions` trees); clips
+  route by the shot's folder (`videos/insert/`, `videos/transition/`).
+- **Trends truth (#273)**: style and category are different axes —
+  `brandly init --category <c>`; the trends phase researches the PRODUCT
+  category (TREND_DATABASE is keyed by category); missing/unknown category
+  fails honest — a zero-format document is never written as success.
+- **One beat-duration source (#274)**: the script phase consumes
+  `scenes.BEAT_DURATIONS` (the local conflicting dict deleted); a closing
+  shot repeats the last beat — never wrapped back to `setup`.
+
+### Housekeeping
+
+- 35 proven-merged remote branches deleted (per-branch proof: merged PRs
+  + distinctive symbols); the repo carries `main` only.
+
 ## [Unreleased]
 
 ## [0.10.2] - 2026-10-04

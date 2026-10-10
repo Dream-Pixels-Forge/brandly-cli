@@ -64,3 +64,4 @@ web/preview.png
 
 # web/ is npm-managed (AGENTS.md web gates use `npm --prefix web`) — never a pnpm lock
 web/pnpm-lock.yaml
+demo/

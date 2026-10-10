@@ -1,5 +1,30 @@
 # Pipeline Progress — brandly-cli
 
+## Round 28/256 — Release v0.13.0: code + GitHub + PyPI all verified as latest
+
+- [x] **Release prep (PR #289 → `fbb8565`, all 4 CI checks green):**
+      `__about__.py` 0.12.1 → 0.13.0 (single source — hatch dynamic
+      versioning propagates to wheel/sdist, CLI --version, MCP server, web
+      config API); CHANGELOG `[0.13.0]` entry (GOAL-OPEN-ISSUES-270-283
+      program: 13 issues closed, goal-met audit MET; housekeeping).
+- [x] **Release shipped:** tag `v0.13.0` + GitHub release (the 13-fix
+      program summary) → the Release-to-PyPI workflow auto-ran (run
+      38075583574): version-check gate OK, build + twine check, trusted
+      publishing (OIDC) with PEP 740 attestations (DSSE in-toto statements
+      naming both dist files with sha256 digests), verify-installable step
+      — **all steps success**.
+- [x] **All three surfaces verified as 0.13.0:** code (`__about__.py` +
+      tag-parity version_check), GitHub release `v0.13.0` marked Latest,
+      PyPI latest = 0.13.0 (2 files: `brandly_cli-0.13.0-py3-none-any.whl`
+      + `.tar.gz`, not yanked — the project-level JSON's brief CDN lag
+      cleared on the first poll). Smoke test: fresh venv `pip install
+      brandly-cli==0.13.0` → import OK, `brandly --version` = 0.13.0.
+- [x] **Local env note:** the import-linter/rich quirk root cause (rich
+      13.9.4 flat `_live` singleton vs the 14+ nested-Live stack) was fixed
+      in this round's housekeeping — CI's fresh rich never conflicted.
+- Gates: version-check OK (tag matches source), 1573 passed / 0 failed,
+  ruff clean, mypy clean, import contracts kept, CI green on #289.
+
 ## Current State
 - Project: brandly-cli
 - Started: 2026-09-07

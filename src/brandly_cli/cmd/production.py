@@ -1545,8 +1545,8 @@ def storyboard(
     Pipeline (issue #33): Reference Import → Storyboard (1-2 credits) →
     Gate → Video Generation (20 credits) → Gate. A keyframe that fails the
     offline composition check is flagged so composition/character errors are
-    caught at image cost, not video cost. Approved keyframes are stored
-    under .brandly/<project>/images/storyboard/ with the canonical
+    caught at image cost, not video cost. Approved keyframes are stored under
+    pre-production/<project>/storyboard/ (the v2 media tree) with the canonical
     Scene-XX-Shot-X-Y name and can be re-used as references for the video
     pass. The run is resumable: an approved keyframe skips regeneration
     (.brandly/<project>/docs/tmp/storyboard_progress.txt).
@@ -2724,6 +2724,65 @@ class Director:
 
         return {"phase": phase, "next_phase": next_phase, "result": result}
 
+    def _run_storyboard_pass(self, proj: Any, shots_data: Any) -> list[str]:
+        """Issue #281: the asset-phase keyframe pass (issue #33's pipeline).
+
+        Generates one keyframe per shot into the v2 storyboard tree
+        (``pre-production/<id>/storyboard/``, canonical Scene-XX-Shot-X-Y
+        names) and gates each deterministically. Returns the ids of BLOCKED
+        shots — a failed keyframe blocks that shot's video spend (never a
+        silent skip, never a video credit on a failed composition).
+        """
+        from brandly_cli import quality_gate
+
+        root = Path(self.cfg.root)
+        images_dir = layout.resolve_media_root(root, proj.id, "images")
+        storyboard_dir = images_dir / "storyboard"
+        try:
+            shots = shot_runner.flatten_shots(shots_data, images_dir, character=None)
+        except (ValueError, FileNotFoundError) as e:
+            # Fail-honest: a shot list that cannot be flattened produces no
+            # keyframes and no video spend.
+            raise RuntimeError(f"storyboard pass could not flatten the shot list: {e}") from e
+
+        blocked: list[str] = []
+        for shot in shots:
+            keyframe_prompt = f"{shot.prompt}\n\n{STORYBOARD_INSTRUCTION}"
+            try:
+                result = run_async(generate_image(keyframe_prompt))
+            except Exception as e:
+                console.print(f"[dim]{shot.id}: keyframe generation failed: {e}[/dim]")
+                blocked.append(shot.id)
+                continue
+            url = result.get("url") if isinstance(result, dict) else None
+            if not url:
+                console.print(f"[dim]{shot.id}: no keyframe URL returned[/dim]")
+                blocked.append(shot.id)
+                continue
+            storyboard_dir.mkdir(parents=True, exist_ok=True)
+            dest = storyboard_dir / shot.clip_name.replace(".mp4", ".jpg")
+            try:
+                run_async(download_file(url, dest))
+            except Exception as e:
+                console.print(f"[dim]{shot.id}: keyframe download failed: {e}[/dim]")
+                blocked.append(shot.id)
+                continue
+            gate_result = run_async(
+                quality_gate.verify_element(
+                    dest,
+                    use_ai=False,
+                    root=root,
+                    project_id=proj.id,
+                    write_report=True,
+                )
+            )
+            if gate_result.status == quality_gate.FAIL:
+                console.print(
+                    f"[red]✗ {shot.id}: composition gate FAIL — video spend blocked[/red]"
+                )
+                blocked.append(shot.id)
+        return blocked
+
     async def _run_phase_real(self, phase: str, proj: Any) -> dict[str, Any]:
         """Execute the real work for a pipeline phase."""
         from brandly_cli.constants import SHOT_COSTS
@@ -2938,6 +2997,23 @@ class Director:
             # Goal 3: register the scene manifest BEFORE any generation
             # begins — scenes.json is the source of truth for the scene gate.
             manifest = scenes.write_scenes(proj.id, shots_data, root=self.cfg.root)
+
+            # Issue #281: with storyboards enabled, the keyframe pass runs
+            # BEFORE any video spend — a failing keyframe blocks that shot's
+            # video generation (composition errors caught at image cost, per
+            # issue #33's pipeline: Storyboard → Gate → Video).
+            if getattr(proj, "storyboards", False):
+                blocked = self._run_storyboard_pass(proj, shots_data)
+                if blocked:
+                    return {
+                        "error": (
+                            f"storyboard gate blocked {len(blocked)} shot(s) "
+                            f"({', '.join(sorted(blocked))}) — fix the keyframe(s) "
+                            "and re-run the asset phase; no video credits were "
+                            "spent"
+                        ),
+                        "blocked_shots": sorted(blocked),
+                    }
 
             # Drive the real produce runner (shot_runner): Scene-XX-Shot-X-Y
             # naming, identity anchors, retries, production-plan rows, cost

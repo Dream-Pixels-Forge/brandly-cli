@@ -35,6 +35,9 @@ class ProjectData(BaseModel):
     hooks: list[str] = Field(default_factory=list)
     settings: list[str] = Field(default_factory=list)
     target_platforms: list[str] = Field(default_factory=lambda: ["tiktok", "instagram"])
+    storyboards: bool = False
+    """Issue #281: when true, the asset phase runs the keyframe pass first —
+    a failing storyboard gate blocks that shot's video spend."""
     image_analysis: dict[str, Any] | None = None
     created_at: str = ""
     updated_at: str = ""

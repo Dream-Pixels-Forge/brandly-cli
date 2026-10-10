@@ -442,3 +442,223 @@ class TestWardrobeReference:
 
         assert layout.image_category_for_subject("wardrobe") == "wardrobe"
         assert "wardrobe" in layout.IMAGE_CATEGORIES
+
+
+# ---------------------------------------------------------------------------
+# I3 - #272: relative --output resolves against --root, not the CLI cwd
+# ---------------------------------------------------------------------------
+
+
+class TestImageOutputRootResolution:
+    def test_relative_output_resolves_against_root(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`brandly --root <tmp> image --output <rel>` writes under <tmp>/<rel>
+        - never into the CLI's cwd (#272: cast assets polluted the repo)."""
+        import base64
+        import io as _io
+        from unittest.mock import AsyncMock, patch
+
+        from PIL import Image
+
+        from brandly_cli.cli import cli
+
+        buf = _io.BytesIO()
+        Image.new("RGB", (8, 8), (200, 200, 200)).save(buf, "PNG")
+        b64_payload = base64.b64encode(buf.getvalue()).decode()
+
+        # Run from a scratch cwd - the pre-fix bug wrote into the cwd.
+        scratch = tmp_path / "scratch-cwd"
+        scratch.mkdir()
+        monkeypatch.chdir(scratch)
+
+        with patch(
+            "brandly_cli.cmd.generation.generate_image",
+            AsyncMock(return_value={"b64_json": b64_payload}),
+        ):
+            result = CliRunner().invoke(
+                cli,
+                [
+                    "--root", str(tmp_path),
+                    "image", "-p", "a test plate",
+                    "--output", "pre-production/fix-proj/character/plate.png",
+                ],
+            )
+        assert result.exit_code == 0, f"image failed: {result.output}"
+        landed = tmp_path / "pre-production" / "fix-proj" / "character" / "plate.png"
+        assert landed.exists(), f"file did not land under --root: {result.output}"
+        assert not (scratch / "pre-production").exists(), (
+            "the relative --output resolved against the CLI cwd (#272)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# I3 - #283: one video-category convention + folder routing
+# ---------------------------------------------------------------------------
+
+
+class TestVideoCategoryRouting:
+    def test_migrate_maps_singular_layout_categories(self) -> None:
+        """migrate.py must map to the LAYOUT's declared (singular) categories -
+        the plural rename created duplicate transition/transitions trees (#283)."""
+        src = _read("migrate.py")
+        assert '"transitions"' not in src, "plural rename still present in migrate.py"
+        assert '"inserts"' not in src, "plural rename still present in migrate.py"
+
+    def test_insert_and_transition_clips_route_to_their_folders(self, tmp_path: Path) -> None:
+        """RunnerConfig.move_shot_clips routes by the shot's folder -
+        insert shots land in videos/insert/, transition shots in
+        videos/transition/ (scene shots stay in videos/scenes/). Pre-fix only
+        the transition continuation path was folder-routed (#283)."""
+        from brandly_cli.shot_runner import ProgressLog, RunnerConfig, Shot
+
+        scenes_dir = tmp_path / "production" / "fix-proj" / "videos" / "scenes"
+        scenes_dir.mkdir(parents=True)
+        progress = ProgressLog(tmp_path / "progress.txt")
+
+        def _noop_generate(shot: Shot) -> tuple[bool, int, str]:  # noqa: ARG001
+            return True, 0, ""
+
+        config = RunnerConfig(
+            shots=[],
+            generate_one=_noop_generate,
+            scenes_dir=scenes_dir,
+            progress=progress,
+        )
+
+        clip_a = scenes_dir / "Scene-01-Shot-1-1.mp4"
+        clip_a.write_bytes(b"fake")
+        insert_shot = Shot(
+            id="insert-1", act="one", style="cinematic", prompt="x",
+            duration=5, scene=1, index_in_scene=1, folder="insert",
+        )
+        moved = config.move_shot_clips(insert_shot, [clip_a])
+        assert moved and moved[0] == scenes_dir.parent / "insert" / clip_a.name
+        assert (scenes_dir.parent / "insert" / clip_a.name).exists()
+
+        clip_b = scenes_dir / "Scene-01-Shot-2-1.mp4"
+        clip_b.write_bytes(b"fake")
+        transition_shot = Shot(
+            id="transition-1", act="one", style="cinematic", prompt="x",
+            duration=5, scene=1, index_in_scene=2, folder="transition",
+        )
+        moved = config.move_shot_clips(transition_shot, [clip_b])
+        assert moved and moved[0] == scenes_dir.parent / "transition" / clip_b.name
+        assert (scenes_dir.parent / "transition" / clip_b.name).exists()
+
+        clip_c = scenes_dir / "Scene-01-Shot-3-1.mp4"
+        clip_c.write_bytes(b"fake")
+        scene_shot = Shot(
+            id="scene-1", act="one", style="cinematic", prompt="x",
+            duration=5, scene=1, index_in_scene=3, folder="scenes",
+        )
+        assert config.move_shot_clips(scene_shot, [clip_c]) == [], (
+            "scene clips must stay in videos/scenes/"
+        )
+
+
+# ---------------------------------------------------------------------------
+# I3 - #281: storyboard docstring truth + the asset-phase keyframe pass
+# ---------------------------------------------------------------------------
+
+
+class TestStoryboardPipeline:
+    def test_storyboard_docstring_names_v2_path(self) -> None:
+        """The storyboard command's docstring names the v2 tree
+        (pre-production/<project>/storyboard/) - the legacy
+        .brandly/<project>/images/storyboard/ claim sends agents to a dead
+        tree (#281; the save path already resolves v2 - pinned here)."""
+        src = _read("cmd/production.py")
+        sb = src[src.index("def storyboard("):]
+        doc = sb[sb.index('"""'): sb.index('"""', sb.index('"""') + 3) + 3]
+        assert "pre-production" in doc, "storyboard docstring must name the v2 tree"
+        assert ".brandly/<project>/images/storyboard/" not in doc, (
+            "storyboard docstring still claims the legacy tree (#281)"
+        )
+
+    def _asset_phase(self, tmp_path: Path, storyboards: bool, gate_status: str = "pass"):
+        """Set up a Director asset-phase call with a shot list + mocks."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        import brandly_cli.cmd.production as production_mod
+        from brandly_cli import quality_gate as qg
+        from brandly_cli.cmd.production import Director, DirectorConfig
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import ProjectData
+
+        pid = "sb-proj"
+        proj = ProjectData(id=pid, name="SB", shot_count=2, storyboards=storyboards)
+        asyncio.run(ProjectManager(tmp_path).create(proj))
+
+        shots = {
+            "acts": {
+                "1": {
+                    "name": "one",
+                    "scene": 1,
+                    "shots": [
+                        {"id": "shot-1", "prompt": "pour the beer", "duration": 5},
+                        {"id": "shot-2", "prompt": "cheers", "duration": 5},
+                    ],
+                }
+            }
+        }
+        shots_path = tmp_path / ".brandly" / pid / "shots.json"
+        shots_path.parent.mkdir(parents=True, exist_ok=True)
+        shots_path.write_text(json.dumps(shots))
+
+        director = Director(DirectorConfig(tmp_path))
+        runner_calls: list[str] = []
+
+        def fake_produce(*args: object, **kwargs: object) -> None:
+            runner_calls.append("produce")
+
+        gen_mock = AsyncMock(return_value={"url": "https://example.invalid/k.jpg"})
+        # verify_element is async — the mock must be awaitable.
+        gate_mock = AsyncMock(
+            return_value=qg.GateResult(status=gate_status, score=90, kind="image")
+        )
+
+        def fake_download(url: str, dest: Path) -> Path:  # noqa: ARG001
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"fake-jpg")
+            return dest
+
+        async def _call():
+            with (
+                patch.object(production_mod, "_run_produce_runner", side_effect=fake_produce),
+                patch.object(production_mod, "generate_image", gen_mock),
+                patch.object(
+                    production_mod, "download_file", AsyncMock(side_effect=fake_download)
+                ),
+                patch.object(qg, "verify_element", gate_mock),
+            ):
+                return await director._run_phase_real("asset", proj)
+
+        return asyncio.run(_call()), runner_calls, gen_mock
+
+    def test_storyboard_pass_passes_gate_then_runs_video(self, tmp_path: Path) -> None:
+        """With storyboards enabled and a passing keyframe gate, the video
+        runner runs after the keyframes land in the v2 storyboard tree (#281)."""
+        result, runner_calls, gen_mock = self._asset_phase(tmp_path, storyboards=True)
+        assert runner_calls == ["produce"], (
+            f"the video runner must run after a passing keyframe pass: {result}"
+        )
+        assert gen_mock.await_count >= 2, "one keyframe per shot must be generated"
+        sb_dir = tmp_path / "pre-production" / "sb-proj" / "storyboard"
+        keyframes = list(sb_dir.glob("*.jpg"))
+        assert len(keyframes) >= 2, (
+            f"keyframes must land under {sb_dir} (v2 tree), got {keyframes}"
+        )
+
+    def test_storyboard_pass_blocks_video_on_gate_fail(self, tmp_path: Path) -> None:
+        """With storyboards enabled, a FAILING keyframe blocks the video spend -
+        composition errors caught at image cost, never video cost (#281/#33)."""
+        result, runner_calls, _ = self._asset_phase(
+            tmp_path, storyboards=True, gate_status="fail"
+        )
+        assert "error" in result, f"the failing keyframe must block the phase: {result}"
+        assert runner_calls == [], (
+            "no video credits may be spent when a keyframe fails (#281/#33)"
+        )
+        assert "no video credits were spent" in str(result["error"])

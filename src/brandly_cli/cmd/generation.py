@@ -917,6 +917,11 @@ def image(
             sys.exit(1)
 
         dest = Path(output).expanduser()
+        if not dest.is_absolute():
+            # Issue #272: a relative --output resolves against the project
+            # root (--root / $ROOT / walk-up), never the CLI's cwd — assets
+            # must land in the project tree, not wherever the CLI ran from.
+            dest = root / dest
         try:
             info = fetch_image_atomic(url or None, dest, b64_json=b64 or None)
         except ImageFetchError as e:
@@ -1202,6 +1207,10 @@ def job_poll(
 
         assert rec_path is not None  # result_available above proves it
         dest = Path(output).expanduser()
+        if not dest.is_absolute():
+            # Issue #272 (same class): relative --output resolves against the
+            # project root, never the CLI's cwd.
+            dest = root / dest
         try:
             raw = Path(rec_path).read_bytes()
             fetch_image_atomic(None, dest, b64_json=_base64.b64encode(raw).decode())

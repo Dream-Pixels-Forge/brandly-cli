@@ -662,3 +662,276 @@ class TestStoryboardPipeline:
             "no video credits may be spent when a keyframe fails (#281/#33)"
         )
         assert "no video credits were spent" in str(result["error"])
+
+
+# ---------------------------------------------------------------------------
+# I4 - #273: the trends phase researches the PRODUCT category (style != axis)
+# ---------------------------------------------------------------------------
+
+
+class TestTrendsProductCategory:
+    def test_trends_fails_honest_without_product_category(self, tmp_path: Path) -> None:
+        """A style-only project (no product_category) must NOT produce a
+        success trends phase with an empty document (#273 - the #259 fix
+        replaced one type mismatch with another)."""
+        import asyncio
+
+        from brandly_cli.cmd.production import Director, DirectorConfig
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import PhaseResult, ProjectData
+
+        pid = "trends-style-only"
+        asyncio.run(
+            ProjectManager(tmp_path).create(
+                ProjectData(id=pid, name="T", style="cinematic", shot_count=5)
+            )
+        )
+        asyncio.run(
+            ProjectManager(tmp_path).update(
+                pid, {"phases": {"trends": PhaseResult(status="pending")}, "current_phase": "trends"}
+            )
+        )
+        director = Director(DirectorConfig(tmp_path))
+        result = asyncio.run(director.run_phase(pid, "trends"))
+        assert "error" in result, f"a style-only project must fail honestly: {result}"
+        assert "product category" in str(result["error"]).lower()
+        trends_md = (
+            tmp_path / ".brandly" / pid / "docs" / "plan" / "trends.md"
+        )
+        assert not trends_md.exists() or not trends_md.read_text(encoding="utf-8").strip(), (
+            "a zero-format trends document was written as success (#273)"
+        )
+
+    def test_trends_uses_product_category_and_writes_real_data(self, tmp_path: Path) -> None:
+        """A project with a product_category researches THAT axis and writes a
+        document with real trend data (#273)."""
+        import asyncio
+
+        from brandly_cli.cmd.production import Director, DirectorConfig
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import PhaseResult, ProjectData
+
+        pid = "trends-with-category"
+        asyncio.run(
+            ProjectManager(tmp_path).create(
+                ProjectData(
+                    id=pid, name="T", style="cinematic", product_category="tech", shot_count=5
+                )
+            )
+        )
+        asyncio.run(
+            ProjectManager(tmp_path).update(
+                pid, {"phases": {"trends": PhaseResult(status="pending")}, "current_phase": "trends"}
+            )
+        )
+        director = Director(DirectorConfig(tmp_path))
+        result = asyncio.run(director.run_phase(pid, "trends"))
+        assert "error" not in result, result
+        trends_md = tmp_path / ".brandly" / pid / "docs" / "plan" / "trends.md"
+        text = trends_md.read_text(encoding="utf-8").strip()
+        assert "tech" in text
+        # Real formats from TREND_DATABASE - never a heading-only document.
+        assert len(text.splitlines()) > 3, f"trends document has no data: {text!r}"
+
+    def test_init_accepts_category_option(self, tmp_path: Path) -> None:
+        """`brandly init --category <c>` stores product_category (#273)."""
+        from brandly_cli.cli import cli
+
+        result = CliRunner().invoke(
+            cli,
+            [
+                "--root", str(tmp_path),
+                "init", "-n", "Cat Proj", "-i", "a test", "--category", "tech",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        import glob
+
+        matches = glob.glob(str(tmp_path / ".brandly" / "*" / "project.json"))
+        assert matches, "project not created"
+        data = json.loads(Path(matches[0]).read_text())
+        assert data.get("product_category") == "tech"
+
+
+# ---------------------------------------------------------------------------
+# I4 - #274: one beat-duration source; the closing shot never wraps to setup
+# ---------------------------------------------------------------------------
+
+
+class TestBeatDurationSingleSource:
+    def test_script_phase_has_no_local_beat_map(self) -> None:
+        """The script phase consumes scenes.BEAT_DURATIONS - the local
+        conflicting dict is deleted (#274)."""
+        src = _read("cmd/production.py")
+        assert 'beat_durations = {' not in src.replace("BEAT_DURATIONS", ""), (
+            "a local beat_durations dict still conflicts with scenes.BEAT_DURATIONS (#274)"
+        )
+        assert "from brandly_cli.scenes import" in src and "BEAT_DURATIONS" in src
+
+    def test_five_shot_script_matches_beat_map_and_closes_on_resolve(
+        self, tmp_path: Path
+    ) -> None:
+        """A 5-shot script (a) carries durations identical to
+        scenes.BEAT_DURATIONS and (b) never labels the closing shot 'setup'
+        (#274)."""
+        import asyncio
+
+        from brandly_cli.cmd.production import Director, DirectorConfig
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.scenes import BEAT_DURATIONS
+        from brandly_cli.types import PhaseResult, ProjectData
+
+        pid = "beats-5"
+        asyncio.run(
+            ProjectManager(tmp_path).create(
+                ProjectData(
+                    id=pid,
+                    name="B",
+                    style="cinematic",
+                    shot_count=5,
+                    description="a test brief",
+                )
+            )
+        )
+        # Seed the concept so the script phase passes its input gate.
+        concept = tmp_path / ".brandly" / pid / "docs" / "plan" / "concept.md"
+        concept.parent.mkdir(parents=True, exist_ok=True)
+        concept.write_text("# Concept\n\nA moody brewery at golden hour.\n")
+        asyncio.run(
+            ProjectManager(tmp_path).update(
+                pid, {"phases": {"script": PhaseResult(status="pending")}, "current_phase": "script"}
+            )
+        )
+        director = Director(DirectorConfig(tmp_path))
+        result = asyncio.run(director.run_phase(pid, "script"))
+        assert "error" not in result, result
+        shots = json.loads((tmp_path / ".brandly" / pid / "shots.json").read_text())
+        beats = [s["beat"] for s in shots]
+        durations = [s["duration"] for s in shots]
+        assert all(d == BEAT_DURATIONS[b] for b, d in zip(beats, durations, strict=True)), (
+            f"shot durations disagree with scenes.BEAT_DURATIONS: {list(zip(beats, durations, strict=True))}"
+        )
+        assert beats[-1] != "setup", f"the closing shot carries a setup beat: {beats}"
+        assert set(beats[:4]) == set(BEAT_DURATIONS), f"all four beats must be placed: {beats}"
+
+
+# ---------------------------------------------------------------------------
+# I4 - #276: the requested duration drives the film
+# ---------------------------------------------------------------------------
+
+
+class TestTargetDuration:
+    def test_init_accepts_target_duration(self, tmp_path: Path) -> None:
+        """`brandly init --target-duration <s>` stores target_duration (#276)."""
+        from brandly_cli.cli import cli
+
+        result = CliRunner().invoke(
+            cli,
+            [
+                "--root", str(tmp_path),
+                "init", "-n", "Target Proj", "-i", "a test",
+                "--target-duration", "30",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        import glob
+
+        matches = glob.glob(str(tmp_path / ".brandly" / "*" / "project.json"))
+        data = json.loads(Path(matches[0]).read_text())
+        assert data.get("target_duration") == 30
+
+    def test_script_hits_the_target(self, tmp_path: Path) -> None:
+        """A 30s target produces a shot list summing to ~30s with every shot
+        inside the reliable window (#276)."""
+        import asyncio
+
+        from brandly_cli.cmd.production import Director, DirectorConfig
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import PhaseResult, ProjectData
+
+        pid = "target-30"
+        asyncio.run(
+            ProjectManager(tmp_path).create(
+                ProjectData(
+                    id=pid,
+                    name="T",
+                    style="cinematic",
+                    shot_count=5,
+                    target_duration=30,
+                    description="a 30-second product presentation",
+                )
+            )
+        )
+        concept = tmp_path / ".brandly" / pid / "docs" / "plan" / "concept.md"
+        concept.parent.mkdir(parents=True, exist_ok=True)
+        concept.write_text("# Concept\n\nA clean product studio.\n")
+        asyncio.run(
+            ProjectManager(tmp_path).update(
+                pid, {"phases": {"script": PhaseResult(status="pending")}, "current_phase": "script"}
+            )
+        )
+        director = Director(DirectorConfig(tmp_path))
+        result = asyncio.run(director.run_phase(pid, "script"))
+        assert "error" not in result, result
+        shots = json.loads((tmp_path / ".brandly" / pid / "shots.json").read_text())
+        total = sum(s["duration"] for s in shots)
+        assert total == 30, f"shot durations sum to {total}, target 30 (#276)"
+        assert all(4 <= s["duration"] <= 6 for s in shots), (
+            "every shot must stay inside the 4-6s reliable window (G7)"
+        )
+        assert {s["beat"] for s in shots[:4]} == {"setup", "turn", "consequence", "resolve"}
+
+    def test_impossible_target_fails_honest_with_plan(self, tmp_path: Path) -> None:
+        """A target outside the 3-10 shot envelope fails honestly (#276)."""
+        import asyncio
+
+        from brandly_cli.cmd.production import Director, DirectorConfig
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import PhaseResult, ProjectData
+
+        pid = "target-impossible"
+        asyncio.run(
+            ProjectManager(tmp_path).create(
+                ProjectData(
+                    id=pid,
+                    name="T",
+                    style="cinematic",
+                    shot_count=5,
+                    target_duration=120,
+                    description="a two minute film",
+                )
+            )
+        )
+        concept = tmp_path / ".brandly" / pid / "docs" / "plan" / "concept.md"
+        concept.parent.mkdir(parents=True, exist_ok=True)
+        concept.write_text("# Concept\n\nA clean product studio.\n")
+        asyncio.run(
+            ProjectManager(tmp_path).update(
+                pid, {"phases": {"script": PhaseResult(status="pending")}, "current_phase": "script"}
+            )
+        )
+        director = Director(DirectorConfig(tmp_path))
+        result = asyncio.run(director.run_phase(pid, "script"))
+        assert "error" in result, "an impossible target must fail honestly (#276)"
+        assert "120" in str(result["error"])
+
+    def test_status_reports_film_duration_truth(self, tmp_path: Path) -> None:
+        """`brandly status` names the target duration (and the measured total
+        when clips exist) - the G7 truth at film level (#276)."""
+        from brandly_cli.cli import cli
+
+        pid = "status-target"
+        asyncio.run(
+            __import__("brandly_cli.project_manager", fromlist=["ProjectManager"]).ProjectManager(
+                tmp_path
+            ).create(
+                __import__("brandly_cli.types", fromlist=["ProjectData"]).ProjectData(
+                    id=pid, name="S", style="cinematic", shot_count=5, target_duration=30
+                )
+            )
+        )
+        result = CliRunner().invoke(cli, ["--root", str(tmp_path), "status", pid])
+        assert result.exit_code == 0, result.output
+        assert "30s" in result.output, (
+            f"status must name the target duration: {result.output}"
+        )

@@ -256,6 +256,9 @@ def _print_project_summary(
     table.add_row("Budget", f"{budget} credits")
     table.add_row("Spent", f"{spent} credits")
     table.add_row("Remaining", f"{remaining} credits")
+    if proj.get("duration_truth"):
+        # Issue #276: film-level duration truth (target vs measured).
+        table.add_row("Duration", str(proj["duration_truth"]))
     table.add_row("Created", proj.get("created_at", ""))
     table.add_row("Updated", proj.get("updated_at", ""))
     console.print(table)

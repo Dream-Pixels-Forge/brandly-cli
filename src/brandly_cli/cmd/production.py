@@ -99,6 +99,29 @@ from brandly_cli.video_prompts import build_enhanced_video_prompt
     "--platforms", "-p", multiple=True, help="Target platforms (tiktok, instagram, youtube, all)"
 )
 @click.option("--image", "-img", default=None, help="Optional product image path")
+@click.option(
+    "--category",
+    "product_category",
+    default=None,
+    help="Product category for trend research (issue #273) — style and "
+    "category are different axes. Choices: beauty, fashion, fitness, food, tech.",
+)
+@click.option(
+    "--target-duration",
+    "target_duration",
+    default=None,
+    type=int,
+    help="Requested film duration in seconds (issue #276) — drives the "
+    "script phase's shot plan and the film-level duration truth report.",
+)
+@click.option(
+    "--storyboards",
+    "storyboards",
+    is_flag=True,
+    default=False,
+    help="Run the storyboard keyframe pass in the asset phase before any "
+    "video spend (issue #281) — a failing keyframe blocks that shot's video.",
+)
 @click.pass_context
 def init(
     ctx: click.Context,
@@ -109,6 +132,9 @@ def init(
     shots: int,
     platforms: tuple[str, ...],
     image: str | None,
+    product_category: str | None,
+    target_duration: int | None,
+    storyboards: bool,
 ) -> None:
     """Start a new Brandly video project."""
     if style not in VIDEO_STYLES:
@@ -141,6 +167,9 @@ def init(
         shot_count=shots,
         budget=budget,
         target_platforms=list(platforms) if platforms else ["tiktok", "instagram"],
+        product_category=(product_category or None),
+        target_duration=target_duration,
+        storyboards=storyboards,
     )
     proj = proj.model_copy(update={"layout_version": 2})
     run_async(pm.create(proj))
@@ -159,6 +188,12 @@ def init(
     console.print(f"  Name:      {name}")
     console.print(f"  Style:     {style}")
     console.print(f"  Shots:     {shots}")
+    if product_category:
+        console.print(f"  Category:  {product_category}")
+    if target_duration:
+        console.print(f"  Target:    {target_duration}s film")
+    if storyboards:
+        console.print("  Storyboards: enabled (keyframe pass before video spend)")
     console.print(f"  Budget:    {budget} credits")
     console.print(f"  Platforms: {proj.target_platforms}")
     console.print(
@@ -205,6 +240,16 @@ def status(ctx: click.Context, project_id: str, root: str | None) -> None:
         "created_at": proj.created_at,
         "updated_at": proj.updated_at,
     }
+    # Issue #276: film-level duration truth — the target vs the measured
+    # total (G7-style, data-honest: '—' when nothing is measured yet).
+    target_duration = getattr(proj, "target_duration", None)
+    if target_duration:
+        measured = _film_measured_seconds(root_path, proj.id)
+        summary["duration_truth"] = (
+            f"target {target_duration}s, measured {measured}s"
+            if measured is not None
+            else f"target {target_duration}s, measured —"
+        )
     _print_project_summary(summary, root=root_path)
 
 @click.command(name="list")
@@ -2207,6 +2252,76 @@ def _phase_status(project: Any, phase: str) -> tuple[str, str | None]:
     return status, (str(error) if error else None)
 
 
+def plan_shots_for_target(
+    target_seconds: int, beat_durations: dict[str, int]
+) -> tuple[list[tuple[str, int]] | None, str | None]:
+    """#276: derive a shot plan that HITS the requested film duration.
+
+    Each shot takes its beat's duration (the beat map IS the reliable window
+    per G7); the remainder is distributed into shots that can still grow, and
+    the LAST beat repeats so a closing shot is never wrapped back to setup
+    (#274). Returns ``(plan, None)`` or ``(None, honest error)`` when the
+    target cannot be met inside the 3-10 shot envelope.
+    """
+    beats = list(beat_durations.keys())
+    window_max = max(beat_durations.values())
+
+    def base_sum(count: int) -> int:
+        return sum(
+            beat_durations[beats[min(i, len(beats) - 1)]] for i in range(count)
+        )
+
+    count: int | None = None
+    for candidate in range(3, 11):
+        if base_sum(candidate) <= target_seconds <= candidate * window_max:
+            count = candidate
+            break
+    if count is None:
+        reachable = [
+            (c, base_sum(c), c * window_max) for c in range(3, 11)
+        ]
+        envelope = " / ".join(f"{lo}-{hi}s" for _, lo, hi in reachable[:2])
+        return None, (
+            f"target duration {target_seconds}s cannot be met within the "
+            f"reliable shot window (3-10 shots; e.g. {envelope}). "
+            "Lower the target or drop --target-duration."
+        )
+
+    plan: list[tuple[str, int]] = [
+        (beats[min(i, len(beats) - 1)], beat_durations[beats[min(i, len(beats) - 1)]])
+        for i in range(count)
+    ]
+    remainder = target_seconds - sum(d for _, d in plan)
+    idx = len(plan) - 1
+    while remainder > 0 and idx >= 0:
+        beat, dur = plan[idx]
+        if dur < window_max:
+            grow = min(window_max - dur, remainder)
+            plan[idx] = (beat, dur + grow)
+            remainder -= grow
+        idx -= 1
+    return plan, None
+
+
+def _film_measured_seconds(root: Path, project_id: str) -> int | None:
+    """#276: the film's measured total from the G7 duration truth timeline.
+
+    Returns None when no clip has been measured yet (data-honest: status
+    shows '—', never a fabricated number)."""
+    try:
+        timeline = shot_runner.get_timeline(root, project_id)
+    except Exception:
+        return None
+    measured = [
+        entry.get("measured_s")
+        for entry in timeline
+        if isinstance(entry, dict) and entry.get("measured_s") is not None
+    ]
+    if not measured:
+        return None
+    return int(round(sum(float(m) for m in measured)))
+
+
 MAX_PHASE_ATTEMPTS = 3  # bounded re-dispatch: escalate to a human gate after this (G7 PR G)
 
 
@@ -2796,11 +2911,29 @@ class Director:
             return {"message": "Project initialized"}
 
         if phase == "trends":
-            from brandly_cli.trends import research_trends
+            from brandly_cli.trends import list_categories, research_trends
 
-            # #259: the project's style is the research category — never the
-            # hardcoded "commercial".
-            category = (proj.style or "commercial").strip().lower()
+            # #273: style and category are different axes — the research
+            # category is the project's PRODUCT category (TREND_DATABASE is
+            # keyed by product category; a style like 'cinematic' matches
+            # nothing). A zero-format document is never written as success
+            # (G11 fail-honest).
+            category = (getattr(proj, "product_category", "") or "").strip().lower()
+            if not category:
+                return {
+                    "error": (
+                        "trends phase needs a product category — set one with "
+                        "`brandly init --category <category>` or edit project.json "
+                        f"(available: {', '.join(list_categories())})"
+                    )
+                }
+            if category not in list_categories():
+                return {
+                    "error": (
+                        f"product category '{category}' has no trend data — "
+                        f"available: {', '.join(list_categories())}"
+                    )
+                }
             results = await research_trends(category)
 
             # #259: the trends document is a real output of this phase.
@@ -2812,9 +2945,18 @@ class Director:
             )
             trends_path.parent.mkdir(parents=True, exist_ok=True)
             formats = results.get("trending_formats", [])
+            if not formats:
+                # #273: never write a heading-only document as success.
+                return {
+                    "error": (
+                        f"trends research returned no formats for '{category}' — "
+                        "nothing was written; check the category"
+                    )
+                }
             lines = [
                 f"# Trending formats — {category}",
                 "",
+                f"Product category: {category}",
                 f"Recommended style: {proj.style}",
                 "",
             ]
@@ -2913,22 +3055,35 @@ class Director:
 
             cameras = list(CAMERA_MOVES)
 
-            # G12: Narrative beats — derive durations from beat role
-            # Beat-to-duration mapping (4-6s reliable window per G7)
-            beat_durations = {
-                "setup": 4,
-                "turn": 5,
-                "consequence": 5,
-                "resolve": 6,
-            }
-            beats = list(beat_durations.keys())
+            # G12 + #274: Narrative beats — the beat map has ONE home
+            # (scenes.BEAT_DURATIONS); the local conflicting copy is gone.
+            from brandly_cli.scenes import BEAT_DURATIONS
+
+            # #276: when a target duration is set, the script phase derives
+            # the shot plan to HIT it (every shot stays inside the beat's
+            # reliable window per G7); a target that cannot be met fails
+            # honestly with the proposed envelope.
+            target = getattr(proj, "target_duration", None)
+            shot_plan: list[tuple[str, int]]
+            if target:
+                plan, plan_error = plan_shots_for_target(int(target), BEAT_DURATIONS)
+                if plan is None or plan_error:
+                    return {"error": plan_error or "could not plan the target duration"}
+                shot_plan = plan
+            else:
+                # #274: cycle until all four beats are placed, then repeat the
+                # LAST beat — a closing shot is never wrapped back to setup.
+                beat_cycle = list(BEAT_DURATIONS.keys())
+                shot_plan = [
+                    (
+                        beat_cycle[min(i - 1, len(beat_cycle) - 1)],
+                        BEAT_DURATIONS[beat_cycle[min(i - 1, len(beat_cycle) - 1)]],
+                    )
+                    for i in range(1, proj.shot_count + 1)
+                ]
 
             shot_list: list[dict[str, Any]] = []
-            for i in range(1, proj.shot_count + 1):
-                # Distribute beats across shots
-                beat = beats[(i - 1) % len(beats)]
-                shot_duration = beat_durations[beat]
-
+            for i, (beat, shot_duration) in enumerate(shot_plan, start=1):
                 shot_list.append(
                     {
                         "id": f"shot-{i}",
@@ -2953,9 +3108,9 @@ class Director:
                 )
 
             # G12: Enforce completeness contract — all four beats must be present
-            if proj.shot_count >= 4:
+            if len(shot_plan) >= 4:
                 present_beats = {shot["beat"] for shot in shot_list}
-                required_beats = set(beat_durations.keys())
+                required_beats = set(BEAT_DURATIONS.keys())
                 missing = required_beats - present_beats
                 if missing:
                     return {

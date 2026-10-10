@@ -65,7 +65,12 @@ class TestTrendsPhase259:
     """#259: the trends phase writes its document and uses the project category."""
 
     def test_trends_writes_doc_and_uses_project_style(self, tmp_path: Path) -> None:
-        _make_project(tmp_path, style="fashion")
+        # I4 (#270-#283) alignment: #273 supersedes the #259 axis — the
+        # research category is the project's PRODUCT category (style and
+        # category are different axes; TREND_DATABASE is keyed by category).
+        # The test's intent is unchanged: the category flows from the project,
+        # never a hardcoded "commercial".
+        _make_project(tmp_path, style="fashion", product_category="fashion")
         _seed_current(tmp_path, "trends")
         director = _director(tmp_path)
         calls: list[str] = []
@@ -159,7 +164,10 @@ class TestRunUntilScript247:
     """#247: `run --execute --until script` progresses past concept."""
 
     def test_run_until_script_progresses_past_concept(self, tmp_path: Path) -> None:
-        _make_project(tmp_path)
+        # I4 (#270-#283) alignment: the trends phase now requires a product
+        # category (#273) — the chain fixture carries one so the run reaches
+        # concept/script.
+        _make_project(tmp_path, product_category="tech")
         _seed_current(tmp_path, "trends")
         director = _director(
             tmp_path, agent_runner=lambda brief: f"# Concept\n\n{brief} — world"

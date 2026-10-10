@@ -35,6 +35,12 @@ class ProjectData(BaseModel):
     hooks: list[str] = Field(default_factory=list)
     settings: list[str] = Field(default_factory=list)
     target_platforms: list[str] = Field(default_factory=lambda: ["tiktok", "instagram"])
+    product_category: str | None = None
+    """Issue #273: the product category is the trend-research axis — style
+    and category are different axes (TREND_DATABASE is keyed by category)."""
+    target_duration: int | None = None
+    """Issue #276: the requested film duration in seconds — drives the
+    script phase's shot plan and the film-level duration truth report."""
     storyboards: bool = False
     """Issue #281: when true, the asset phase runs the keyframe pass first —
     a failing storyboard gate blocks that shot's video spend."""

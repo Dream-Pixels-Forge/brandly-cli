@@ -2375,17 +2375,18 @@ def _film_measured_seconds(root: Path, project_id: str) -> int | None:
     Returns None when no clip has been measured yet (data-honest: status
     shows '—', never a fabricated number)."""
     try:
-        timeline = shot_runner.get_timeline(root, project_id)
+        timeline = shot_runner.get_timeline(str(root), project_id)
     except Exception:
         return None
-    measured = [
-        entry.get("measured_s")
-        for entry in timeline
-        if isinstance(entry, dict) and entry.get("measured_s") is not None
-    ]
+    measured: list[float] = []
+    for entry in timeline:
+        if isinstance(entry, dict):
+            value = entry.get("measured_s")
+            if value is not None:
+                measured.append(float(value))
     if not measured:
         return None
-    return int(round(sum(float(m) for m in measured)))
+    return int(round(sum(measured)))
 
 
 MAX_PHASE_ATTEMPTS = 3  # bounded re-dispatch: escalate to a human gate after this (G7 PR G)

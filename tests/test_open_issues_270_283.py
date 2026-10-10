@@ -387,7 +387,7 @@ class TestReferenceGateBeforePromotion:
         ref_body = src[src.index('def reference('):]
         # The GENERATED path is the last promotion site in the command (the
         # import path has its own, gate-less flow) — scope to it.
-        update_pos = ref_body.rfind('{"primary_reference": reference_meta}')
+        update_pos = ref_body.rfind('{"primary_reference": promotion_meta}')
         gate_pos = ref_body.find("verify_element(")
         assert update_pos > -1 and gate_pos > -1, (
             "reference command must contain both the metadata update and the gate"

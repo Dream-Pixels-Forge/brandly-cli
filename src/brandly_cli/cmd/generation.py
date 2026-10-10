@@ -548,7 +548,7 @@ def reference(
                 "regenerate before using it as a reference.[/yellow]"
             )
         else:
-            reference_meta = {
+            promotion_meta: dict[str, Any] = {
                 "subject_type": subject_type,
                 "skill": subject_skill,
                 "subject": subject,
@@ -563,7 +563,7 @@ def reference(
             pm = ProjectManager(root)
             result = asyncio.run(
                 pm.update(  # type: ignore[arg-type]
-                    project_id, {"primary_reference": reference_meta}
+                    project_id, {"primary_reference": promotion_meta}
                 )
             )
             if result is None:

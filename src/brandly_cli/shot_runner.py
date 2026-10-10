@@ -75,6 +75,7 @@ import glob
 import json
 import math
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -578,6 +579,11 @@ def cap_reference_selection(
       so the caller can warn instead of the create call hard-failing.
 
     Duplicates are collapsed so the same plate never burns two slots.
+
+    Issue #295: when the selection exceeds the cap, references are ranked by
+    ``_ref_priority`` (canonical shot-named keyframes and the plate prefixes
+    first, unknown-named files last) before capping — a scratch/debug file
+    dropped in the media tree can never displace a real reference.
     """
     unique: list[str] = []
     seen: set[str] = set()
@@ -586,8 +592,28 @@ def cap_reference_selection(
             seen.add(ref)
             unique.append(ref)
     if limit and len(unique) > limit:
-        return unique[:limit], unique[limit:]
+        ranked = sorted(enumerate(unique), key=lambda t: (_ref_priority(t[1]), t[0]))
+        kept_set = {ref for _, ref in ranked[:limit]}
+        dropped = [ref for _, ref in ranked[limit:]]
+        kept = [ref for ref in unique if ref in kept_set]
+        return kept, dropped
     return unique, []
+
+
+def _ref_priority(ref: str) -> int:
+    """Priority rank for the reference cap — lower wins (issue #295).
+
+    Canonical shot-named keyframes/clips (``Scene-XX-Shot-X-Y*``) rank first,
+    then the plate prefixes (``char_``/``loc_``/``prop_``/``wardrobe_``);
+    unknown-named files rank last so junk never displaces real references.
+    """
+    name = Path(ref).name.lower()
+    if re.match(r"^scene-\d{2}-shot-\d+", name):
+        return 0
+    for prefix in ("char_", "loc_", "prop_", "wardrobe_"):
+        if name.startswith(prefix):
+            return 1
+    return 9
 
 
 def _ref_entries(shot: dict[str, Any], act: dict[str, Any], data: dict[str, Any]) -> list[str]:

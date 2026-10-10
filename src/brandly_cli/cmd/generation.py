@@ -1833,6 +1833,21 @@ def video(
             status="FAILED",
             source="brandly video",
         )
+        # Issue #294: persist the create-failure detail to docs/tmp/ (the
+        # transient-doc convention) so the pipeline's asset phase can
+        # classify provider saturation (503 video_queue_full / ReadTimeout)
+        # and the operator gets a durable record, not just scrollback.
+        fail_doc = (
+            layout.docs_dir(layout.project_dir(root, project_id), "tmp")
+            / f"video_create_fail_{now_iso().replace(':', '-').replace('.', '_')}.md"
+        )
+        fail_doc.parent.mkdir(parents=True, exist_ok=True)
+        fail_doc.write_text(
+            f"# Video task creation failed\n\n"
+            f"**Error:** {type(e).__name__}: {detail or '(no error message - likely a timeout)'}\n\n"
+            f"**Model:** {model}\n\n**Status:** FAILED\n",
+            encoding="utf-8",
+        )
         sys.exit(1)
 
     video_id = task["video_id"]

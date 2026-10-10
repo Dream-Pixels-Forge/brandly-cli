@@ -113,8 +113,16 @@ def test_run_execute_until_stops_after_phase(
     result = _invoke(tmp_path, ["run", pid, "--execute", "--yes", "--until", "script"])
 
     assert result.exit_code == 0, result.output
-    # I6 alignment: the screenplay phase joins the chain (#280).
-    assert calls == ["init", "trends", "concept", "screenplay", "script"]
+    # E6 alignment: bible + casting join the chain (#297 #301).
+    assert calls == [
+        "init",
+        "trends",
+        "concept",
+        "bible",
+        "casting",
+        "screenplay",
+        "script",
+    ]
     proj = _read(tmp_path)
     assert proj.current_phase == "asset"
     assert proj.phases["script"].status == "completed"
@@ -818,9 +826,10 @@ def test_run_execute_completes_full_pipeline_to_done(
                     "init": PhaseResult(status="completed"),
                     "trends": PhaseResult(status="completed"),
                     "concept": PhaseResult(status="completed"),
-                    # I6 alignment: a project resumed at "script" has the
-                    # screenplay phase behind it (#280 inserted it between
-                    # concept and script).
+                    # E6 alignment: a project resumed at "script" has the
+                    # bible + casting + screenplay phases behind it.
+                    "bible": PhaseResult(status="completed"),
+                    "casting": PhaseResult(status="completed"),
                     "screenplay": PhaseResult(status="completed"),
                 },
             },

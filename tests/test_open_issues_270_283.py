@@ -619,9 +619,19 @@ class TestStoryboardPipeline:
             return_value=qg.GateResult(status=gate_status, score=90, kind="image")
         )
 
+        # E6 (#300): the grid tiling opens the panels with PIL — the fixture
+        # download writes a real tiny PNG.
+        import io as _io
+
+        from PIL import Image as _Image
+
+        _png = _io.BytesIO()
+        _Image.new("RGB", (16, 9), (240, 240, 240)).save(_png, "PNG")
+        _png_bytes = _png.getvalue()
+
         def fake_download(url: str, dest: Path) -> Path:  # noqa: ARG001
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(b"fake-jpg")
+            dest.write_bytes(_png_bytes)
             return dest
 
         async def _call():
@@ -696,7 +706,7 @@ class TestTrendsProductCategory:
         assert "error" in result, f"a style-only project must fail honestly: {result}"
         assert "product category" in str(result["error"]).lower()
         trends_md = (
-            tmp_path / ".brandly" / pid / "docs" / "plan" / "trends.md"
+            tmp_path / ".brandly" / pid / "docs" / "general" / "trends.md"
         )
         assert not trends_md.exists() or not trends_md.read_text(encoding="utf-8").strip(), (
             "a zero-format trends document was written as success (#273)"
@@ -727,7 +737,7 @@ class TestTrendsProductCategory:
         director = Director(DirectorConfig(tmp_path))
         result = asyncio.run(director.run_phase(pid, "trends"))
         assert "error" not in result, result
-        trends_md = tmp_path / ".brandly" / pid / "docs" / "plan" / "trends.md"
+        trends_md = tmp_path / ".brandly" / pid / "docs" / "general" / "trends.md"
         text = trends_md.read_text(encoding="utf-8").strip()
         assert "tech" in text
         # Real formats from TREND_DATABASE - never a heading-only document.
@@ -993,7 +1003,7 @@ class TestAgentRunnerWiring:
 
     def test_agnes_runner_derives_concept_end_to_end(self, tmp_path: Path) -> None:
         """With the default agnes runner (key set, chat mocked), the CLI alone
-        passes concept and writes a non-empty docs/plan/concept.md (#277)."""
+        passes concept and writes a non-empty docs/general/concept.md (#277)."""
         import asyncio
         from unittest.mock import AsyncMock, patch
 
@@ -1037,7 +1047,7 @@ class TestAgentRunnerWiring:
                  "--until", "concept"],
             )
         assert result.exit_code == 0, result.output
-        concept_md = tmp_path / ".brandly" / pid / "docs" / "plan" / "concept.md"
+        concept_md = tmp_path / ".brandly" / pid / "docs" / "general" / "concept.md"
         assert concept_md.exists() and concept_md.read_text(encoding="utf-8").strip(), (
             "the agnes runner did not produce the concept document (#277)"
         )
@@ -1146,12 +1156,13 @@ class TestScreenplayProducer:
 
         assert "screenplay" in PHASE_ORDER
         idx = PHASE_ORDER.index("screenplay")
-        assert PHASE_ORDER[idx - 1] == "concept"
+        # E6 alignment: casting precedes screenplay now (#301).
+        assert PHASE_ORDER[idx - 1] == "casting"
         assert PHASE_ORDER[idx + 1] == "script"
 
     def test_screenplay_phase_writes_doc(self, tmp_path: Path) -> None:
         """The screenplay phase derives from the brief + concept via the agent
-        runner and writes docs/plan/screenplay.md (#280)."""
+        runner and writes docs/screenplay/screenplay.md (#280, #298)."""
         import asyncio
 
         from brandly_cli.cmd.production import Director, DirectorConfig
@@ -1194,7 +1205,7 @@ class TestScreenplayProducer:
         )
         result = asyncio.run(director.run_phase(pid, "screenplay"))
         assert "error" not in result, result
-        screenplay = tmp_path / ".brandly" / pid / "docs" / "plan" / "screenplay.md"
+        screenplay = tmp_path / ".brandly" / pid / "docs" / "screenplay" / "screenplay.md"
         assert screenplay.exists(), "the screenplay phase did not write the document (#280)"
         text = screenplay.read_text(encoding="utf-8").strip()
         assert text, "the screenplay document is empty"
@@ -1299,16 +1310,44 @@ class TestScreenplayProducer:
         director = Director(
             DirectorConfig(
                 tmp_path,
-                agent_runner=lambda prompt: "# Derived\n\nA moody brewery at golden hour.\n",
+                agent_runner=lambda prompt: (
+                    "# Production Bible\n\n## Section 4: Characters\n\n"
+                    "- **Maya**: 28, dark braids, olive skin; red dress; consistency: same face every frame.\n"
+                    if "production bible" in prompt
+                    else "# Derived\n\nA moody brewery at golden hour.\n"
+                ),
             )
         )
-        result = asyncio.run(director.run_pipeline(pid, until="script"))
+        # E6 alignment: the casting phase generates images — mocked.
+        from unittest.mock import AsyncMock as _AsyncMock
+        from unittest.mock import patch as _patch
+
+        from brandly_cli import quality_gate as _qg
+
+        def fake_download(url: str, dest: Path, *a, **k):  # type: ignore[no-untyped-def]
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"fake")
+            return dest
+
+        with (
+            _patch("brandly_cli.cmd.production.generate_image", _AsyncMock(return_value={"url": "u"})),
+            _patch("brandly_cli.cmd.production.download_file", _AsyncMock(side_effect=fake_download)),
+            _patch(
+                "brandly_cli.quality_gate.verify_element",
+                _AsyncMock(return_value=_qg.GateResult(status="pass", score=95, kind="image")),
+            ),
+        ):
+            result = asyncio.run(director.run_pipeline(pid, until="script"))
         assert "error" not in result, result
         assert "screenplay" in result["phases_run"], result["phases_run"]
-        base = tmp_path / ".brandly" / pid / "docs" / "plan"
-        for doc in ("trends.md", "concept.md", "screenplay.md"):
-            assert (base / doc).exists() and (base / doc).read_text(encoding="utf-8").strip(), (
-                f"the chain did not produce {doc} (#280)"
+        for doc in (
+            "docs/general/trends.md",
+            "docs/general/concept.md",
+            "docs/screenplay/screenplay.md",
+        ):
+            doc_path = tmp_path / ".brandly" / pid / doc
+            assert doc_path.exists() and doc_path.read_text(encoding="utf-8").strip(), (
+                f"the chain did not produce {doc} (#280, #298, #299)"
             )
         # The script phase writes the shot list at the director's path.
         shots = tmp_path / ".brandly" / pid / "shots.json"

@@ -359,28 +359,55 @@ def _check_phase_artifacts(
     missing: list[tuple[str, Path]] = []
 
     if phase == "concept":
-        concept = (
-            layout.resolve_project_dir(root_proj, project_id)
-            / "docs"
-            / "plan"
-            / "concept.md"
-        )
+        # #299: creative documents live in docs/general/; readers accept the
+        # legacy docs/plan/ location (pre-existing projects).
+        proj_dir = layout.resolve_project_dir(root_proj, project_id)
+        concept = layout.docs_dir(proj_dir, "general") / "concept.md"
+        if not concept.is_file():
+            concept = layout.docs_dir(proj_dir, "plan") / "concept.md"
         if (
             not concept.is_file()
             or not concept.read_text(encoding="utf-8").strip()
         ):
             missing.append(("concept document", concept))
 
-    elif phase == "screenplay":
-        # Issue #280: the screenplay is the produced document the pipeline is
-        # verified against — the approve gate fails closed on a missing/empty
-        # screenplay, mirroring the concept gate.
-        screenplay = (
-            layout.resolve_project_dir(root_proj, project_id)
-            / "docs"
-            / "plan"
-            / "screenplay.md"
+    elif phase == "bible":
+        # Issue #297: the production bible is the casting flow's source — the
+        # approve gate fails closed on a missing/empty bible without a
+        # Characters section (G11).
+        bible = layout.docs_dir(
+            layout.resolve_project_dir(root_proj, project_id), "bible"
+        ) / "production_bible.md"
+        if (
+            not bible.is_file()
+            or "characters" not in bible.read_text(encoding="utf-8").lower()
+        ):
+            missing.append(("production bible (with Section 4: Characters)", bible))
+
+    elif phase == "casting":
+        # Issue #301: the cast artifacts are the phase's outputs — at least
+        # one cast image under pre-production/<id>/character/.
+        cast_images = list(
+            (root_proj / "pre-production" / project_id / "character").glob("char_*_cast-*.jpg")
         )
+        if not cast_images:
+            missing.append(
+                (
+                    "cast set (pre-production/<id>/character/char_<name>_cast-*)",
+                    root_proj / "pre-production" / project_id / "character",
+                )
+            )
+
+    elif phase == "screenplay":
+        # Issue #280 + #298: the screenplay is the produced document the
+        # pipeline is verified against — the approve gate fails closed on a
+        # missing/empty screenplay, mirroring the concept gate. The layout
+        # declares docs/screenplay/ for screenplays + beat sheets; the legacy
+        # docs/plan/ location is accepted on read.
+        proj_dir = layout.resolve_project_dir(root_proj, project_id)
+        screenplay = layout.docs_dir(proj_dir, "screenplay") / "screenplay.md"
+        if not screenplay.is_file():
+            screenplay = layout.docs_dir(proj_dir, "plan") / "screenplay.md"
         if (
             not screenplay.is_file()
             or not screenplay.read_text(encoding="utf-8").strip()

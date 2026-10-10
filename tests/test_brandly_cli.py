@@ -44,10 +44,13 @@ class TestConstants:
     def test_phase_order_complete(self) -> None:
         assert PHASE_ORDER[0] == "init"
         assert PHASE_ORDER[-1] == "done"
-        # I6 (#270-#283) alignment: the screenplay phase joins the chain
-        # (#280) — 10 -> 11 phases, between concept and script.
-        assert len(PHASE_ORDER) == 11
-        assert PHASE_ORDER[PHASE_ORDER.index("screenplay") - 1] == "concept"
+        # I6 + E6 (#297-#302 enforcement) alignment: the screenplay (11) and
+        # the bible/casting (13) phases join the chain, between concept and
+        # script — the skills' production flow.
+        assert len(PHASE_ORDER) == 13
+        assert PHASE_ORDER[PHASE_ORDER.index("bible") - 1] == "concept"
+        assert PHASE_ORDER[PHASE_ORDER.index("casting") - 1] == "bible"
+        assert PHASE_ORDER[PHASE_ORDER.index("screenplay") - 1] == "casting"
         assert PHASE_ORDER[PHASE_ORDER.index("screenplay") + 1] == "script"
 
     def test_style_presets(self) -> None:

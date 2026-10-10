@@ -1,15 +1,15 @@
 """P3 (#258 #247 #259 #257): the trends.md -> concept.md -> shots.json chain becomes real.
 
 RED-first contract tests for the pipeline document chain:
-- #259: the trends phase writes non-empty ``docs/plan/trends.md`` and passes
+- #259+#299: the trends phase writes non-empty ``docs/general/trends.md`` and passes
   the project's style into ``research_trends`` (never hardcoded "commercial")
 - #258: the concept phase (mocked agent runner) writes
-  ``docs/plan/concept.md``; without a runner / without a brief it fails
+  ``docs/general/concept.md``; without a runner / without a brief it fails
   honestly (G11 — never fake-pass); ``approve <id> concept`` fails closed on
   a missing/empty concept.md
 - #247: ``run --execute --until script`` progresses past concept with the
   mocked runner (no "not implemented yet")
-- #257: the script phase reads ``docs/plan/concept.md`` (fail-closed with a
+- #257+#299: the script phase reads ``docs/general/concept.md`` (fail-closed with a
   resume hint when missing) and composes shot prompts from the brief/concept
   instead of the hardcoded demo strings
 """
@@ -88,7 +88,7 @@ class TestTrendsPhase259:
         assert "error" not in result, result
         # The project's style is the research category — never hardcoded
         assert calls == ["fashion"], calls
-        trends_md = _project_file(tmp_path, "docs/plan/trends.md")
+        trends_md = _project_file(tmp_path, "docs/general/trends.md")
         assert trends_md.is_file(), "trends phase did not write docs/plan/trends.md"
         assert trends_md.read_text(encoding="utf-8").strip()
 
@@ -106,7 +106,7 @@ class TestConceptPhase258:
         result = asyncio.run(director.run_phase(PID, "concept"))
 
         assert "error" not in result, result
-        concept_md = _project_file(tmp_path, "docs/plan/concept.md")
+        concept_md = _project_file(tmp_path, "docs/general/concept.md")
         assert concept_md.is_file(), "concept phase did not write docs/plan/concept.md"
         assert BRIEF in concept_md.read_text(encoding="utf-8")
 
@@ -148,7 +148,7 @@ class TestConceptPhase258:
         """`approve <id> concept` also fails closed when concept.md is EMPTY."""
         _make_project(tmp_path)
         _seed_current(tmp_path, "concept")
-        concept_md = _project_file(tmp_path, "docs/plan/concept.md")
+        concept_md = _project_file(tmp_path, "docs/general/concept.md")
         concept_md.parent.mkdir(parents=True, exist_ok=True)
         concept_md.write_text("   \n", encoding="utf-8")
         env = os.environ.copy()
@@ -170,18 +170,51 @@ class TestRunUntilScript247:
         _make_project(tmp_path, product_category="tech")
         _seed_current(tmp_path, "trends")
         director = _director(
-            tmp_path, agent_runner=lambda brief: f"# Concept\n\n{brief} — world"
+            tmp_path,
+            agent_runner=lambda prompt: (
+                "# Production Bible\n\n## Section 4: Characters\n\n"
+                "- **Maya**: 28, dark braids, olive skin; red dress; consistency: same face every frame.\n"
+                if "production bible" in prompt
+                else f"# Concept\n\n{BRIEF} — world"
+            ),
         )
 
         async def fake_research(category: str, platforms=None):  # type: ignore[no-untyped-def]
             return {"trending_formats": [{"name": "f1", "virality": 9}]}
 
-        with patch("brandly_cli.trends.research_trends", side_effect=fake_research):
+        # E6 alignment: the casting phase generates images — mocked (the cast
+        # artifacts land on disk; the gate passes).
+        from unittest.mock import AsyncMock as _AsyncMock
+        from unittest.mock import patch as _patch
+
+        from brandly_cli import quality_gate as _qg
+
+        def fake_download(url: str, dest: Path, *a, **k):  # type: ignore[no-untyped-def]
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"fake")
+            return dest
+
+        with (
+            patch("brandly_cli.trends.research_trends", side_effect=fake_research),
+            _patch("brandly_cli.cmd.production.generate_image", _AsyncMock(return_value={"url": "u"})),
+            _patch("brandly_cli.cmd.production.download_file", _AsyncMock(side_effect=fake_download)),
+            _patch(
+                "brandly_cli.quality_gate.verify_element",
+                _AsyncMock(return_value=_qg.GateResult(status="pass", score=95, kind="image")),
+            ),
+        ):
             result = asyncio.run(director.run_pipeline(PID, until="script"))
 
         assert "error" not in result, result
-        # I6 alignment: the screenplay phase joins the chain (#280).
-        assert result["phases_run"] == ["trends", "concept", "screenplay", "script"]
+        # E6 alignment: bible + casting join the chain (#297 #301).
+        assert result["phases_run"] == [
+            "trends",
+            "concept",
+            "bible",
+            "casting",
+            "screenplay",
+            "script",
+        ]
         assert all(
             "not implemented yet" not in json.dumps(r) for r in result["results"]
         ), result["results"]
@@ -231,9 +264,9 @@ class TestHandoffSpecs:
 
     def test_specs_match_delivered_behavior(self) -> None:
         # trends: writes the doc (real output)
-        assert "docs/plan/trends.md" in PHASE_HANDOFF_SPECS["trends"]["outputs"]
+        assert "docs/general/trends.md" in PHASE_HANDOFF_SPECS["trends"]["outputs"]
         # concept: derives from the brief via an agent runner; moodboard optional
-        assert "docs/plan/concept.md" in PHASE_HANDOFF_SPECS["concept"]["outputs"]
+        assert "docs/general/concept.md" in PHASE_HANDOFF_SPECS["concept"]["outputs"]
         assert any(
             "optional" in o.lower() for o in PHASE_HANDOFF_SPECS["concept"]["outputs"]
         ), PHASE_HANDOFF_SPECS["concept"]["outputs"]

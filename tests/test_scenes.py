@@ -82,10 +82,13 @@ class TestBuildManifest:
         assert [s["act"] for s in manifest["scenes"]] == ["ACT I", "ACT II"]
 
     def test_manifest_written_to_docs_plan_scenes_json(self, tmp_path: Path) -> None:
+        # E1 (#297-#302 enforcement) alignment: the scene manifest lives at
+        # docs/general/scenes.json (#299 — the manifest is not a plan);
+        # readers still accept the legacy docs/plan/ location.
         _project(tmp_path)
         scenes.write_scenes("film", FLAT, root=tmp_path)
         path = scenes.scenes_path("film", root=tmp_path)
-        expected = tmp_path / ".brandly" / "film" / "docs" / "plan" / "scenes.json"
+        expected = tmp_path / ".brandly" / "film" / "docs" / "general" / "scenes.json"
         assert path == expected
         data = json.loads(expected.read_text(encoding="utf-8"))
         assert data["project_id"] == "film"

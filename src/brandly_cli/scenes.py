@@ -9,7 +9,7 @@ take, and passed QC — status surfaces showed flat counts only.
 
 This module makes scenes first-class data:
 
-* ``scenes.json`` (``docs/plan/``, next to ``production_plan.md``) is written by
+* ``scenes.json`` (``docs/general/``, issue #299) is written by
   ``brandly produce`` and is the source of truth for scene membership.
 * Scene ids are project-unique (``S01``, ``S02``, …) in first-appearance order
   even when two acts both declare ``scene 1``; the original ``act`` and scene
@@ -79,10 +79,18 @@ SCENE_REWORK_THRESHOLD = 0.7
 MAX_REWORK_ATTEMPTS = 2
 
 
-def scenes_path(project_id: str, *, root: Path | str | None = None) -> Path:
-    """Where the manifest lives: ``docs/plan/scenes.json``."""
-    base = Path(root) if root else Path.cwd()
+def _legacy_scenes_path(project_id: str, base: Path) -> Path:
+    """Pre-#299 location (``docs/plan/scenes.json``) — accepted on read for
+    back-compat with projects created before the taxonomy fix."""
     return layout.docs_dir(layout.resolve_project_dir(base, project_id), "plan") / SCENES_FILE
+
+
+def scenes_path(project_id: str, *, root: Path | str | None = None) -> Path:
+    """Where the manifest lives: ``docs/general/scenes.json`` (issue #299 —
+    the scene manifest is not a plan). Readers fall back to the legacy
+    ``docs/plan/scenes.json`` for pre-existing projects."""
+    base = Path(root) if root else Path.cwd()
+    return layout.docs_dir(layout.resolve_project_dir(base, project_id), "general") / SCENES_FILE
 
 
 def build_scenes(
@@ -161,15 +169,23 @@ def write_scenes(
 
 
 def load_scenes(project_id: str, *, root: Path | str | None = None) -> dict[str, Any] | None:
-    """Read the manifest, or ``None`` when absent/unreadable."""
-    path = scenes_path(project_id, root=root)
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-    return data if isinstance(data, dict) else None
+    """Read the manifest, or ``None`` when absent/unreadable.
+
+    Accepts the contract location (``docs/general/``, #299) and the legacy
+    ``docs/plan/`` location (pre-existing projects)."""
+    base = Path(root) if root else Path.cwd()
+    for candidate in (
+        scenes_path(project_id, root=base),
+        _legacy_scenes_path(project_id, base),
+    ):
+        if candidate.is_file():
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                return None
+            if isinstance(data, dict):
+                return data
+    return None
 
 
 def _require_manifest(project_id: str, *, root: Path | str | None = None) -> dict[str, Any]:

@@ -17,8 +17,11 @@ assets split by pipeline stage in the project workspace:
                 bible/       production bibles
                 storyboard/  storyboards / shot lists
                 screenplay/  screenplays + beat sheets
-                tmp/         transient working docs (gen records, fail docs)
-            project.json
+                general/     research + creative (trends, concept, scenes.json)
+                tmp/         transient working docs (gen records, fail docs,
+                             run transcripts)
+            project.json     (the director shot list ``shots.json`` lives here
+                             too — the timeline editor's path, load-bearing)
             cost.json
     pre-production/
         {project}/
@@ -42,7 +45,16 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 #: ``docs/`` sub-folders. All documents live here, never duplicated.
-DOC_CATEGORIES: tuple[str, ...] = ("plan", "bible", "storyboard", "screenplay", "tmp")
+#: ``general/`` holds research + creative + manifest documents (trends,
+#: concept, the scene manifest — issue #299: they are not plans).
+DOC_CATEGORIES: tuple[str, ...] = (
+    "plan",
+    "bible",
+    "storyboard",
+    "screenplay",
+    "general",
+    "tmp",
+)
 
 #: ``images/`` sub-folders, grouped by subject category.
 IMAGE_CATEGORIES: tuple[str, ...] = (

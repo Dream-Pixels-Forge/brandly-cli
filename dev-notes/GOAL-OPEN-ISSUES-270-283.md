@@ -70,10 +70,10 @@ screenplay producer for the declared-but-unproduced document.
 - [x] #270: `generation.py:_sync_project` writes `current_phase="asset"` (the produce runner belongs to the asset phase — never an invalid stage name); the 3 `.index()` sites (production.py `run_pipeline`/`run`/`approve`) guarded fail-honest: a `current_phase` not in `PHASE_ORDER` returns/raises a structured error with a repair hint (G11) — a poisoned state file never crashes the CLI with a raw traceback
 
 **Definition of Done**
-- [ ] New tests pass RED→GREEN; full suite zero NEW failures
-- [ ] `grep -n "asyncio.run(" src/brandly_cli/cli.py src/brandly_cli/agent_tools.py` — zero bare hits
-- [ ] Poisoned `current_phase="video"` fixture: `run`/`approve`/`run --execute` fail honestly (exit 1, structured error, repair hint)
-- [ ] `ruff check src/ tests/` clean
+- [x] New tests pass RED→GREEN; full suite zero NEW failures
+- [x] `grep -n "asyncio.run(" src/brandly_cli/cli.py src/brandly_cli/agent_tools.py` — zero bare hits
+- [x] Poisoned `current_phase="video"` fixture: `run`/`approve`/`run --execute` fail honestly (exit 1, structured error, repair hint)
+- [x] `ruff check src/ tests/` clean
 
 ### I2 — Reference truth: gate-before-promotion + wardrobe (#275, #282)
 
@@ -82,9 +82,9 @@ screenplay producer for the declared-but-unproduced document.
 - [x] #282: `wardrobe` added to `REFERENCE_SUBJECTS` + `--subject-type` choices; a wardrobe template in `reference_prompts.py` (garment-only flat-lay on a neutral backdrop, NO person wearing it, color/material/details legible) → lands in `pre-production/<id>/wardrobe/` with the `wardrobe_` prefix (`image_name_prefix` falls back to the subject type itself)
 
 **Definition of Done**
-- [ ] RED-first: a mocked gate-fail reference run leaves `primary_reference` absent; a pass run writes it with the gate verdict recorded
-- [ ] `brandly reference <id> --subject-type wardrobe -s "..."` resolves the wardrobe template + wardrobe category
-- [ ] Full suite zero NEW failures; ruff clean
+- [x] RED-first: a mocked gate-fail reference run leaves `primary_reference` absent; a pass run writes it with the gate verdict recorded
+- [x] `brandly reference <id> --subject-type wardrobe -s "..."` resolves the wardrobe template + wardrobe category
+- [x] Full suite zero NEW failures; ruff clean
 
 ### I3 — Layout contract: --output root, folder routing, storyboards (#272, #283, #281)
 
@@ -94,9 +94,9 @@ screenplay producer for the declared-but-unproduced document.
 - [x] #281: storyboard docstring corrected to the real v2 path `pre-production/<project>/storyboard/` (the save path already resolves v2 — verified; contract test pins it); `ProjectData` gains `storyboards: bool = False`; the asset phase, when `storyboards` is true, runs the keyframe pass first (generate per shot with STORYBOARD_INSTRUCTION → deterministic gate → Scene-XX-Shot-X-Y names into `pre-production/<id>/storyboard/`); a FAILING keyframe blocks that shot's video generation (fail-closed — composition errors caught at image cost, never video cost, per issue #33)
 
 **Definition of Done**
-- [ ] RED-first: insert + transition shots produce clips in their respective folders; `migrate` creates no plural trees; the docstring paths match the code's write paths
-- [ ] Storyboard contract: keyframes land ONLY under `pre-production/<id>/storyboard/`; a failed keyframe blocks the video spend
-- [ ] Full suite zero NEW failures; ruff clean
+- [x] RED-first: insert + transition shots produce clips in their respective folders; `migrate` creates no plural trees; the docstring paths match the code's write paths
+- [x] Storyboard contract: keyframes land ONLY under `pre-production/<id>/storyboard/`; a failed keyframe blocks the video spend
+- [x] Full suite zero NEW failures; ruff clean
 
 ### I4 — Document chain truth: trends category, beats, target duration (#273, #274, #276)
 
@@ -106,8 +106,8 @@ screenplay producer for the declared-but-unproduced document.
 - [x] #276: `ProjectData` gains `target_duration: int | None = None`; `init` gains `--target-duration <seconds>`; the script phase, when a target is set, derives the shot count/durations to HIT it (start from the beat-map durations, distribute the remainder into shots capped at the 6s reliable window; a target below the 3-shot minimum (~15s) or above the 10-shot window (~60s) fails honestly with the proposed plan); `brandly status` reports the film's measured total vs the target (G7-style truth at film level, data-honest)
 
 **Definition of Done**
-- [ ] RED-first: a style-only project's trends phase errors (never an empty success); a 5-shot script carries durations identical to `scenes.BEAT_DURATIONS` and never assigns `setup` to the final shot; `init --target-duration 30` → the script shot list sums to ~30s within the window
-- [ ] Full suite zero NEW failures; ruff clean
+- [x] RED-first: a style-only project's trends phase errors (never an empty success); a 5-shot script carries durations identical to `scenes.BEAT_DURATIONS` and never assigns `setup` to the final shot; `init --target-duration 30` → the script shot list sums to ~30s within the window
+- [x] Full suite zero NEW failures; ruff clean
 
 ### I5 — Agent driver + CLI surface (#277, #278)
 
@@ -116,9 +116,9 @@ screenplay producer for the declared-but-unproduced document.
 - [x] #278: reference docstring corrected to the real path (`pre-production/<project_id>/<category>/`) + the real prefix (`IMAGE_NAME_PREFIXES`); storyboard docstring corrected to `pre-production/<project>/storyboard/`; `brandly reference --json` added (mirror the image command's success/error JSON shape, #73)
 
 **Definition of Done**
-- [ ] RED-first: `--agent-runner off` fails honestly at concept (structured error); the docstring contract test (help text vs layout constants) fails on the stale text
-- [ ] `brandly reference ... --json` emits parseable JSON
-- [ ] Full suite zero NEW failures; ruff clean
+- [x] RED-first: `--agent-runner off` fails honestly at concept (structured error); the docstring contract test (help text vs layout constants) fails on the stale text
+- [x] `brandly reference ... --json` emits parseable JSON
+- [x] Full suite zero NEW failures; ruff clean
 
 ### I6 — Screenplay producer (#280)
 
@@ -129,16 +129,16 @@ screenplay producer for the declared-but-unproduced document.
 - [x] Tests asserting the 10-phase order are aligned with a recorded reason (10 → 11)
 
 **Definition of Done**
-- [ ] RED-first: a project run through the document chain (with a mocked runner) produces a non-empty `screenplay.md`; `brandly plan <id> --json` shows the screenplay row
-- [ ] Full suite zero NEW failures; ruff clean
+- [x] RED-first: a project run through the document chain (with a mocked runner) produces a non-empty `screenplay.md`; `brandly plan <id> --json` shows the screenplay row
+- [x] Full suite zero NEW failures; ruff clean
 
 ### I7 — Close-out: goal-met audit + ledger + issue closes
 
 **Deliverables**
-- [ ] All merged PRs reference the issues they close (`Fixes #N`)
-- [ ] `gh issue list --state open` — none of the 13 remain
-- [ ] PROGRESS.md round entry written (I1–I7 outcomes)
-- [ ] goal-met audit: verdict MET/BLOCKED (independent re-run of every verification step, binary)
+- [x] All merged PRs reference the issues they close (`Fixes #N`)
+- [x] `gh issue list --state open` — none of the 13 remain
+- [x] PROGRESS.md round entry written (I1–I7 outcomes)
+- [x] goal-met audit: verdict **MET** (independent re-run of every verification step, binary — results table in the Program close-out below)
 
 ## Verification Steps (program level)
 

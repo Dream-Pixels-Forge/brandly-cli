@@ -36,6 +36,19 @@
       phase with all document-chain + storyboard artifacts intact.
 - Gates: the run exercised the shipped 0.13.0 code path on main
   (`fbb8565`); no repo code changed (the demo tree is gitignored).
+- [x] **Second findings batch — `.brandly/` tree inspection (user-reported,
+      verified against the repo's own contracts), filed as #297–#302:**
+      #297 (`docs/bible/` never produced — the casting flow's source),
+      #298 (screenplay.md in `docs/plan/` violates the layout contract —
+      belongs in `docs/screenplay/`; the #280 fix text carried the wrong
+      path), #299 (taxonomy drift: trends/concept/scenes cram into plan/
+      instead of `docs/general/`; shot list at the project root), #300
+      (storyboard output violates the MANDATORY 4x4 graphite grid spec —
+      per-shot photoreal keyframes instead of one PIL-tiled contact
+      sheet), #301 (the casting stage never runs — no cast set/folder),
+      and #302 (the drift tracking issue: the phase chain vs the skills'
+      production flow — bible → casting → screenplay → storyboard — with a
+      governed-resolution proposal).
 
 ## Round 28/256 — Release v0.13.0: code + GitHub + PyPI all verified as latest
 

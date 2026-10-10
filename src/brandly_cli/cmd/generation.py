@@ -308,16 +308,6 @@ def reference(
             "style_preset": style_preset,
             "imported_from": str(src),
         }
-        pm = ProjectManager(root)
-        update_result = asyncio.run(
-            pm.update(  # type: ignore[arg-type]
-                project_id, {"primary_reference": reference_meta}
-            )
-        )
-        if update_result is None:
-            console.print("[red]✗ Failed to update project metadata.[/red]")
-            sys.exit(1)
-        console.print("[green]✓ Project primary_reference metadata updated.[/green]")
 
         approved, note = _human_review_gate(
             "reference", f"the imported {subject_type} reference for '{subject}'"
@@ -331,6 +321,19 @@ def reference(
             )
             sys.exit(1)
         console.print("[green]✓ Human gate passed — reference approved.[/green]")
+
+        # Issue #275 (import path): the promotion happens AFTER the human gate
+        # — a REJECTED import is never promoted to the identity anchor.
+        pm = ProjectManager(root)
+        update_result = asyncio.run(
+            pm.update(  # type: ignore[arg-type]
+                project_id, {"primary_reference": reference_meta}
+            )
+        )
+        if update_result is None:
+            console.print("[red]✗ Failed to update project metadata.[/red]")
+            sys.exit(1)
+        console.print("[green]✓ Project primary_reference metadata updated.[/green]")
 
         from brandly_cli.planning import write_generation_doc
 
@@ -464,33 +467,13 @@ def reference(
         saved = _standardize_reference_format(saved, ref_format)
         console.print(f"[green]✓ Reference image saved:[/green] {saved}")
 
-        # Persist the primary reference metadata on the project so downstream
-        # tools (e.g. `brandly video`) can read it.
-        reference_meta = {
-            "subject_type": subject_type,
-            "skill": subject_skill,
-            "subject": subject,
-            "image_path": str(saved),
-            "source_url": url,
-            "generated_at": now_iso(),
-            "model": model,
-            "style_preset": style_preset,
-        }
-        pm = ProjectManager(root)
-        result = asyncio.run(
-            pm.update(  # type: ignore[arg-type]
-                project_id, {"primary_reference": reference_meta}
-            )
-        )
-        if result is None:
-            console.print("[red]✗ Failed to update project metadata.[/red]")
-            sys.exit(1)
-        console.print("[green]✓ Project primary_reference metadata updated.[/green]")
-
+        # Issue #275: the primary_reference PROMOTION moved below — after the
+        # quality gate and the human gate. A gate-FAILED plate is never
+        # promoted to the identity anchor.
         gate_result = None
-        if run_gate:
-            from brandly_cli import quality_gate
+        from brandly_cli import quality_gate
 
+        if run_gate:
             gate_result = asyncio.run(
                 quality_gate.verify_element(
                     saved,
@@ -524,6 +507,41 @@ def reference(
             )
             sys.exit(1)
         console.print("[green]✓ Human gate passed — reference approved.[/green]")
+
+        # Issue #275: the primary_reference promotion happens AFTER the gate —
+        # a gate-FAILED plate is never promoted to the identity anchor (the
+        # pre-fix ordering voided the gate: a failed plate became the
+        # auto-injected reference for every video call). The metadata records
+        # the gate verdict so consumers can fail-honest.
+        if gate_result is not None and gate_result.status == quality_gate.FAIL:
+            console.print(
+                "[yellow]⚠ primary_reference NOT updated — the quality gate "
+                "failed. The plate stays on disk (un-promoted); review or "
+                "regenerate before using it as a reference.[/yellow]"
+            )
+        else:
+            reference_meta = {
+                "subject_type": subject_type,
+                "skill": subject_skill,
+                "subject": subject,
+                "image_path": str(saved),
+                "source_url": url,
+                "generated_at": now_iso(),
+                "model": model,
+                "style_preset": style_preset,
+                "gate_status": gate_result.status if gate_result else None,
+                "gate_score": gate_result.score if gate_result else None,
+            }
+            pm = ProjectManager(root)
+            result = asyncio.run(
+                pm.update(  # type: ignore[arg-type]
+                    project_id, {"primary_reference": reference_meta}
+                )
+            )
+            if result is None:
+                console.print("[red]✗ Failed to update project metadata.[/red]")
+                sys.exit(1)
+            console.print("[green]✓ Project primary_reference metadata updated.[/green]")
 
         # Only after approval: write the generation doc and flip the plan to
         # COMPLETED in the production plan (a rejection keeps it PENDING so

@@ -16,6 +16,10 @@ REFERENCE_SUBJECTS: dict[str, str] = {
     "animal": "brandly-animal-sheet",
     "plant": "brandly-plant-sheet",
     "mecha": "brandly-mecha-sheet",
+    # Issue #282: wardrobe is a first-class reference category (REF_CATEGORIES,
+    # layout.SUBJECT_TO_IMAGE_CATEGORY) — the CLI choice list is behind the
+    # layout until it is declared here.
+    "wardrobe": "brandly-casting",
 }
 
 # Per-subject prompt templates. These produce GOLD-grade primary reference
@@ -182,6 +186,33 @@ REFERENCE_PROMPT_TEMPLATES: dict[str, str] = {
         "No text, no labels, no watermarks, no logos, no people, no "
         "environment context, no distorted structure, no dramatic shadows, "
         "no oversaturated colors."
+    ),
+    # Issue #282: wardrobe-only mode — the garment itself, never worn.
+    # The person-wearing variant is covered by the casting/character flow;
+    # this template produces the standalone garment identity plate.
+    "wardrobe": (
+        "Subject and Character\n"
+        "{subject}. The garment alone, shown flat and fully legible, with "
+        "consistent material, color, stitching and construction details "
+        "across every view. The garment identity is strictly consistent "
+        "across all views.\n\n"
+        "Composition and Layout\n"
+        "A single 16:9 landscape wardrobe reference board: the garment "
+        "presented as a clean flat-lay on a seamless matte neutral mid-grey "
+        "studio backdrop (mannequin-style, ghost-mannequin effect), with a "
+        "multi-view grid — front flat, back flat, and one close detail view "
+        "of fabric texture and hardware. No person wearing the garment: "
+        "no model, no body, no limbs.\n\n"
+        "Lighting and Technical\n"
+        "Soft, even three-point studio lighting, uniform across all views. "
+        "Shot with an 85mm lens, f/8 for deep focus, high-resolution "
+        "photorealistic texture with sharp definition of fabric weave, "
+        "seams and hardware, neutral color temperature with no color spill.\n\n"
+        "Constraints\n"
+        "No person, no model, no mannequin body visible, no text, no "
+        "labels, no watermarks, no environment context, no distorted "
+        "structure, no dramatic shadows, no oversaturated colors. The "
+        "garment's color and material must stay true and legible."
     ),
 }
 

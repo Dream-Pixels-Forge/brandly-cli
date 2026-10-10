@@ -20,9 +20,11 @@ RED-first proofs, one section per increment. The I1 section pins:
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 _SRC = Path(__file__).resolve().parent.parent / "src" / "brandly_cli"
@@ -285,3 +287,158 @@ class TestVideoMetadataLookupContract:
         assert 'f"reference_{subject_type}_"' not in prefix_match.group(1), (
             "video metadata lookup uses the dead reference_ prefix"
         )
+
+
+# ---------------------------------------------------------------------------
+# I2 — #275: primary_reference promotion happens AFTER the quality gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_reference_warning_state() -> None:
+    """Issue #123: the no-primary-reference warning is once-per-project —
+    reset the guard so each test sees it deterministically."""
+    from brandly_cli.cmd import generation
+
+    generation._NO_PRIMARY_REF_WARNED.clear()
+
+
+def _run_reference_command(tmp_path: Path, gate_status: str, gate_score: int = 68):
+    """Run `brandly reference` with a mocked generation + a mocked quality
+    gate returning the given verdict. Returns the CliRunner result."""
+    from unittest.mock import AsyncMock, patch
+
+    from brandly_cli import quality_gate
+
+    pid = "ref-gate-proj"
+    _make_project(tmp_path, pid=pid)
+    fake_result = {"url": "https://example.invalid/reference.png", "id": "task-1"}
+
+    def fake_save(url, project_id, kind, root=None, prompt_hint="", category=None):  # noqa: ANN001
+        target_dir = root / "pre-production" / project_id / (category or "general")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"char_{prompt_hint.replace(' ', '_')[:20]}.png"
+        target.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        return target
+
+    fake_gate = quality_gate.GateResult(
+        status=gate_status, score=gate_score, element="reference", kind="image"
+    )
+
+    with (
+        patch("brandly_cli.cmd.generation.generate_image", AsyncMock(return_value=fake_result)),
+        patch("brandly_cli.cmd.generation._save_artifact", side_effect=fake_save),
+        patch(
+            "brandly_cli.quality_gate.verify_element",
+            return_value=fake_gate,
+        ),
+    ):
+        # The human gate prompts on a FAIL verdict — approve to reach the
+        # promotion decision point.
+        result = CliRunner(env={"ROOT": str(tmp_path)}).invoke(
+            __import__("brandly_cli.cli", fromlist=["cli"]).cli,
+            [
+                "reference",
+                pid,
+                "--subject-type",
+                "character",
+                "--subject",
+                "theo, dark skin, navy chore jacket",
+            ],
+            input="y\n",
+        )
+    return result, tmp_path / ".brandly" / pid / "project.json"
+
+
+class TestReferenceGateBeforePromotion:
+    def test_gate_fail_never_promotes_primary_reference(self, tmp_path: Path) -> None:
+        """A reference whose gate FAILS must NOT become project.primary_reference
+        — pre-fix the metadata was written BEFORE the gate, so a 68/100 failed
+        plate was promoted to the identity anchor (#275)."""
+        from brandly_cli import quality_gate
+
+        result, proj_file = _run_reference_command(tmp_path, gate_status=quality_gate.FAIL)
+        assert "Traceback" not in result.output
+        proj_data = json.loads(proj_file.read_text())
+        assert "primary_reference" not in proj_data, (
+            "a gate-FAILED plate was promoted to primary_reference (#275)"
+        )
+        assert "not.*promoted" in result.output or "NOT updated" in result.output
+
+    def test_gate_pass_promotes_with_verdict_recorded(self, tmp_path: Path) -> None:
+        """A gate-passed reference IS promoted — and the metadata records the
+        gate verdict so consumers can fail-honest (#275)."""
+        from brandly_cli import quality_gate
+
+        result, proj_file = _run_reference_command(
+            tmp_path, gate_status=quality_gate.PASS, gate_score=92
+        )
+        assert result.exit_code == 0, result.output
+        proj_data = json.loads(proj_file.read_text())
+        ref = proj_data.get("primary_reference")
+        assert ref is not None, "a gate-PASSED plate must be promoted"
+        assert ref.get("gate_status") == quality_gate.PASS
+        assert ref.get("gate_score") == 92
+
+    def test_promotion_source_order_is_after_the_gate(self) -> None:
+        """Source contract: in the reference command the primary_reference
+        pm.update call appears AFTER the quality gate's verify_element call."""
+        src = _read("cmd/generation.py")
+        ref_body = src[src.index('def reference('):]
+        # The GENERATED path is the last promotion site in the command (the
+        # import path has its own, gate-less flow) — scope to it.
+        update_pos = ref_body.rfind('{"primary_reference": reference_meta}')
+        gate_pos = ref_body.find("verify_element(")
+        assert update_pos > -1 and gate_pos > -1, (
+            "reference command must contain both the metadata update and the gate"
+        )
+        assert update_pos > gate_pos, (
+            "primary_reference must be written AFTER the gate runs (#275)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# I2 — #282: the wardrobe reference category is reachable + garment-only mode
+# ---------------------------------------------------------------------------
+
+
+class TestWardrobeReference:
+    def test_wardrobe_in_reference_subjects(self) -> None:
+        """wardrobe is a first-class reference category (REF_CATEGORIES,
+        SUBJECT_TO_IMAGE_CATEGORY) — the CLI must accept it (#282)."""
+        from brandly_cli.reference_prompts import REFERENCE_SUBJECTS
+
+        assert "wardrobe" in REFERENCE_SUBJECTS
+
+    def test_subject_type_choices_include_wardrobe(self) -> None:
+        """`brandly reference --subject-type` choices include wardrobe (#282)."""
+        from brandly_cli.cli import cli
+
+        result = CliRunner().invoke(
+            cli, ["reference", "proj-x", "--subject-type", "wardrobe", "-s", "x"]
+        )
+        # The command proceeds past the choice validation (a project-not-found
+        # or generation error is fine — 'Invalid value' means the choice is
+        # still missing).
+        assert "is not one of" not in result.output, (
+            "--subject-type wardrobe rejected — the choice list is behind the layout (#282)"
+        )
+
+    def test_wardrobe_prompt_is_garment_only(self) -> None:
+        """The wardrobe template produces a garment-only flat-lay prompt:
+        the outfit on a neutral backdrop, NO person wearing it (#282)."""
+        from brandly_cli.reference_prompts import build_reference_prompt
+
+        prompt = build_reference_prompt("wardrobe", "charcoal wool coat, peak lapel")
+        assert prompt, "wardrobe template missing"
+        low = prompt.lower()
+        assert "no person" in low or "without a person" in low or "no model" in low
+        assert "flat" in low or "mannequin" in low or "backdrop" in low
+
+    def test_wardrobe_maps_to_wardrobe_category(self) -> None:
+        """The wardrobe subject type lands in the wardrobe image category —
+        resolvable by plate discovery (REF_CATEGORIES includes it)."""
+        from brandly_cli import layout
+
+        assert layout.image_category_for_subject("wardrobe") == "wardrobe"
+        assert "wardrobe" in layout.IMAGE_CATEGORIES

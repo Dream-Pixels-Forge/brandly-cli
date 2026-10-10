@@ -935,3 +935,200 @@ class TestTargetDuration:
         assert "30s" in result.output, (
             f"status must name the target duration: {result.output}"
         )
+
+
+# ---------------------------------------------------------------------------
+# I5 - #277: the CLI alone drives the concept phase (default agent runner)
+# ---------------------------------------------------------------------------
+
+
+class TestAgentRunnerWiring:
+    def test_run_accepts_agent_runner_flag(self) -> None:
+        """`brandly run --agent-runner [agnes|off]` exists (#277)."""
+        from brandly_cli.cli import cli
+
+        result = CliRunner().invoke(cli, ["run", "--help"])
+        assert result.exit_code == 0
+        assert "--agent-runner" in result.output, (
+            "run has no --agent-runner flag (#277)"
+        )
+
+    def test_agent_runner_off_fails_honest_at_concept(self, tmp_path: Path) -> None:
+        """--agent-runner off keeps the fail-honest concept behavior: a
+        structured error, never a fake pass (#277)."""
+        import asyncio
+        from unittest.mock import patch
+
+        from brandly_cli.cli import cli
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import ProjectData
+
+        pid = "runner-off"
+        asyncio.run(
+            ProjectManager(tmp_path).create(
+                ProjectData(id=pid, name="R", style="cinematic", shot_count=5,
+                            description="a test brief")
+            )
+        )
+        # Seed: trends completed, current at concept.
+        asyncio.run(
+            ProjectManager(tmp_path).update(
+                pid,
+                {
+                    "current_phase": "concept",
+                    "phases": {"init": {"status": "completed"}, "trends": {"status": "completed"}},
+                },
+            )
+        )
+        with patch("brandly_cli.cmd.production.generate_music"), patch(
+            "brandly_cli.cmd.production.generate_tts"
+        ):
+            result = CliRunner().invoke(
+                cli,
+                ["--root", str(tmp_path), "run", pid, "--execute", "--yes",
+                 "--until", "concept", "--agent-runner", "off"],
+            )
+        assert result.exit_code != 0, f"concept must fail honestly without a runner: {result.output}"
+        assert "agent runner" in result.output.lower()
+
+    def test_agnes_runner_derives_concept_end_to_end(self, tmp_path: Path) -> None:
+        """With the default agnes runner (key set, chat mocked), the CLI alone
+        passes concept and writes a non-empty docs/plan/concept.md (#277)."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        from brandly_cli.cli import cli
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import ProjectData
+
+        pid = "runner-agnes"
+        asyncio.run(
+            ProjectManager(tmp_path).create(
+                ProjectData(id=pid, name="R", style="cinematic", shot_count=5,
+                            description="a 30-second product presentation")
+            )
+        )
+        asyncio.run(
+            ProjectManager(tmp_path).update(
+                pid,
+                {
+                    "current_phase": "concept",
+                    "phases": {
+                        "init": {"status": "completed"},
+                        "trends": {"status": "completed"},
+                    },
+                },
+            )
+        )
+        fake_chat = AsyncMock(
+            return_value={
+                "choices": [{"message": {"content": "# Concept\n\nA moody brewery at dawn."}}]
+            }
+        )
+        import os
+
+        env = {"AGNES_API_KEY": "test-key"}
+        with patch.dict(os.environ, env), patch(
+            "brandly_cli.agnes_client.chat_completion", fake_chat
+        ):
+            result = CliRunner().invoke(
+                cli,
+                ["--root", str(tmp_path), "run", pid, "--execute", "--yes",
+                 "--until", "concept"],
+            )
+        assert result.exit_code == 0, result.output
+        concept_md = tmp_path / ".brandly" / pid / "docs" / "plan" / "concept.md"
+        assert concept_md.exists() and concept_md.read_text(encoding="utf-8").strip(), (
+            "the agnes runner did not produce the concept document (#277)"
+        )
+
+    def test_agnes_runner_fails_honest_without_key(self) -> None:
+        """_agnes_concept_runner without AGNES_API_KEY raises a clear,
+        structured error (G11 — never a fake pass) (#277)."""
+        import os
+        from unittest.mock import patch
+
+        from brandly_cli.cmd.production import _agnes_concept_runner
+
+        with patch.dict(os.environ, {}, clear=True):
+            try:
+                _agnes_concept_runner("derive the concept")
+            except RuntimeError as e:
+                assert "AGNES_API_KEY" in str(e)
+            else:
+                raise AssertionError("no key must raise — fail-honest (#277)")
+
+
+# ---------------------------------------------------------------------------
+# I5 - #278: truthful docstrings + reference --json
+# ---------------------------------------------------------------------------
+
+
+class TestReferenceSurfaceTruth:
+    def test_reference_docstring_names_real_path_and_prefix(self) -> None:
+        """The reference docstring names the v2 tree and the REAL prefix —
+        the legacy .brandly/<id>/images/ claim and the dead reference_
+        prefix send agents to the wrong tree (#278)."""
+        src = _read("cmd/generation.py")
+        ref = src[src.index("def reference("):]
+        doc = ref[ref.index('"""'): ref.index('"""', ref.index('"""') + 3) + 3]
+        assert "pre-production" in doc, "docstring must name the v2 tree"
+        assert ".brandly/<project_id>/images/" not in doc, (
+            "docstring still claims the legacy images tree (#278)"
+        )
+        assert "reference_<subject_type>_" not in doc, (
+            "docstring still claims the dead reference_ prefix (#278)"
+        )
+        # The real prefix is the layout's IMAGE_NAME_PREFIXES (char_/loc_/prop_).
+        assert "IMAGE_NAME_PREFIXES" in doc or "char_" in doc
+
+    def test_reference_accepts_json_flag(self, tmp_path: Path) -> None:
+        """`brandly reference ... --json` emits parseable JSON (#278)."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        from brandly_cli import quality_gate as qg
+        from brandly_cli.cli import cli
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import ProjectData
+
+        pid = "ref-json"
+        asyncio.run(
+            ProjectManager(tmp_path).create(ProjectData(id=pid, name="J", style="cinematic"))
+        )
+        fake_result = {"url": "https://example.invalid/r.png", "id": "t1"}
+
+        def fake_save(url, project_id, kind, root=None, prompt_hint="", category=None):  # noqa: ANN001
+            target_dir = root / "pre-production" / project_id / (category or "general")
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / "char_theo.png"
+            target.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+            return target
+
+        with (
+            patch("brandly_cli.cmd.generation.generate_image", AsyncMock(return_value=fake_result)),
+            patch("brandly_cli.cmd.generation._save_artifact", side_effect=fake_save),
+            patch(
+                "brandly_cli.quality_gate.verify_element",
+                AsyncMock(return_value=qg.GateResult(status="pass", score=95, kind="image")),
+            ),
+        ):
+            result = CliRunner(env={"ROOT": str(tmp_path)}).invoke(
+                cli,
+                ["reference", pid, "--subject-type", "character", "-s", "theo",
+                 "--json"],
+                input="y\n",
+            )
+        assert result.exit_code == 0, result.output
+        # The trailing JSON object spans multiple lines — take it from its
+        # opening brace to the end.
+        lines = result.output.strip().splitlines()
+        json_start = next(
+            (i for i, ln in enumerate(lines) if ln.strip() == "{"), None
+        )
+        assert json_start is not None, (
+            f"no JSON object in the --json output: {result.output}"
+        )
+        payload = json.loads("\n".join(lines[json_start:]))
+        assert payload.get("status") == "succeeded", f"unexpected JSON: {payload}"
+        assert payload.get("path"), "the JSON result must carry the saved path"

@@ -204,6 +204,13 @@ def _print_gate_threshold_summary(gate_scores: dict[str, int], threshold: int) -
         "for plates smaller than 512px on the short side."
     ),
 )
+@click.option(
+    "--json",
+    "json_out",
+    is_flag=True,
+    help="Emit only a machine-readable JSON result instead of human-readable "
+    "console output (issue #278 — parity with `brandly image --json`).",
+)
 @click.pass_context
 def reference(
     ctx: click.Context,
@@ -218,21 +225,32 @@ def reference(
     import_image: str | None,
     no_generate: bool,
     ref_format: str,
+    json_out: bool = False,
 ) -> None:
     """Generate the primary reference image for a project.
 
     The primary reference is a GOLD-grade image that locks the appearance of a
-    key asset (object, character, location, etc.) across all subsequent
-    `brandly video` generations. Should be the FIRST generation step.
+    key asset (object, character, wardrobe, location, etc.) across all
+    subsequent `brandly video` generations. Should be the FIRST generation
+    step.
 
-    The generated image is saved to
-    .brandly/<project_id>/images/<category>/ (e.g. images/prop/ for objects)
-    with the prefix `reference_<subject_type>_*` and is auto-detected by
-    `brandly video` (auto-injected as the strongest reference image).
+    The generated image is saved to the v2 media tree —
+    pre-production/<project_id>/<category>/ (e.g. pre-production/<id>/prop/
+    for objects) — named with the layout prefix from IMAGE_NAME_PREFIXES
+    (character -> char_*, location -> loc_*, object/prop -> prop_*, other
+    types keep <subject_type>_*). It is auto-detected by `brandly video`
+    (auto-injected as the strongest reference image).
     """
     if not is_valid_project_id(project_id):
         console.print("[red]Invalid project ID format.[/red]")
         sys.exit(1)
+
+    # Issue #278: in --json mode, suppress rich console output so stdout
+    # carries only the machine-readable result object (same pattern as the
+    # image command, issue #73).
+    quiet_original = console.quiet
+    if json_out:
+        console.quiet = True
 
     subject_skill = REFERENCE_SUBJECTS[subject_type]
     prompt = build_reference_prompt(subject_type, subject)
@@ -484,7 +502,16 @@ def reference(
                     project_id=project_id,
                 )
             )
-            _print_gate_report(gate_result)
+            if json_out:
+                # Issue #278: the gate report lives on the gates module's own
+                # console — suppress it too so stdout carries only the JSON.
+                from brandly_cli import gates as _gates
+
+                _gates.console.quiet = True
+                _print_gate_report(gate_result)
+                _gates.console.quiet = quiet_original
+            else:
+                _print_gate_report(gate_result)
             if gate_result.status == quality_gate.FAIL:
                 console.print(
                     "[yellow]⚠ Quality gate failed — review or regenerate the "
@@ -513,6 +540,7 @@ def reference(
         # pre-fix ordering voided the gate: a failed plate became the
         # auto-injected reference for every video call). The metadata records
         # the gate verdict so consumers can fail-honest.
+        promoted = False
         if gate_result is not None and gate_result.status == quality_gate.FAIL:
             console.print(
                 "[yellow]⚠ primary_reference NOT updated — the quality gate "
@@ -542,6 +570,7 @@ def reference(
                 console.print("[red]✗ Failed to update project metadata.[/red]")
                 sys.exit(1)
             console.print("[green]✓ Project primary_reference metadata updated.[/green]")
+            promoted = True
 
         # Only after approval: write the generation doc and flip the plan to
         # COMPLETED in the production plan (a rejection keeps it PENDING so
@@ -568,7 +597,31 @@ def reference(
             f"\n[bold]Next:[/bold] run [cyan]brandly video {project_id} ...[/cyan] — the "
             f"primary reference image will be auto-injected as a reference image."
         )
+        if json_out:
+            # Issue #278: machine-readable result (parity with image --json).
+            console.quiet = quiet_original
+            _print_machine_json(
+                {
+                    "status": "succeeded",
+                    "project_id": project_id,
+                    "subject_type": subject_type,
+                    "subject": subject,
+                    "path": str(saved),
+                    "gate_status": gate_result.status if gate_result else None,
+                    "gate_score": gate_result.score if gate_result else None,
+                    "promoted": promoted,
+                }
+            )
     else:
+        if json_out:
+            console.quiet = quiet_original
+            _print_machine_json(
+                {
+                    "status": "error",
+                    "error_code": "no_artifact",
+                    "error_message": "could not save the reference artifact",
+                }
+            )
         console.print("[yellow]⚠ Could not save reference artifact[/yellow]")
         sys.exit(1)
 

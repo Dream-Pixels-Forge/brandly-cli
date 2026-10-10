@@ -326,6 +326,18 @@ def list_projects(ctx: click.Context) -> None:
         "'all' = judge every clip. Needs AGNES_API_KEY."
     ),
 )
+@click.option(
+    "--agent-runner",
+    "agent_runner_name",
+    type=click.Choice(["agnes", "off"]),
+    default="agnes",
+    show_default=True,
+    help=(
+        "The agent runner for agent-derived phases (issue #277): 'agnes' "
+        "drives the concept phase with the Agnes text model (needs "
+        "AGNES_API_KEY); 'off' fails honestly when a phase needs a runner."
+    ),
+)
 @click.pass_context
 def run(
     ctx: click.Context,
@@ -334,6 +346,7 @@ def run(
     until_phase: str | None,
     yes: bool,
     gate_ai: str,
+    agent_runner_name: str = "agnes",
 ) -> None:
     """Run the next phase of the pipeline.
 
@@ -369,7 +382,13 @@ def run(
                 "spends credits.",
                 abort=True,
             )
-        director = Director(DirectorConfig(root, gate_ai=gate_ai))
+        # Issue #277: the default path DRIVES the concept phase — the agnes
+        # runner derives it from the brief (fail-honest without a key per
+        # G11); 'off' keeps the external-agent workflow.
+        agent_runner = _agnes_concept_runner if agent_runner_name == "agnes" else None
+        director = Director(
+            DirectorConfig(root, gate_ai=gate_ai, agent_runner=agent_runner)
+        )
         result = run_async(director.run_pipeline(project_id, until=until_phase))
         if "error" in result:
             console.print(
@@ -2250,6 +2269,41 @@ def _phase_status(project: Any, phase: str) -> tuple[str, str | None]:
     status = str(getattr(entry, "status", "pending") or "pending")
     error = getattr(entry, "error", None)
     return status, (str(error) if error else None)
+
+
+def _agnes_concept_runner(prompt: str) -> str:
+    """Issue #277: the default agent runner for agent-derived phases.
+
+    Prompts the Agnes text model with the phase prompt and returns its
+    markdown. Fails honestly (G11) on a missing key or empty content —
+    never a fake pass. The dual-context helper keeps it loop-safe on the
+    pipeline path.
+    """
+    import os
+
+    if not os.getenv("AGNES_API_KEY"):
+        raise RuntimeError(
+            "AGNES_API_KEY is not set — the agent-derived phase cannot run. "
+            "Set the key, write the phase document yourself, then continue "
+            "the pipeline (or re-run with --agent-runner off for the exact "
+            "fail-honest behavior)."
+        )
+    from brandly_cli.agnes_client import chat_completion
+
+    data = run_async(
+        chat_completion(
+            [{"role": "user", "content": prompt}],
+            model=DEFAULT_AGNES_TEXT_MODEL,
+        )
+    )
+    msg = (data.get("choices") or [{}])[0].get("message") or {}
+    content = str(msg.get("content") or "").strip()
+    if not content:
+        raise RuntimeError(
+            "the Agnes text model returned no content — the phase document "
+            "cannot be derived (fail-honest, G11)"
+        )
+    return content
 
 
 def plan_shots_for_target(

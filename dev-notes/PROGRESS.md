@@ -107,6 +107,18 @@ Phase 3 engineer (six RED→GREEN increments on `fix/open-issues-270-283`).
       step re-run independently on merged main (results table in
       GOAL-OPEN-ISSUES-270-283.md Program close-out).
 - Next: board clear — 0 open issues, 0 open PRs.
+- [x] **Round 27 housekeeping (2026-10-10):** all 35 stale remote branches
+      deleted after per-branch PROOF of merge (§7.1: 33 via their merged PR;
+      `feature/g8-continuation-take` carries only a throwaway patch script —
+      the real G8 landed via PR #265, symbols on main; `fix/issue-113`
+      proven by `seen_ids` fail-closed + `tests/test_issue_113.py` on main).
+      Remote is `main` only; local branches pruned. Also fixed the local
+      import-linter crash ("Only one live display may be active at once"):
+      root cause is rich 13.9.4's flat `_live` singleton vs import-linter
+      2.15's nested Live-inside-Progress (rich 14+ made set_live a stack —
+      CI's fresh rich never conflicts). Local env upgraded rich 13.9.4 →
+      15.0.0; `lint-imports` exit 0 (2 contracts kept); full suite re-run
+      green (1573 passed / 0 failed), ruff + mypy clean.
 
 ## Phase Completion
 - [x] Phase 0: Bootstrap (AUDIT.md + GOAL.md)

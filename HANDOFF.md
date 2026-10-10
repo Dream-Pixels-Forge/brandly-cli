@@ -1,78 +1,126 @@
-# HANDOFF — brandly-cli: casting skill + release v0.12.1 + live pipeline test
-> Status: **v0.12.1 SHIPPED & VERIFIED (casting goal MET at 10/10) — 13-issue fix queue open (#270–#283)** · For new session
+# HANDOFF — brandly-cli
 
-## 1. Current state
+> **Written:** 2026-10-10, after the enforcement program (PR #306, `6e9c004`)
+> **State:** main green (1595 passed / 0 failed, ruff + mypy + import contracts
+> clean) · **0 open issues · 0 open PRs · 0 stray branches** · release
+> **v0.13.0** on code + GitHub + PyPI (attested, smoke-tested)
 
-**DONE (all merged to main, CI all green):**
-- **v0.12.0** (`5a2c356`, PR #267): version bump + CHANGELOG + README rewrite (fixed BOM/corrupted fences/eaten chars; real 83-command / 22-tool surface). 0.11.1's publish FAILED at the version-check gate (tag said 0.11.1, `__about__.py` said 0.11.0); PyPI skipped it; 0.12.0 superseded. Verified on all three + smoke test.
-- **GOAL-ALL-OPEN-ISSUES close-out** (`040f289`, PR #266): 16 issues closed, goal-met MET.
-- **brandly-casting skill** (`987de37`, PR #269) + **release v0.12.1**: cast from production bible (Section 4) → try wardrobe → character sheet from cast. Cast set per character: hero `3:2` / portrait `3:4` / full-body `2:3`; wardrobe tries i2i via auto-refs (dedicated `wardrobe/` REF_CATEGORY, `wardrobe_` prefix); GOLD plate (16:9, `char_<slug>_<ts>`) auto-injected. RED-first: 5 contract tests FAILED (empty dir) → 5 passed. Ships in the wheel + installed `~/.agents/skills/brandly-casting/` (in sync) + skills/README.md row. Verified: code/GitHub/PyPI all **0.12.1**, wheel carries skill + never-bypass rule, goal-met **MET 10/10**. Ledger Round 27 (`a296679`) + findings (`0c4924f`, PR #279).
-- **Live pipeline test** (`brewmaster-one` at `/tmp/brandly-demo`, ~100 credits): CAST (6) → WARDROBE (2) → SHEET (2 GOLD plates) all working; gate caught a real mismatch honestly (68/100, exit 1); #250 auto-approve approved the passing plate. **Video BLOCKED: provider 503 from `apihub.agnes-ai.com/v1/videos`** (images 10/10; external — matches closed #191/#192).
+## What just happened (read this first)
 
-**THE FIX QUEUE — 13 open issues (#270–#283):**
-- **#270 [HIGHEST]** `current_phase="video"` (invalid, not in PHASE_ORDER) written by `generation.py:2340` `_sync_project` → poisons project.json → `run`/`approve`/`run --execute` ALL crash unhandled ValueError at `production.py:3290/363/531`. Project BRICKS.
-- **#271 [HIGH]** `cli.py:125` `_load_project_reference` bare `asyncio.run(` → RuntimeError swallowed → **GOLD reference silently dropped** on pipeline-path video calls (#249 fix missed cli.py). Also audit `agent_tools.py`/`web/` sites.
-- **#272 [HIGH]** `image --output` resolves relative to the **CLI cwd**, ignoring `--root` — 6 cast images landed INSIDE the brandly-cli repo; project root stayed empty. (Inverse of #184.)
-- **#273** trends silently writes an EMPTY trends.md — pipeline passes the project's **style** as the research **category**; `TREND_DATABASE` only has product categories (beauty/fashion/fitness/food/tech).
-- **#274** script phase hardcodes `beat_durations` (4/5/5/6) **conflicting** with `scenes.BEAT_DURATIONS` (5/6/6/5) — shots.json vs scenes.json disagree; + beat cycle wraps the closing 5th shot to "setup".
-- **#275** `primary_reference` updated BEFORE the gate (`generation.py:488` before 490) — a gate-FAILED plate becomes the identity anchor.
-- **#276** film duration never reaches the pipeline — no `--target-duration` on init/project.json; 30s request → 24s unchecked.
-- **#277** `run --execute` dead-ends at concept — CLI never wires `agent_runner` (agnes-chat could be the default).
-- **#278** reference/image `--help` state WRONG paths (`.brandly/<id>/images/` vs real `pre-production/<id>/`) + WRONG prefix (`reference_*` vs `char_*`); `reference` lacks `--json`.
-- **#280** screenplay declared (DOC_CATEGORIES + analyze-project checks against it) but NEVER created — no writer. Screenplay = core shots; **transitions/inserts are additional elements the Director can add** for cinema-completeness.
-- **#281** duplicate storyboard trees — `brandly storyboard` writes legacy `.brandly/<id>/images/storyboard/` while v2 declares `pre-production/<id>/storyboard/`; AND the pipeline never generates storyboards (skips #33's catch-at-image-cost step).
-- **#282** `reference` REJECTS `--subject-type wardrobe` (not in choices) though layout declares it first-class; no wardrobe-only mode (garment flat-lay WITHOUT a person).
-- **#283** duplicate video trees — `migrate.py:33-34` maps singular→PLURAL (`transitions`, `inserts`) while `VIDEO_CATEGORIES` (layout.py:63) + `shot_runner.py:959` use singular; AND clips never land in their respective folder (all primary clips → `videos/scenes/`).
+Three back-to-back programs, all landed via PRs with CI green:
 
-## 2. Remaining work (in order)
+1. **13-issue fix program (#270–#283) → v0.13.0** — pipeline honesty (async
+   surface, phase machine), reference truth (gate-before-promotion, wardrobe),
+   layout contract (`--output` root, folder routing, storyboards), document
+   chain (trends category, single beat map, `--target-duration`), agent driver
+   (`--agent-runner agnes`), screenplay phase. Ledger: `PROGRESS.md` Rounds
+   27–28, goal in `GOAL-OPEN-ISSUES-270-283.md` (goal-met audit MET).
+2. **Live demo pipeline test** (`demo/coffee-mug-duo` — two people showing a
+   coffee mug, 30s target, storyboards on): the document chain
+   (trends → concept → screenplay → script) + the storyboard keyframe pass
+   completed live with real credits; video generation blocked by provider
+   capacity (Agnes `503 video_queue_full`, 2+ hours). Road findings filed:
+   #291 (closed by maintainer as known), #292–#295. `demo/` is gitignored.
+3. **Enforcement program (#297–#302, #304) → PR #306** — the pipeline now
+   honors the layout contract + the skills' production flow. Everything below.
 
-1. **Fix round via git-driven-development** — branch-per-issue, RED-first, PR per fix. Start #270 (bricks), #271 (silent data loss), #272 (root-path hijack).
-2. Then #275 (metadata ordering), #274 (import scenes.BEAT_DURATIONS), #273 (product_category field or fail-honest), #277 (wire agnes-chat as default concept runner).
-3. Then #281–#283 (pick ONE singular/plural convention, route clips by folder), #282 (wardrobe subject-type), #276 (target-duration → script), #278 (docstrings + --json).
-4. After the round: release v0.12.2 (bump + CHANGELOG + tag + GitHub release + PyPI verify — the proven flow).
-5. Re-run the live pipeline test end-to-end (video when the 503 clears) — expect storyboard step runs, clips land in respective folders, concept passes via --execute.
+## The enforced state (what PR #306 changed)
 
-**NEXT COMMAND:** `/home/dimona/bin/gh issue list --state open` then `git checkout -b fix/phase-poisoning-270` — RED-first test for #270.
+**Phase chain (13 phases, the skills' production flow):**
+`init → trends → concept → bible → casting → screenplay → script → asset →
+audio → re_edit → validate → publish → done`
 
-## 3. Verified ground truth (MUST carry forward)
+- **bible (#297)** — derives `docs/bible/production_bible.md` from brief +
+  concept + trends via the agent runner; **Section 4: Characters is
+  mandatory** (fail-honest without it — casting cannot run).
+- **casting (#301)** — parses Section 4 → per character: cast set (hero 3:2 /
+  portrait 3:4 / full-body 2:3) + the GOLD sheet, composition-gated, under
+  `pre-production/<id>/character/` (`char_<name>_cast-*` / `char_<name>_sheet`).
+- **screenplay (#298)** — writes `docs/screenplay/screenplay.md` (NOT plan/).
+- **storyboard (#300)** — panels carry the grid-style-lock **graphite
+  preamble**; approved panels are **tiled in code (PIL)** into ONE
+  `storyboard_grid_4x4.png` (4 cols × ≥4 rows, edge-to-edge, no text).
+- **taxonomy (#299)** — `docs/general/` (trends, concept, scenes.json);
+  `docs/plan/` = pre-generation plans only; the shots.json root placement is
+  the documented load-bearing exception (timeline editor path).
+- **run logs (#304)** — `run --execute` writes `docs/tmp/run_<ts>.log`
+  (structured: RUN START / PHASE START|DONE|FAIL). Agents never invent
+  locations.
+- **resumability (#292)** — the storyboard pass consults
+  `docs/tmp/storyboard_progress.txt`; approved keyframes skip regeneration
+  (no credit re-spend on retries); per-shot console lines.
+- **retries (#293)** — the pipeline-path produce runner gets `retries=1`.
+- **provider saturation (#294)** — create-failure details persist to
+  `docs/tmp/video_create_fail_<ts>.md`; the asset phase classifies
+  `[provider saturated] … wait several minutes and re-run`.
+- **ref cap (#295)** — canonical names (Scene-XX / char_ / loc_ / prop_ /
+  wardrobe_) outrank unknown files; junk can never displace real references.
 
-- **`python` is not on PATH — use `python3`.** mypy/import-linter not preinstalled: `pip install --break-system-packages mypy import-linter` (test_architecture_contracts.py collection-ERRORs without it).
-- **PyPI simple-index lags the version endpoint by minutes** — `pip install` can fail right after a green publish; retry before declaring it broken. The workflow's hard gate (version endpoint with files) is the truth for "did the publish land".
-- **Version lives in ONE place**: `src/brandly_cli/__about__.py` (hatch dynamic). Gate: `python3 scripts/version_check.py --tag vX.Y.Z`.
-- **`current_phase="video"` is POISON** — not in PHASE_ORDER (constants.py:79). Writer: `generation.py:2340`. Crash sites: production.py:3290 (run_pipeline), 363 (run), 531 (approve).
-- **`TREND_DATABASE` keys are product categories** (beauty/fashion/fitness/food/tech), NOT styles.
-- **`scenes.BEAT_DURATIONS`** = setup 5/turn 6/consequence 6/resolve 5 — the script phase's local copy (4/5/5/6) is WRONG (#274).
-- **Cast/reference conventions**: `IMAGE_NAME_PREFIXES` character→`char`, location→`loc`, object/prop→`prop`; unknown → lowercased type (`wardrobe_`). `REF_CATEGORIES` = (character, location, prop, wardrobe). Plates land in `pre-production/<id>/<category>/` (v2 root — NOT `.brandly/<id>/images/`, dead but `brandly storyboard` still writes it — #281).
-- **`brandly reference` has NO `--json`**; `--subject-type` choices OMIT wardrobe (#278/#282).
-- **Reference auto-approve**: `ai_verdict="pass"` + score ≥ 90 → auto-approves; warn/fail prompts Y/n — and **CliRunner AUTO-ANSWERS Y** (beware in tests).
-- **AGNES_API_KEY IS set** — real runs spend credits (image ~10 @2K; video 503'd this session — provider outage, images unaffected).
-- **Storyboard mandatory** (#216/#218): 4x4 grid + **graphite pencil on white paper** + same-face/same-silhouette continuity + one model call per frame + local PIL tiling — `skills/brandly-storyboard/references/grid-style-lock.md`, MANDATORY/STRICT.
-- **`gh issue view` needs `--json <fields> -q '...'`** (plain view errors).
-- **ALWAYS `git branch --show-current` before committing** — after `gh pr merge --delete-branch` git checks main out (Round 24 break — not repeated since).
+**Prevention layer (E7):** the generated `AGENTS.md` teaches the layout
+contract, the production flow, the run-log convention, and the
+no-junk-in-media-tree rule. `tests/test_layout_contract_enforcement.py`
+(21 tests) pins ALL of it — a source-contract sweep forbids hardcoded
+`docs/plan` paths in production.py, and the taxonomy/AGENTS contracts are
+asserted. **Do not weaken these tests — they are the anti-drift mechanism.**
 
-## 4. Files changed this session
+## Known-open items (filed, not yet enforced)
 
-`__about__.py` (0.11.0→0.12.1) · `CHANGELOG.md` ([0.12.0]+[0.12.1]) · `README.md` (rewrite) · `skills/brandly-casting/` (NEW) · `skills/README.md` (row) · `dev-notes/GOAL-CASTING-V0.12.1.md` (NEW, audit MET) · `dev-notes/PROGRESS.md` (Rounds 26–27) · `HANDOFF.md` (this file; old record preserved at `040f289`)
+- **#291** (closed by maintainer as known): empty error messages on transient
+  failures — the fix pattern is documented in the issue
+  (`{type(e).__name__}: {e}` everywhere; `_generate_shot` and the storyboard
+  pass already do it). Sweep `grep -rn "failed: {e}" src/brandly_cli/` when
+  reopening.
+- **#294 (partial)** — the saturation *classification* shipped; the provider
+  *fallback* (alternate backend when Agnes is saturated) did not. The G14
+  `VideoBackend` seam is the extension point.
+- **#300 (ruling recorded in code)** — the grid always builds 4 columns ×
+  ≥4 rows; cells beyond the panel count render as clean white paper. If the
+  maintainer wants strict 16-frame grids only, tighten `_tile_contact_sheet`.
+- **#302 (partial)** — the drift fixes shipped; the *caster prompt quality*
+  (bible Section 4 → per-character prompts) is a first pass; refine with real
+  bibles.
 
-## 5. How to verify when you land
+## Demo project (gitignored, resumable)
 
-```bash
-git pull && git log --oneline -4   # expect 0c4924f on top
-python3 -m pytest tests/ -q        # expect: 1528 passed / 1 skipped
-python3 scripts/version_check.py --tag v0.12.1   # tag OK
-ruff check src/ tests/             # All checks passed
-curl -s https://pypi.org/pypi/brandly-cli/json | python3 -c "import json,sys; print(json.load(sys.stdin)['info']['version'])"   # 0.12.1
+`demo/coffee-mug-duo` — two people showing a coffee mug, 30s target, food
+category, storyboards on. Document chain + 5 gate-approved keyframes on disk;
+blocked at video by provider capacity.
+
 ```
+brandly --root demo run coffee-mug-duo --execute --yes
+```
+(The attempt counter may need the documented project.json reset —
+`phases.asset.attempts = 1`.)
 
-## 6. Goal spec & verdict
+## Conventions that must not break
 
-- Goal: `dev-notes/GOAL-CASTING-V0.12.1.md` — brandly-casting skill + release v0.12.1
-- Verdict: **MET** (16 checks via `check_goal.py all`, confidence 10/10, `goal_loop.py gate` PASS; fingerprint `41dc6ef4187af2d7…`)
+- RED → GREEN per increment (`AGENTS.md` §0, `CONVENTIONS.md` §2)
+- Land via branch → PR → CI green → `gh pr merge --squash --delete-branch`
+- `PHASE_HANDOFF_SPECS` is the dispatch contract — deliver what it says or
+  correct it; never leave the two divergent
+- Writers route through `layout.docs_dir(...)` — never hardcode a docs folder
+- PR bodies: one `Fixes #N` keyword per line (space-separated lists only
+  auto-close the first issue)
+- Release flow: bump `__about__.py` (single source) + CHANGELOG → PR → CI →
+  tag `vX.Y.Z` + `gh release create` → the Release-to-PyPI workflow (OIDC +
+  attestations) → verify all three surfaces + fresh-venv smoke test
 
-## 7. Environment facts
+## Environment notes
 
-- Node v24 / pnpm 11.5.1; web uses npm (`npm --prefix web run lint/build`)
-- Python 3.12.3 → `python3`; mypy + import-linter via `pip install --break-system-packages`
-- On `main` @ `0c4924f`; repo `/home/dimona/Dream-Pixels-Forge/Dev/cli/brandly-cli`
-- Demo: `/tmp/brandly-demo` (`brewmaster-one`, state repaired for #270 diagnosis; video blocked by provider 503)
-- memorius diary MCP tool BROKEN for multi-word titles (#59 on pi-memorius) — use `memorius_store`
+- Windows local: rich ≥14 required (import-linter 2.15's nested Live crashes
+  on rich 13's flat `_live` singleton) — the env was upgraded to rich 15.0.0,
+  suite re-verified green.
+- The demo run's Agnes video endpoint saturated (`video_queue_full`) for 2+
+  hours — provider capacity, not code. The classification + resume path (#294)
+  now makes this a wait-and-resume, not a dead end.
+
+## Suggested next session
+
+1. Re-run the demo pipeline (command above) — the enforced chain (bible →
+   casting → screenplay → script → asset) end-to-end with real credits; watch
+   `docs/tmp/run_*.log`.
+2. Reopen #291 and do the empty-error-message sweep (pattern in the issue).
+3. #294 provider fallback: `--fallback-model` on the produce path when a
+   second provider key is configured.
+4. Cut v0.14.0 when the demo completes end-to-end (the enforcement program is
+   feature-worthy: bible + casting + grid).

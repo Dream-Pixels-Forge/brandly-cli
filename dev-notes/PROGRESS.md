@@ -1,5 +1,42 @@
 # Pipeline Progress — brandly-cli
 
+## Round 29/256 — Live end-to-end pipeline test (demo `coffee-mug-duo`) — findings filed as #291–#295; video blocked by provider capacity
+
+- [x] **Setup:** `demo/` created + gitignored (generated assets never pollute
+      the repo); `brandly --root demo init -n "Coffee Mug Duo" -i "Two people
+      showing a coffee mug" --target-duration 30 --category food
+      --storyboards` → project `coffee-mug-duo`.
+- [x] **Document chain COMPLETE (live, real credits):** init → trends →
+      concept → screenplay → script — all five phases completed with real
+      documents on disk (`trends.md` with food-category data,
+      `concept.md`, `screenplay.md`, `shots.json`: 5 shots summing to
+      exactly 30s, beats setup/turn/consequence/resolve/resolve — the
+      #276 target derivation and #274 beat distribution verified live).
+- [x] **Storyboard pass COMPLETE:** 5 keyframes generated, downloaded,
+      composition-gate approved under
+      `demo/pre-production/coffee-mug-duo/storyboard/` (the #281 wiring
+      worked: `--storyboards` ran the pass before any video spend).
+- [x] **BLOCKED at video generation:** the Agnes `/v1/videos` endpoint
+      returned `503 video_queue_full` / ReadTimeout continuously for
+      ~1.5 hours across 8 runs. The state machine behaved correctly:
+      fail-closed per shot, attempt counter (MAX_PHASE_ATTEMPTS=3), retry
+      envelope with escalation, resume hints — every re-run resumed AT the
+      asset phase (completed phases skipped). Attempt-counter resets
+      between manual waits used the documented project.json repair.
+- [x] **Road findings filed as GitHub issues (later fix):** #291 (empty
+      error messages on transient failures — data honesty G11), #292 (the
+      storyboard pass has no progress log + silent success → retries
+      re-generate all keyframes, credits re-spent), #293 (the pipeline
+      path passes `retries=0`; no phase-level inter-attempt backoff),
+      #294 (provider saturation has no distinct handling / no provider
+      fallback), #295 (auto-ref discovery ranks every image equally — a
+      junk file displaced a real keyframe at the 5-ref cap).
+- [x] **Resume command (when the provider recovers):** `brandly --root demo
+      run coffee-mug-duo --execute --yes` — the run resumes AT the asset
+      phase with all document-chain + storyboard artifacts intact.
+- Gates: the run exercised the shipped 0.13.0 code path on main
+  (`fbb8565`); no repo code changed (the demo tree is gitignored).
+
 ## Round 28/256 — Release v0.13.0: code + GitHub + PyPI all verified as latest
 
 - [x] **Release prep (PR #289 → `fbb8565`, all 4 CI checks green):**

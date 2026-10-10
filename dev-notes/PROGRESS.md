@@ -48,7 +48,12 @@
       sheet), #301 (the casting stage never runs — no cast set/folder),
       and #302 (the drift tracking issue: the phase chain vs the skills'
       production flow — bible → casting → screenplay → storyboard — with a
-      governed-resolution proposal).
+      governed-resolution proposal). Second sweep: #304 (run logs have no
+      home — `brandly run --execute` persists no transcript, so an agent's
+      redirect landed `pipeline_run*.log` at the project root instead of
+      `docs/tmp/`, the layout's transient-docs home; the demo logs were
+      moved into `docs/tmp/` and the fix proposal is a first-class run-log
+      writer).
 
 ## Round 28/256 — Release v0.13.0: code + GitHub + PyPI all verified as latest
 

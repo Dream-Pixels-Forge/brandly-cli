@@ -3,12 +3,97 @@
 ## Current State
 - Project: brandly-cli
 - Started: 2026-09-07
-- Version: 0.10.2 (cut 2026-10-04; prior 0.10.1; #197 #208 #210)
-- Current Phase: Phase 3 (Engineer) — GOAL-ALL-OPEN-ISSUES.md (16 open issues)
-- Status: in-progress (P1 landed; P2–P6 remaining)
-- Branch: fix/f2-reference-injection-245-252
-- Test Count: 1456 passed (24 pre-existing failures from untracked aspirational tests — P2 triage)
-- Lint: clean on touched files (repo-wide pre-existing in untracked files)
+- Version: 0.12.0 (cut 2026-10-04)
+- Current Phase: Phase 3 (Engineer) — GOAL-OPEN-ISSUES-270-283.md (13 open issues #270–#283)
+- Status: in-progress (I1–I6 landed; I7 close-out)
+- Branch: fix/open-issues-270-283
+- Test Count: 1573 passed / 0 failed (baseline 1528 + 45 new)
+- Lint: ruff clean repo-wide
+
+## Round 27/256 — GOAL-OPEN-ISSUES-270-283: all 13 open issues (#270–#283) fixed
+
+Goal: `dev-notes/GOAL-OPEN-ISSUES-270-283.md`. Pipeline-orchestrator session
+(2026-10-09/10): Phase 0 recon (all 13 issue bodies fetched + every code site
+verified) → Phase 2 govern (goal frozen with gates + anti-drift rules) →
+Phase 3 engineer (six RED→GREEN increments on `fix/open-issues-270-283`).
+
+- [x] **I1 (commit `a2f05fd`) — async surface + phase-machine honesty
+      (#271 #270).** RED-first (tests/test_open_issues_270_283.py, 10 tests,
+      observed 10 failed with the live RuntimeWarning → 10 passed).
+      #271: `cli._load_project_reference` + the 5 agent_tools handlers + the
+      web async helpers go through `async_compat.run_async` (the pipeline
+      path and the agent_tool_loop run inside a running loop — a bare
+      asyncio.run raised, was swallowed, and the GOLD reference was silently
+      dropped; every built-in tool call from `agnes-chat --tools` failed with
+      `{"error": ...}`). Same-chain: `brandly video`'s metadata lookup now
+      searches the REAL plate path (`resolve_media_root/images / category`)
+      with the REAL prefix (IMAGE_NAME_PREFIXES). #270: the produce runner's
+      `_sync_project` writes `current_phase="asset"` (never the invalid
+      "video"); the three `.index()` sites (run/approve/run_pipeline) are
+      guarded fail-honest (structured error + repair hint, G11).
+      Aligned: test_f2_layout_based_reference fixture to the real v2 plate
+      path + prefix (reason recorded).
+- [x] **I2 (commit `a4dcec9`) — gate-before-promotion + wardrobe (#275
+      #282).** RED-first (6 tests, observed 6 failed → 17 passed).
+      #275: the primary_reference promotion happens AFTER the quality gate
+      and the human gate — a gate-FAILED plate is never promoted to the
+      identity anchor; the metadata records gate_status/gate_score. The
+      --image import path gets the same treatment. #282: wardrobe added to
+      REFERENCE_SUBJECTS (--subject-type choices derive from it) + a
+      garment-only flat-lay template (no person, no mannequin body).
+      Aligned: test_reference.py's two happy-path tests mock the gate to
+      pass (reason recorded — their corrupt fake plates fail the REAL gate).
+- [x] **I3 (commit `16f40e2`) — layout contract (#272 #283 #281).**
+      RED-first (6 tests, observed 6 failed → 23 passed). #272: a relative
+      `--output` resolves against the project root (never the CLI cwd — the
+      job-poll copy path gets the same fix). #283: migrate.py maps to the
+      LAYOUT's singular video categories (the plural rename that created
+      duplicate transition/transitions + insert/inserts trees is gone);
+      `RunnerConfig.move_shot_clips` routes by the shot's folder (insert →
+      videos/insert/, transition → videos/transition/). #281: the storyboard
+      docstring names the real v2 tree; ProjectData gains `storyboards`; the
+      asset phase runs the keyframe pass first (generate → download →
+      deterministic gate → pre-production/<id>/storyboard/) and a FAILING
+      keyframe blocks that shot's video spend (issue #33's pipeline).
+- [x] **I4 (commit `86c9f70`) — document chain truth (#273 #274 #276).**
+      RED-first (9 tests, observed 9 failed → 32 passed). #273: style and
+      category are different axes — ProjectData gains `product_category`,
+      init gains `--category`, the trends phase researches the PRODUCT
+      category (TREND_DATABASE is keyed by category; missing/unknown →
+      fail-honest with the available categories — a zero-format document is
+      never written as success). #274: the script phase consumes
+      scenes.BEAT_DURATIONS (single source; the local conflicting dict
+      deleted); the beat distribution repeats the LAST beat — a closing shot
+      is never wrapped back to setup. #276: ProjectData gains
+      `target_duration`, init gains `--target-duration`; the script phase
+      derives the shot plan to HIT the target (`plan_shots_for_target`:
+      beat-window durations + remainder distribution inside the reliable
+      window; impossible targets fail honest with the envelope); `brandly
+      status` reports film-level duration truth (target vs measured, '—'
+      data-honest when nothing measured). Aligned: test_pipeline_doc_chain
+      fixtures carry a product_category (reason recorded — #273 supersedes
+      the #259 category axis).
+- [x] **I5 (commit `fd23ae4`) — agent driver + CLI surface (#277 #278).**
+      RED-first (6 tests, observed 6 failed → 43 passed). #277:
+      `_agnes_concept_runner` + `run --agent-runner agnes|off` (default
+      agnes): the Agnes text model derives the concept from the brief via
+      the dual-context helper, fail-honest (G11) on a missing key/empty
+      content — the CLI alone can now pass concept. #278: the reference
+      docstring names the real v2 tree + the REAL prefix; `brandly
+      reference --json` added (parity with image --json; the gate report's
+      own console suppressed in --json mode).
+- [x] **I6 (commit `fb20578`) — screenplay producer (#280).** RED-first
+      (6 tests, observed 6 failed → 44 passed). A `screenplay` phase joins
+      the chain between concept and script (PHASE_ORDER 10 → 11; the state
+      machine rides the existing ordering/resume/fail-closed machinery):
+      derives from brief + concept via the agent runner (fail-honest
+      without one), writes docs/plan/screenplay.md; `_check_phase_artifacts`
+      gains the screenplay case (approve fails closed); PHASE_HANDOFF_SPECS
+      + phase_costs gain the screenplay row; analyze-project's
+      check-against document now exists. Aligned 7 phase-order tests
+      (reason recorded — the phase joins the chain).
+- Gates: full suite **1573 passed / 0 failed** (baseline 1528 + 45 new);
+      ruff clean repo-wide.
 
 ## Phase Completion
 - [x] Phase 0: Bootstrap (AUDIT.md + GOAL.md)

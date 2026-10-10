@@ -59,15 +59,15 @@ screenplay producer for the declared-but-unproduced document.
 | 278 | docs/bug | stale save-path/prefix docstrings; reference lacks --json | I5 |
 | 280 | feat | screenplay declared but never produced | I6 |
 
-## Increments (hard order)
+## Increments (hard order) — I1-I6 COMPLETE (see PROGRESS.md Round 27)
 
 ### I1 — Async surface + phase-machine honesty (#271, #270)
 
 **Deliverables**
-- [ ] RED-first contract tests (`tests/test_open_issues_270_283.py`): observed failures on the pre-fix tree
-- [ ] #271: `cli.py:_load_project_reference` → `run_async`; `agent_tools.py` 5 sites → `run_async` (reachable via `agent_tool_loop`); `web/state.py:compute_quality_status` + `web/utils/ffprobe.py:get_clip_info` converted defensively (no current callers — audit note); all other bare sites audited + recorded as safe CLI-thread context
-- [ ] #271 (same-chain): `brandly video` metadata lookup uses the real plate path (`resolve_media_root(root, id, "images") / category`) + the real prefix (`layout.image_name_prefix`) — the `images/<category>` depth + `reference_<subject_type>_` prefix dead lookup is corrected
-- [ ] #270: `generation.py:_sync_project` writes `current_phase="asset"` (the produce runner belongs to the asset phase — never an invalid stage name); the 3 `.index()` sites (production.py `run_pipeline`/`run`/`approve`) guarded fail-honest: a `current_phase` not in `PHASE_ORDER` returns/raises a structured error with a repair hint (G11) — a poisoned state file never crashes the CLI with a raw traceback
+- [x] RED-first contract tests (`tests/test_open_issues_270_283.py`): observed failures on the pre-fix tree
+- [x] #271: `cli.py:_load_project_reference` → `run_async`; `agent_tools.py` 5 sites → `run_async` (reachable via `agent_tool_loop`); `web/state.py:compute_quality_status` + `web/utils/ffprobe.py:get_clip_info` converted defensively (no current callers — audit note); all other bare sites audited + recorded as safe CLI-thread context
+- [x] #271 (same-chain): `brandly video` metadata lookup uses the real plate path (`resolve_media_root(root, id, "images") / category`) + the real prefix (`layout.image_name_prefix`) — the `images/<category>` depth + `reference_<subject_type>_` prefix dead lookup is corrected
+- [x] #270: `generation.py:_sync_project` writes `current_phase="asset"` (the produce runner belongs to the asset phase — never an invalid stage name); the 3 `.index()` sites (production.py `run_pipeline`/`run`/`approve`) guarded fail-honest: a `current_phase` not in `PHASE_ORDER` returns/raises a structured error with a repair hint (G11) — a poisoned state file never crashes the CLI with a raw traceback
 
 **Definition of Done**
 - [ ] New tests pass RED→GREEN; full suite zero NEW failures
@@ -78,8 +78,8 @@ screenplay producer for the declared-but-unproduced document.
 ### I2 — Reference truth: gate-before-promotion + wardrobe (#275, #282)
 
 **Deliverables**
-- [ ] #275: `primary_reference` metadata update moves AFTER the quality gate; on gate FAIL the plate is NEVER promoted (metadata skipped, honest warning — the plate stays on disk, un-promoted); on gate pass / no gate the metadata records `gate_status`/`gate_score` so consumers can fail-honest
-- [ ] #282: `wardrobe` added to `REFERENCE_SUBJECTS` + `--subject-type` choices; a wardrobe template in `reference_prompts.py` (garment-only flat-lay on a neutral backdrop, NO person wearing it, color/material/details legible) → lands in `pre-production/<id>/wardrobe/` with the `wardrobe_` prefix (`image_name_prefix` falls back to the subject type itself)
+- [x] #275: `primary_reference` metadata update moves AFTER the quality gate; on gate FAIL the plate is NEVER promoted (metadata skipped, honest warning — the plate stays on disk, un-promoted); on gate pass / no gate the metadata records `gate_status`/`gate_score` so consumers can fail-honest
+- [x] #282: `wardrobe` added to `REFERENCE_SUBJECTS` + `--subject-type` choices; a wardrobe template in `reference_prompts.py` (garment-only flat-lay on a neutral backdrop, NO person wearing it, color/material/details legible) → lands in `pre-production/<id>/wardrobe/` with the `wardrobe_` prefix (`image_name_prefix` falls back to the subject type itself)
 
 **Definition of Done**
 - [ ] RED-first: a mocked gate-fail reference run leaves `primary_reference` absent; a pass run writes it with the gate verdict recorded
@@ -89,9 +89,9 @@ screenplay producer for the declared-but-unproduced document.
 ### I3 — Layout contract: --output root, folder routing, storyboards (#272, #283, #281)
 
 **Deliverables**
-- [ ] #272: relative `--output` resolves against the `_get_root(ctx)`-resolved project root (absolute stays absolute); a file written via `brandly --root <tmp> image --output <rel>` lands under `<tmp>/<rel>` and NEVER in the cwd
-- [ ] #283: `migrate.py` `_VIDEO_CATEGORY_RENAME` deleted — migrate maps to the LAYOUT-declared singular categories (`transition`, `insert`); `shot_runner` routes clips by the shot's `folder`: insert → `videos/insert/`, transition → `videos/transition/`, scene shots → `videos/scenes/` (one convention, no duplicate trees)
-- [ ] #281: storyboard docstring corrected to the real v2 path `pre-production/<project>/storyboard/` (the save path already resolves v2 — verified; contract test pins it); `ProjectData` gains `storyboards: bool = False`; the asset phase, when `storyboards` is true, runs the keyframe pass first (generate per shot with STORYBOARD_INSTRUCTION → deterministic gate → Scene-XX-Shot-X-Y names into `pre-production/<id>/storyboard/`); a FAILING keyframe blocks that shot's video generation (fail-closed — composition errors caught at image cost, never video cost, per issue #33)
+- [x] #272: relative `--output` resolves against the `_get_root(ctx)`-resolved project root (absolute stays absolute); a file written via `brandly --root <tmp> image --output <rel>` lands under `<tmp>/<rel>` and NEVER in the cwd
+- [x] #283: `migrate.py` `_VIDEO_CATEGORY_RENAME` deleted — migrate maps to the LAYOUT-declared singular categories (`transition`, `insert`); `shot_runner` routes clips by the shot's `folder`: insert → `videos/insert/`, transition → `videos/transition/`, scene shots → `videos/scenes/` (one convention, no duplicate trees)
+- [x] #281: storyboard docstring corrected to the real v2 path `pre-production/<project>/storyboard/` (the save path already resolves v2 — verified; contract test pins it); `ProjectData` gains `storyboards: bool = False`; the asset phase, when `storyboards` is true, runs the keyframe pass first (generate per shot with STORYBOARD_INSTRUCTION → deterministic gate → Scene-XX-Shot-X-Y names into `pre-production/<id>/storyboard/`); a FAILING keyframe blocks that shot's video generation (fail-closed — composition errors caught at image cost, never video cost, per issue #33)
 
 **Definition of Done**
 - [ ] RED-first: insert + transition shots produce clips in their respective folders; `migrate` creates no plural trees; the docstring paths match the code's write paths
@@ -101,9 +101,9 @@ screenplay producer for the declared-but-unproduced document.
 ### I4 — Document chain truth: trends category, beats, target duration (#273, #274, #276)
 
 **Deliverables**
-- [ ] #273: `ProjectData` gains `product_category: str | None = None`; `init` gains `--category` (product category — choices from `trends.list_categories()`); the trends phase passes `proj.product_category` to `research_trends` (style and category are different axes); no category / category matching nothing in `TREND_DATABASE` → the phase FAILS HONEST with a repair hint (G11 — a zero-format document is never written as success)
-- [ ] #274: the script phase imports `scenes.BEAT_DURATIONS` (single source — the local conflicting dict is deleted); beat distribution `beats[min(i - 1, len(beats) - 1)]` — cycle until all 4 placed, then repeat the LAST beat; a closing shot is never labeled `setup`
-- [ ] #276: `ProjectData` gains `target_duration: int | None = None`; `init` gains `--target-duration <seconds>`; the script phase, when a target is set, derives the shot count/durations to HIT it (start from the beat-map durations, distribute the remainder into shots capped at the 6s reliable window; a target below the 3-shot minimum (~15s) or above the 10-shot window (~60s) fails honestly with the proposed plan); `brandly status` reports the film's measured total vs the target (G7-style truth at film level, data-honest)
+- [x] #273: `ProjectData` gains `product_category: str | None = None`; `init` gains `--category` (product category — choices from `trends.list_categories()`); the trends phase passes `proj.product_category` to `research_trends` (style and category are different axes); no category / category matching nothing in `TREND_DATABASE` → the phase FAILS HONEST with a repair hint (G11 — a zero-format document is never written as success)
+- [x] #274: the script phase imports `scenes.BEAT_DURATIONS` (single source — the local conflicting dict is deleted); beat distribution `beats[min(i - 1, len(beats) - 1)]` — cycle until all 4 placed, then repeat the LAST beat; a closing shot is never labeled `setup`
+- [x] #276: `ProjectData` gains `target_duration: int | None = None`; `init` gains `--target-duration <seconds>`; the script phase, when a target is set, derives the shot count/durations to HIT it (start from the beat-map durations, distribute the remainder into shots capped at the 6s reliable window; a target below the 3-shot minimum (~15s) or above the 10-shot window (~60s) fails honestly with the proposed plan); `brandly status` reports the film's measured total vs the target (G7-style truth at film level, data-honest)
 
 **Definition of Done**
 - [ ] RED-first: a style-only project's trends phase errors (never an empty success); a 5-shot script carries durations identical to `scenes.BEAT_DURATIONS` and never assigns `setup` to the final shot; `init --target-duration 30` → the script shot list sums to ~30s within the window
@@ -112,8 +112,8 @@ screenplay producer for the declared-but-unproduced document.
 ### I5 — Agent driver + CLI surface (#277, #278)
 
 **Deliverables**
-- [ ] #277: `_agnes_concept_runner` — prompts the Agnes text model via `run_async(chat_completion(...))` (dual-context; fails honestly on no key / empty content per G11); `brandly run --agent-runner [agnes|off]` (default: agnes — the CLI alone drives concept); `Director(DirectorConfig(root, gate_ai=..., agent_runner=...))`
-- [ ] #278: reference docstring corrected to the real path (`pre-production/<project_id>/<category>/`) + the real prefix (`IMAGE_NAME_PREFIXES`); storyboard docstring corrected to `pre-production/<project>/storyboard/`; `brandly reference --json` added (mirror the image command's success/error JSON shape, #73)
+- [x] #277: `_agnes_concept_runner` — prompts the Agnes text model via `run_async(chat_completion(...))` (dual-context; fails honestly on no key / empty content per G11); `brandly run --agent-runner [agnes|off]` (default: agnes — the CLI alone drives concept); `Director(DirectorConfig(root, gate_ai=..., agent_runner=...))`
+- [x] #278: reference docstring corrected to the real path (`pre-production/<project_id>/<category>/`) + the real prefix (`IMAGE_NAME_PREFIXES`); storyboard docstring corrected to `pre-production/<project>/storyboard/`; `brandly reference --json` added (mirror the image command's success/error JSON shape, #73)
 
 **Definition of Done**
 - [ ] RED-first: `--agent-runner off` fails honestly at concept (structured error); the docstring contract test (help text vs layout constants) fails on the stale text
@@ -123,10 +123,10 @@ screenplay producer for the declared-but-unproduced document.
 ### I6 — Screenplay producer (#280)
 
 **Deliverables**
-- [ ] Decision (per issue option 1): a `screenplay` phase between concept and script — `PHASE_ORDER` gains `screenplay` (10 → 11 phases); the state machine ordering/resume/fail-closed machinery is untouched (the phase rides the existing machine)
-- [ ] `_run_phase_real` screenplay case: derive from the brief + concept.md via the agent runner (fail-honest without one — G11), write `docs/plan/screenplay.md` (the core shots of the film; inserts/transitions optional — the Director may add them, see #283's insert/transition routing)
-- [ ] `_check_phase_artifacts` gains the screenplay case; `PHASE_HANDOFF_SPECS` gains the screenplay entry (trends → concept → screenplay → script); `phase_costs` gains the screenplay row; the script phase treats `docs/plan/screenplay.md` as an optional input
-- [ ] Tests asserting the 10-phase order are aligned with a recorded reason (10 → 11)
+- [x] Decision (per issue option 1): a `screenplay` phase between concept and script — `PHASE_ORDER` gains `screenplay` (10 → 11 phases); the state machine ordering/resume/fail-closed machinery is untouched (the phase rides the existing machine)
+- [x] `_run_phase_real` screenplay case: derive from the brief + concept.md via the agent runner (fail-honest without one — G11), write `docs/plan/screenplay.md` (the core shots of the film; inserts/transitions optional — the Director may add them, see #283's insert/transition routing)
+- [x] `_check_phase_artifacts` gains the screenplay case; `PHASE_HANDOFF_SPECS` gains the screenplay entry (trends → concept → screenplay → script); `phase_costs` gains the screenplay row; the script phase treats `docs/plan/screenplay.md` as an optional input
+- [x] Tests asserting the 10-phase order are aligned with a recorded reason (10 → 11)
 
 **Definition of Done**
 - [ ] RED-first: a project run through the document chain (with a mocked runner) produces a non-empty `screenplay.md`; `brandly plan <id> --json` shows the screenplay row

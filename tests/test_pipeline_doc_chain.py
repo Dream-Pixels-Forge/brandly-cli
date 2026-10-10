@@ -180,7 +180,8 @@ class TestRunUntilScript247:
             result = asyncio.run(director.run_pipeline(PID, until="script"))
 
         assert "error" not in result, result
-        assert result["phases_run"] == ["trends", "concept", "script"]
+        # I6 alignment: the screenplay phase joins the chain (#280).
+        assert result["phases_run"] == ["trends", "concept", "screenplay", "script"]
         assert all(
             "not implemented yet" not in json.dumps(r) for r in result["results"]
         ), result["results"]

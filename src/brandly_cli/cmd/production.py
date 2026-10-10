@@ -2179,6 +2179,17 @@ PHASE_HANDOFF_SPECS: dict[str, dict[str, Any]] = {
             "exit_codes": "0 = phase recorded; concept artifact exists (non-empty docs/plan/concept.md)",
         },
     },
+    "screenplay": {
+        # Issue #280: the screenplay is a produced document (a phase in the
+        # chain) — the film's core shots; inserts/transitions are optional
+        # cinematic elements the Director may add.
+        "inputs": ["product brief (project.json)", "agent runner", "docs/plan/concept.md"],
+        "outputs": ["docs/plan/screenplay.md"],
+        "gate": {
+            "command": "brandly approve <project_id> screenplay",
+            "exit_codes": "0 = phase approved; docs/plan/screenplay.md non-empty (approve fails closed otherwise)",
+        },
+    },
     "script": {
         "inputs": ["docs/plan/concept.md", "product brief (project.json)"],
         "outputs": ["shots.json"],
@@ -2250,7 +2261,8 @@ def phase_costs(style: str, shot_count: int) -> dict[str, int]:
         "init": 0,
         "trends": 10,
         "concept": round(total_base * 0.15),
-        "script": round(total_base * 0.20),
+        "screenplay": round(total_base * 0.10),
+        "script": round(total_base * 0.15),
         "asset": round(total_base * 0.25),
         "audio": round(total_base * 0.15),
         "re_edit": 20,
@@ -3069,6 +3081,66 @@ class Director:
                 # Moodboard assets are optional — honestly labelled (this
                 # phase does not generate them).
                 "moodboard": "optional",
+            }
+
+        if phase == "screenplay":
+            # #280: the screenplay is a PRODUCED document — the phase derives
+            # it from the brief + concept via the agent runner (fail-honest
+            # without one, G11). It defines the film's core shots; inserts and
+            # transitions are additional cinematic elements the Director may
+            # add (they route to the videos tree's insert/transition folders).
+            brief = (getattr(proj, "description", "") or "").strip()
+            if not brief:
+                return {
+                    "error": (
+                        "screenplay phase requires a project brief — project.json "
+                        "has no description. Set one, then re-run the screenplay "
+                        "phase."
+                    )
+                }
+            runner = self.cfg.agent_runner
+            if runner is None:
+                return {
+                    "error": (
+                        "screenplay phase needs an agent runner — none is wired. "
+                        "Derive the screenplay from the brief + concept with an "
+                        "agent, write docs/plan/screenplay.md, then continue the "
+                        "pipeline (or re-run with the default --agent-runner agnes)."
+                    )
+                }
+            screenplay_prompt = (
+                "Write a short production screenplay for this film. It defines "
+                "the CORE SHOTS of the film (scene headings, action, shot "
+                "intent). Transitions and inserts are optional cinematic "
+                "elements — include them only where they add cinema.\n\n"
+                f"Brief: {brief}\n\n"
+                f"Style: {proj.style}\n\n"
+                f"Shots: {proj.shot_count}\n\n"
+            )
+            concept_file = (
+                layout.resolve_project_dir(self.cfg.root, proj.id)
+                / "docs"
+                / "plan"
+                / "concept.md"
+            )
+            if concept_file.is_file():
+                concept_text = concept_file.read_text(encoding="utf-8").strip()
+                if concept_text:
+                    screenplay_prompt += f"Concept:\n{concept_text}\n\n"
+            screenplay_md = runner(screenplay_prompt)
+            if not isinstance(screenplay_md, str) or not screenplay_md.strip():
+                return {"error": "agent runner returned an empty screenplay"}
+            screenplay_path = (
+                layout.resolve_project_dir(self.cfg.root, proj.id)
+                / "docs"
+                / "plan"
+                / "screenplay.md"
+            )
+            screenplay_path.parent.mkdir(parents=True, exist_ok=True)
+            screenplay_path.write_text(screenplay_md + "\n", encoding="utf-8")
+            return {
+                "screenplay_path": str(screenplay_path),
+                "message": "Screenplay written",
             }
 
         if phase == "script":

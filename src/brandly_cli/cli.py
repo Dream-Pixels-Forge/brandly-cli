@@ -371,6 +371,22 @@ def _check_phase_artifacts(
         ):
             missing.append(("concept document", concept))
 
+    elif phase == "screenplay":
+        # Issue #280: the screenplay is the produced document the pipeline is
+        # verified against — the approve gate fails closed on a missing/empty
+        # screenplay, mirroring the concept gate.
+        screenplay = (
+            layout.resolve_project_dir(root_proj, project_id)
+            / "docs"
+            / "plan"
+            / "screenplay.md"
+        )
+        if (
+            not screenplay.is_file()
+            or not screenplay.read_text(encoding="utf-8").strip()
+        ):
+            missing.append(("screenplay document", screenplay))
+
     elif phase == "asset":
         videos = list((root_proj / "production" / project_id / "videos").rglob("*.mp4"))
         images = list((root_proj / "pre-production" / project_id).rglob("*"))

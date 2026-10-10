@@ -200,7 +200,8 @@ def test_success_after_retry_resumes_and_preserves_attempts(
     assert proj is not None
     assert proj.phases["concept"].status == "completed"
     assert proj.phases["concept"].attempts == 1  # preserved, not reset
-    assert proj.current_phase == "script"
+    # I6 alignment: the screenplay phase follows concept (#280).
+    assert proj.current_phase == "screenplay"
 
 
 def test_state_only_run_preserves_retry_counter(tmp_path: Path) -> None:

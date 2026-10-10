@@ -131,13 +131,12 @@ class TestNarrativeBeats:
         shots_path = _shots_json_path(tmp_path)
         shots = shot_runner.load_shots_file(shots_path)
 
-        # Beat-to-duration mapping (4-6s window per G7 reliable zone)
-        beat_durations = {
-            "setup": 4,
-            "turn": 5,
-            "consequence": 5,
-            "resolve": 6,
-        }
+        # I4 (#270-#283) alignment: the beat map has ONE home —
+        # scenes.BEAT_DURATIONS (#274 deleted the script phase's conflicting
+        # local copy; this test's local copy is the same stale map).
+        from brandly_cli.scenes import BEAT_DURATIONS
+
+        beat_durations = BEAT_DURATIONS
 
         for shot in shots:
             beat = shot["beat"]

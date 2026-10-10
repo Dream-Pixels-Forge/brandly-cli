@@ -44,7 +44,11 @@ class TestConstants:
     def test_phase_order_complete(self) -> None:
         assert PHASE_ORDER[0] == "init"
         assert PHASE_ORDER[-1] == "done"
-        assert len(PHASE_ORDER) == 10
+        # I6 (#270-#283) alignment: the screenplay phase joins the chain
+        # (#280) — 10 -> 11 phases, between concept and script.
+        assert len(PHASE_ORDER) == 11
+        assert PHASE_ORDER[PHASE_ORDER.index("screenplay") - 1] == "concept"
+        assert PHASE_ORDER[PHASE_ORDER.index("screenplay") + 1] == "script"
 
     def test_style_presets(self) -> None:
         assert "photorealistic" in STYLE_PRESET_OPTIONS

@@ -1132,3 +1132,186 @@ class TestReferenceSurfaceTruth:
         payload = json.loads("\n".join(lines[json_start:]))
         assert payload.get("status") == "succeeded", f"unexpected JSON: {payload}"
         assert payload.get("path"), "the JSON result must carry the saved path"
+
+
+# ---------------------------------------------------------------------------
+# I6 - #280: the screenplay is a PRODUCED document (a phase in the chain)
+# ---------------------------------------------------------------------------
+
+
+class TestScreenplayProducer:
+    def test_screenplay_in_phase_order(self) -> None:
+        """The screenplay phase sits between concept and script (#280)."""
+        from brandly_cli.constants import PHASE_ORDER
+
+        assert "screenplay" in PHASE_ORDER
+        idx = PHASE_ORDER.index("screenplay")
+        assert PHASE_ORDER[idx - 1] == "concept"
+        assert PHASE_ORDER[idx + 1] == "script"
+
+    def test_screenplay_phase_writes_doc(self, tmp_path: Path) -> None:
+        """The screenplay phase derives from the brief + concept via the agent
+        runner and writes docs/plan/screenplay.md (#280)."""
+        import asyncio
+
+        from brandly_cli.cmd.production import Director, DirectorConfig
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import ProjectData
+
+        pid = "screenplay-proj"
+        asyncio.run(
+            ProjectManager(tmp_path).create(
+                ProjectData(
+                    id=pid,
+                    name="S",
+                    style="cinematic",
+                    shot_count=5,
+                    description="a 30-second product presentation",
+                )
+            )
+        )
+        concept = tmp_path / ".brandly" / pid / "docs" / "plan" / "concept.md"
+        concept.parent.mkdir(parents=True, exist_ok=True)
+        concept.write_text("# Concept\n\nA moody brewery at golden hour.\n")
+        asyncio.run(
+            ProjectManager(tmp_path).update(
+                pid,
+                {
+                    "current_phase": "screenplay",
+                    "phases": {
+                        "init": {"status": "completed"},
+                        "trends": {"status": "completed"},
+                        "concept": {"status": "completed"},
+                    },
+                },
+            )
+        )
+        director = Director(
+            DirectorConfig(
+                tmp_path,
+                agent_runner=lambda prompt: "# Screenplay\n\nINT. BREWERY - DAWN\n\nThe pour.\n",
+            )
+        )
+        result = asyncio.run(director.run_phase(pid, "screenplay"))
+        assert "error" not in result, result
+        screenplay = tmp_path / ".brandly" / pid / "docs" / "plan" / "screenplay.md"
+        assert screenplay.exists(), "the screenplay phase did not write the document (#280)"
+        text = screenplay.read_text(encoding="utf-8").strip()
+        assert text, "the screenplay document is empty"
+        assert "theo" not in text or True  # content check below
+        assert "BREWERY" in text or "brewery" in text
+
+    def test_screenplay_phase_fails_honest_without_runner(self, tmp_path: Path) -> None:
+        """Without an agent runner the screenplay phase fails honest (G11) —
+        never a fake pass (#280)."""
+        import asyncio
+
+        from brandly_cli.cmd.production import Director, DirectorConfig
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import ProjectData
+
+        pid = "screenplay-norunner"
+        asyncio.run(
+            ProjectManager(tmp_path).create(
+                ProjectData(
+                    id=pid, name="S", style="cinematic", shot_count=5,
+                    description="a 30-second product presentation",
+                )
+            )
+        )
+        asyncio.run(
+            ProjectManager(tmp_path).update(
+                pid,
+                {
+                    "current_phase": "screenplay",
+                    "phases": {"init": {"status": "completed"}, "concept": {"status": "completed"}},
+                },
+            )
+        )
+        director = Director(DirectorConfig(tmp_path))
+        result = asyncio.run(director.run_phase(pid, "screenplay"))
+        assert "error" in result, "no runner must fail honest (#280)"
+
+    def test_approve_screenplay_fails_closed_on_missing_doc(self, tmp_path: Path) -> None:
+        """`brandly approve <id> screenplay` on a project with no
+        screenplay.md fails closed (exit 1) (#280)."""
+        from brandly_cli.cli import cli
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import ProjectData
+
+        pid = "screenplay-approve"
+        asyncio.run(
+            ProjectManager(tmp_path).create(
+                ProjectData(id=pid, name="S", style="cinematic", shot_count=5)
+            )
+        )
+        asyncio.run(
+            ProjectManager(tmp_path).update(
+                pid,
+                {
+                    "current_phase": "screenplay",
+                    "phases": {
+                        "init": {"status": "completed"},
+                        "trends": {"status": "completed"},
+                        "concept": {"status": "completed"},
+                    },
+                },
+            )
+        )
+        result = CliRunner().invoke(
+            cli, ["--root", str(tmp_path), "approve", pid, "screenplay"]
+        )
+        assert result.exit_code == 1, f"approve must fail closed: {result.output}"
+        assert "missing required artifacts" in result.output
+
+    def test_plan_shows_screenplay_row(self, tmp_path: Path) -> None:
+        """`brandly plan <id> --json` shows the screenplay handoff row (#280)."""
+        from brandly_cli.cmd.production import phase_handoffs
+
+        result = phase_handoffs(tmp_path, "missing-project")
+        handoff_ids = {h["id"] for h in result["handoffs"]}
+        assert "screenplay" in handoff_ids, (
+            f"the plan must show the screenplay row: {sorted(handoff_ids)}"
+        )
+
+    def test_document_chain_produces_screenplay(self, tmp_path: Path) -> None:
+        """The full document chain (trends -> concept -> screenplay -> script)
+        runs end-to-end with a mocked runner and produces all documents (#280)."""
+        import asyncio
+
+        from brandly_cli.cmd.production import Director, DirectorConfig
+        from brandly_cli.project_manager import ProjectManager
+        from brandly_cli.types import ProjectData
+
+        pid = "chain-full"
+        asyncio.run(
+            ProjectManager(tmp_path).create(
+                ProjectData(
+                    id=pid,
+                    name="C",
+                    style="cinematic",
+                    shot_count=4,
+                    product_category="food",
+                    description="a 30-second product presentation",
+                )
+            )
+        )
+        director = Director(
+            DirectorConfig(
+                tmp_path,
+                agent_runner=lambda prompt: "# Derived\n\nA moody brewery at golden hour.\n",
+            )
+        )
+        result = asyncio.run(director.run_pipeline(pid, until="script"))
+        assert "error" not in result, result
+        assert "screenplay" in result["phases_run"], result["phases_run"]
+        base = tmp_path / ".brandly" / pid / "docs" / "plan"
+        for doc in ("trends.md", "concept.md", "screenplay.md"):
+            assert (base / doc).exists() and (base / doc).read_text(encoding="utf-8").strip(), (
+                f"the chain did not produce {doc} (#280)"
+            )
+        # The script phase writes the shot list at the director's path.
+        shots = tmp_path / ".brandly" / pid / "shots.json"
+        assert shots.exists() and shots.read_text(encoding="utf-8").strip(), (
+            "the chain did not produce shots.json (#280)"
+        )

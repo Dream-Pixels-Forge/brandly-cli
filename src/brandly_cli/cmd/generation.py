@@ -1468,11 +1468,18 @@ def video(
             # layout.resolve_media_root gives us pre-production/<project_id>/
             # So we need to go one level deeper into images/
             images_root = layout.resolve_media_root(root, project_id, "images")
-            expected_dir = images_root / "images" / category
+            # Issue #271 (same chain): plates live DIRECTLY under the images
+            # root — pre-production/<id>/<category>/ — and are named via
+            # IMAGE_NAME_PREFIXES (char_/loc_/prop_). The previous
+            # images/<category> depth + reference_<subject_type>_ prefix
+            # matched nothing on disk.
+            expected_dir = images_root / category
 
             # Look for reference files matching the pattern in the expected location
-            # The reference filename should start with "reference_<subject_type>_"
-            expected_prefix = f"reference_{subject_type}_"
+            # The reference filename starts with the layout prefix (char_/loc_/prop_).
+            expected_prefix = (
+                f"{layout.image_name_prefix(subject_type) or subject_type}_"
+            )
             if expected_dir.is_dir():
                 for candidate_path in expected_dir.iterdir():
                     if (candidate_path.is_file() and
@@ -2333,11 +2340,15 @@ def _run_produce_runner(
     def _sync_project(status: str) -> None:
         from brandly_cli.project_manager import sync_production_state
 
+        # Issue #270: the produce runner belongs to the ``asset`` phase —
+        # the sync must write a VALID phase value. The previous
+        # ``current_phase="video"`` (not in PHASE_ORDER) bricked every
+        # subsequent run/approve/--execute with a raw ValueError.
         result = sync_production_state(
             root,
             project_id,
             status=status,
-            current_phase="video",
+            current_phase="asset",
             shot_count=len(shots),
         )
         if result is not None:

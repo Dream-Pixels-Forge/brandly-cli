@@ -30,9 +30,8 @@ def get_clip_duration(path: Path) -> float:
 def get_clip_info(path: Path) -> dict:
     """Return full clip metadata via ffprobe."""
     try:
-        import asyncio
-
+        from brandly_cli.async_compat import run_async  # issue #271: dual-context
         from brandly_cli.edit import get_video_info
-        return asyncio.run(get_video_info(path))
+        return run_async(get_video_info(path))
     except Exception as e:
         return {"error": str(e)}

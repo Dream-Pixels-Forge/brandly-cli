@@ -57,8 +57,14 @@ def _write_project(project_dir: Path, project_id: str, **overrides: object) -> P
 
 
 def _add_image_to_preproduction(tmp_path: Path, project_id: str, category: str, name: str) -> Path:
-    """Add an image to the v2 pre-production location."""
-    d = tmp_path / "pre-production" / project_id / "images" / category
+    """Add an image to the v2 pre-production location.
+
+    I1 (#270-#283) alignment: the v2 layout stores plates DIRECTLY under
+    ``pre-production/<id>/<category>/`` (``resolve_media_root`` returns the
+    images root; the category is appended without an ``images/`` level —
+    that extra depth was the dead lookup the #271 same-chain fix removed).
+    """
+    d = tmp_path / "pre-production" / project_id / category
     d.mkdir(parents=True, exist_ok=True)
     img = Image.new("RGB", (16, 16), (10, 10, 10))
     p = d / name
@@ -89,9 +95,10 @@ class TestLayoutBasedReferenceDiscovery:
         # Setup: create project
         _write_project(project_dir, "test-proj")
 
-        # Add a reference image to pre-production location (v2 layout)
-        # This is where the reference ACTUALLY is
-        actual_ref_img = _add_image_to_preproduction(tmp_path, "test-proj", "location", "reference_location_test.jpg")
+        # Add a reference image to pre-production location (v2 layout).
+        # I1 alignment: the real filename prefix is IMAGE_NAME_PREFIXES
+        # (location -> loc_) — the stale reference_ prefix matched nothing.
+        actual_ref_img = _add_image_to_preproduction(tmp_path, "test-proj", "location", "loc_test.jpg")
 
         # But let's say the project.json has an OLD or INCORRECT image_path
         # (e.g., from when the project was in a different location, or after a move)
@@ -115,7 +122,7 @@ class TestLayoutBasedReferenceDiscovery:
         # Verify our setup: the stored image_path is wrong, but the actual reference exists
         assert not Path(incorrect_old_path).exists(), "The stored image_path should not exist"
         assert actual_ref_img.exists(), "The actual reference image should exist"
-        assert actual_ref_img.parent == tmp_path / "pre-production" / "test-proj" / "images" / "location"
+        assert actual_ref_img.parent == tmp_path / "pre-production" / "test-proj" / "location"
 
         # Ensure we have a production plan
         _ensure_plan(tmp_path, "test-proj")

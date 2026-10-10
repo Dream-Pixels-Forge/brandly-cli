@@ -359,6 +359,16 @@ def run(
         return
 
     current = proj.current_phase
+    if current not in PHASE_ORDER:
+        # Issue #270: a poisoned state file (e.g. current_phase='video', the
+        # pre-fix produce-runner sync value) must not crash the CLI with a
+        # raw ValueError — fail-honest (G11) with a repair hint.
+        console.print(
+            f"[red]✗ current_phase '{current}' is not a pipeline phase — "
+            f"repair with `brandly approve {project_id} asset` or edit "
+            f"project.json (valid phases: {', '.join(PHASE_ORDER)})[/red]"
+        )
+        sys.exit(1)
     console.print(f"[bold]Running phase:[/bold] {current}")
     console.print(f"[dim]Agent: {PHASE_ORDER.index(str(current)) + 1}/{len(PHASE_ORDER)}[/dim]")  # type: ignore[arg-type]
 
@@ -511,6 +521,16 @@ def approve(ctx: click.Context, project_id: str, phase: str) -> None:
         sys.exit(1)
     if proj.status == "cancelled":
         console.print("[red]Cannot approve — project is cancelled.[/red]")
+        sys.exit(1)
+    if proj.current_phase not in PHASE_ORDER:
+        # Issue #270: a poisoned state file must surface the repair hint,
+        # never a raw traceback or a bare "not the current phase" without a
+        # way back (G11 fail-honest).
+        console.print(
+            f"[red]✗ current_phase '{proj.current_phase}' is not a pipeline "
+            f"phase — repair with `brandly approve {project_id} asset` or "
+            f"edit project.json (valid phases: {', '.join(PHASE_ORDER)})[/red]"
+        )
         sys.exit(1)
     if proj.current_phase != phase:
         console.print(f"[red]Current phase is '{proj.current_phase}', not '{phase}'.[/red]")
@@ -3287,7 +3307,18 @@ class Director:
         if not proj:
             raise ValueError(f"Project not found: {project_id}")
 
-        current_idx = PHASE_ORDER.index(str(proj.current_phase))  # type: ignore[arg-type]
+        current_phase = str(proj.current_phase)
+        if current_phase not in PHASE_ORDER:
+            # Issue #270: a poisoned state file returns a structured error
+            # (the retry envelope renders it) — never a raw ValueError.
+            return {
+                "error": (
+                    f"current_phase '{current_phase}' is not a pipeline phase "
+                    f"— repair with `brandly approve {project_id} asset` or "
+                    f"edit project.json (valid phases: {', '.join(PHASE_ORDER)})"
+                )
+            }
+        current_idx = PHASE_ORDER.index(current_phase)  # type: ignore[arg-type]
         stop_idx = PHASE_ORDER.index(until) if until else len(PHASE_ORDER) - 1  # type: ignore[arg-type]
         results = []
         for phase in PHASE_ORDER[current_idx : stop_idx + 1]:

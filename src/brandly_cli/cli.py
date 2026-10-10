@@ -7,7 +7,6 @@ registration call.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import subprocess
@@ -122,7 +121,13 @@ def _load_project_reference(project_id: str, root: Path) -> dict[str, Any] | Non
     treat ``None`` as "no reference" and surface a warning to the user.
     """
     try:
-        proj = asyncio.run(ProjectManager(root).read(project_id))
+        # Issue #271: this helper runs on the pipeline path (run --execute →
+        # Director → shot_runner) which executes inside a running event loop —
+        # a bare asyncio.run there raised, was swallowed, and the GOLD plate
+        # was silently dropped. The dual-context helper is the standard.
+        from brandly_cli.async_compat import run_async
+
+        proj = run_async(ProjectManager(root).read(project_id))
     except Exception:
         return None
     if proj is None:
@@ -319,7 +324,11 @@ def _check_budget(ctx: click.Context, project_id: str) -> None:
     root = _get_root(ctx)
     ct = CostTracker(root / ".brandly")
     try:
-        summary = asyncio.run(ct.get_summary(project_id))
+        # Issue #271 audit: the dual-context helper is the standard — a bare
+        # asyncio.run here would degrade if ever reached from a loop context.
+        from brandly_cli.async_compat import run_async
+
+        summary = run_async(ct.get_summary(project_id))
         if summary["total"] >= summary["budget"] and summary["budget"] > 0:
             console.print(
                 f"[yellow]⚠ Budget exceeded: "

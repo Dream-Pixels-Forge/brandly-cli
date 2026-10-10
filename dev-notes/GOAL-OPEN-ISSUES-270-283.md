@@ -180,3 +180,38 @@ screenplay producer for the declared-but-unproduced document.
 | I6 screenplay phase | medium (phase add + specs) | 0.5 day |
 | I7 close-out | small | 1 h |
 | **Total** | | **~3.5–5 days** |
+
+---
+
+## Program close-out (2026-10-10)
+
+- [x] I1–I7 all complete (each with its DoD met)
+- [x] All 13 issues CLOSED with fix references — PR #285 (merge `5822a1e`);
+      #270 auto-closed by the PR, #271–#283 closed with per-issue fix
+      comments (the PR's space-separated `Fixes` line only parsed #270)
+- [x] Full suite on the merged branch: **1573 passed / 0 failed** + ruff
+      clean + mypy Success (98 files) + import-linter OK + CI green
+      (quality 3.10/3.11/3.12 + web-quality, run 38063784628)
+- [x] goal-met audit: **MET (confidence high)** — every verification step
+      re-run independently on merged main, 2026-10-10
+
+### Goal-met audit results (re-run, not read)
+
+| Step | Result |
+|---|---|
+| Full suite | **1573 passed / 0 failed** (baseline 1528 + 45 new) |
+| ruff src/ tests/ | clean |
+| mypy src/ | Success (98 files) |
+| import-linter | OK |
+| Zero bare `asyncio.run(` (cli.py + agent_tools.py) | 0 hits |
+| No invalid `current_phase` write | the write is `"asset"` (the only grep hit is the explanatory comment) |
+| Poisoned state (run + approve, live) | exit 1, "not a pipeline phase" + repair hint, no traceback |
+| Wardrobe (live) | accepted past the choice validation; garment-only template ("no person") |
+| `--root` + relative `--output` (live) | exit 0, landed under the root, cwd clean |
+| migrate (live) | no plural trees (`"transitions"`/`"inserts"` gone) |
+| `init --target-duration 30` → script (live) | error-free, durations sum **30s**, every shot 4–6s, closing beat `resolve` |
+| `run --execute --until concept` (live, agnes mocked) | exit 0, `docs/plan/concept.md` non-empty |
+| `--agent-runner off` (live) | exit ≠ 0, structured fail-honest error |
+| Document chain (live) | runs to script; `screenplay` in phases_run; `docs/plan/screenplay.md` non-empty |
+| CI | quality 3.10/3.11/3.12 + web-quality all PASS (run 38063784628) |
+| Open issues / open PRs | 0 / 0 |

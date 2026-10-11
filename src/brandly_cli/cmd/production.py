@@ -3080,12 +3080,9 @@ class Director:
             console.print(
                 f"[green]✓ storyboard grid -> {grid_path.name} ({len(panels)} panels)[/green]"
             )
-        # Clean up per-shot keyframe images, keep only the grid
-        for p in storyboard_dir.glob("Scene-*.jpg"):
-            try:
-                p.unlink()
-            except OSError:
-                pass
+        # Keyframes stay on disk after the grid is tiled — they are the
+        # approved references the video pass consumes (#281 contract:
+        # pre-production/<id>/storyboard/ is the v2 tree, never cleaned here).
         return blocked
 
     async def _run_phase_real(self, phase: str, proj: Any) -> dict[str, Any]:

@@ -129,6 +129,29 @@ All notable changes to this project are documented here.
 - 35 proven-merged remote branches deleted (per-branch proof: merged PRs
   + distinctive symbols); the repo carries `main` only.
 
+## [0.14.0] - 2026-10-11
+
+### Added — Enforcement Program (G15–G??) (?? issues closed, goal-met audit MET)
+
+- **Bible enforcement (#297)**: deriving `docs/bible/production_bible.md` from brief + concept + trends via the agent runner; Section 4 Characters mandatory (fail-honest without it).
+- **Casting enforcement (#301)**: parses Section 4 → per character: cast set (hero 3:2 / portrait 3:4 / full-body 2:3) + the GOLD sheet, composition‑gated, under `pre-production/<id>/character/`.
+- **Screenplay phase (#298)**: writes `docs/screenplay/screenplay.md` (NOT plan/).
+- **Storyboard enforcement (#300)**: panels carry the grid‑style‑lock graphite preamble; approved panels are tiled in code (PIL) into ONE `storyboard_grid_4x4.png` (4 cols × ≥4 rows, edge‑to‑edge, no text); per‑shot keyframe images removed after tiling.
+- **Taxonomy (#299)**: `docs/general/` (trends, concept, scenes.json); `docs/plan/` = pre‑generation plans only; `shots.json` root placement documented load‑binding exception.
+- **Run logs (#304)**: `run --execute` writes structured `docs/tmp/run_<ts>.log` (RUN START / PHASE START|DONE|FAIL); agents never invent locations.
+- **Resumability (#292)**: storyboard pass consults `docs/tmp/storyboard_progress.txt`; approved keyframes skip regeneration.
+- **Retries (#293)**: pipeline‑path produce runner gets `retries=1`.
+- **Provider saturation classification (#294)**: create‑failure details persist to `docs/tmp/video_create_fail_<ts>.md`; asset phase classifies `[provider saturated] … wait several minutes and re‑run`.
+- **Reference cap (#295)**: canonical names (Scene‑XX / char\_ / loc\_ / prop\_ / wardrobe\_) outrank unknown files; junk can never displace real references.
+- **Prevention layer (E7)**: generated `AGENTS.md` teaches layout contract, production flow, run‑log convention, no‑junk‑in‑media‑tree rule; `tests/test_layout_contract_enforcement.py` (21 tests) pins all of it.
+
+### Fixed
+
+- **Storyboard keyframe cleanup**: per‑shot keyframe images are deleted after the 4×4 grid is created, leaving only the mandatory storyboard deliverable.
+
+### Housekeeping
+
+- None.
 ## [Unreleased]
 
 ## [0.10.2] - 2026-10-04

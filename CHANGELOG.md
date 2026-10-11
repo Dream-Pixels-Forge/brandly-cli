@@ -136,7 +136,7 @@ All notable changes to this project are documented here.
 - **Bible enforcement (#297)**: deriving `docs/bible/production_bible.md` from brief + concept + trends via the agent runner; Section 4 Characters mandatory (fail-honest without it).
 - **Casting enforcement (#301)**: parses Section 4 → per character: cast set (hero 3:2 / portrait 3:4 / full-body 2:3) + the GOLD sheet, composition‑gated, under `pre-production/<id>/character/`.
 - **Screenplay phase (#298)**: writes `docs/screenplay/screenplay.md` (NOT plan/).
-- **Storyboard enforcement (#300)**: panels carry the grid‑style‑lock graphite preamble; approved panels are tiled in code (PIL) into ONE `storyboard_grid_4x4.png` (4 cols × ≥4 rows, edge‑to‑edge, no text); per‑shot keyframe images removed after tiling.
+- **Storyboard enforcement (#300)**: panels carry the grid‑style‑lock graphite preamble; approved panels are tiled in code (PIL) into ONE `storyboard_grid_4x4.png` (4 cols × ≥4 rows, edge‑to‑edge, no text); per‑shot keyframe images persist beside the grid as the video pass's references (#281 contract).
 - **Taxonomy (#299)**: `docs/general/` (trends, concept, scenes.json); `docs/plan/` = pre‑generation plans only; `shots.json` root placement documented load‑binding exception.
 - **Run logs (#304)**: `run --execute` writes structured `docs/tmp/run_<ts>.log` (RUN START / PHASE START|DONE|FAIL); agents never invent locations.
 - **Resumability (#292)**: storyboard pass consults `docs/tmp/storyboard_progress.txt`; approved keyframes skip regeneration.
@@ -147,11 +147,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
-- **Storyboard keyframe cleanup**: per‑shot keyframe images are deleted after the 4×4 grid is created, leaving only the mandatory storyboard deliverable.
+- **Storyboard keyframe persistence (#281)**: an interim cleanup that deleted approved `Scene-*.jpg` keyframes after the 4×4 grid was tiled was reverted before release (PR #308) — keyframes stay under `pre-production/<id>/storyboard/` (the v2 tree) because the video pass consumes them as references; the deleted-file state broke `test_storyboard_pass_passes_gate_then_runs_video` on CI (quality 3.10/3.11/3.12).
 
 ### Housekeeping
 
-- None.
+- Tag `v0.14.0` re-pointed from the pre-fix commit (`1706ed6`) to the release commit — nothing had been published from the original tag (no GitHub release, no PyPI artifact), so no consumers exist to break.
 ## [Unreleased]
 
 ## [0.10.2] - 2026-10-04

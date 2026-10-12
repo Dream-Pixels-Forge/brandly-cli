@@ -199,11 +199,11 @@ async def regenerate_clip(
         ).model_dump()
 
     except Exception as e:
-        await _broadcast({"type": "generation_error", "error": str(e)})
+        await _broadcast({"type": "generation_error", "error": f"{type(e).__name__}: {e}"})
         state.regenerate_clip_status(clip_id, "failed")
         _mark_plan_failed(root, project_id, plan, model, clip_id)
         return ClipRegenerateResponse(
             clip_id=clip_id,
             status="failed",
-            error=str(e),
+            error=f"{type(e).__name__}: {e}",
         ).model_dump()

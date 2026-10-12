@@ -894,14 +894,14 @@ def image(
     except Exception as e:
         # Issue #74: record the failure durably — a record left "running"
         # with no terminal state would look resumable forever.
-        _jobs.save_job({**job, "status": "failed", "error": str(e)})
+        _jobs.save_job({**job, "status": "failed", "error": f"{type(e).__name__}: {e}"}
         if json_out:
             console.quiet = quiet_original
             _print_machine_json(
                 {
                     "status": "error",
                     "error_code": "provider_error",
-                    "error_message": str(e),
+                    "error_message": f"{type(e).__name__}: {e}",
                     "task_id": None,
                     "job_id": job["job_id"],
                 }
@@ -982,7 +982,7 @@ def image(
                 {
                     **job,
                     "status": "failed",
-                    "error": str(e),
+                    "error": f"{type(e).__name__}: {e}",
                     "provider_url": _jobs.redact_credentials(url) if url else None,
                 }
             )
@@ -992,7 +992,7 @@ def image(
                     {
                         "status": "error",
                         "error_code": "image_download_failed",
-                        "error_message": str(e),
+                        "error_message": f"{type(e).__name__}: {e}",
                         "task_id": task_id,
                         "job_id": job["job_id"],
                     }
@@ -1275,7 +1275,7 @@ def job_poll(
                     {
                         "status": "error",
                         "error_code": "result_copy_failed",
-                        "error_message": str(e),
+                        "error_message": f"{type(e).__name__}: {e}",
                         "job_id": record.get("job_id", job_id),
                         "result_available": True,
                     }
@@ -1881,7 +1881,7 @@ def video(
                 prompt=enhanced,
                 model=model,
                 style=style,
-                metadata={"video_id": video_id, "status": "timeout", "error": str(e)},
+                metadata={"video_id": video_id, "status": "timeout", "error": f"{type(e).__name__}: {e}"},
                 source="brandly video",
             )
             upsert_production_plan(

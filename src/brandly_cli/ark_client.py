@@ -474,7 +474,7 @@ async def cancel_job(task_id: str) -> dict[str, Any]:
             console.print(f"[yellow]⚠ Job {task_id} already completed or cancelled.[/yellow]")
         else:
             console.print(f"[red]Error cancelling job: {e}[/red]")
-        return {"task_id": task_id, "status": "error", "error": str(e)}
+        return {"task_id": task_id, "status": "error", "error": f"{type(e).__name__}: {e}"}
     except Exception as e:
         console.print(f"[red]Error cancelling job: {e}[/red]")
-        return {"task_id": task_id, "status": "error", "error": str(e)}
+        return {"task_id": task_id, "status": "error", "error": f"{type(e).__name__}: {e}"}

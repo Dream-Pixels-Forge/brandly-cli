@@ -85,7 +85,7 @@ async def get_video_info(input_path: str | Path) -> dict[str, Any]:
             "has_audio": bool(audio_stream),
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"{type(e).__name__}: {e}"}
 
 
 async def trim_video(

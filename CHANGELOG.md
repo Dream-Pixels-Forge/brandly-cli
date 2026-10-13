@@ -157,8 +157,6 @@ All notable changes to this project are documented here.
 ### Fixed — GOAL-OPEN-ISSUES-309-315 program (7 issues closed, goal-met audit MET, PR #316 merged)
 
 - **Gate seam-lines not failures (#309)**: multi-view reference sheets are
-
-- **Gate seam-lines not failures (#309)**: multi-view reference sheets are
   divided into panels by thin grey divider lines BY DESIGN (sheet prompts
   require them) — an AI-judge issue describing only those seams demotes to
   a `seam_lines` warning when a matte sheet is expected (never a FAIL);
@@ -190,6 +188,15 @@ All notable changes to this project are documented here.
   exit 2 (user-declined stays 0; `--auto` submit failure → exit 1);
   `_resolve_token` also honors `GH_TOKEN`, `$GH_CONFIG_DIR`, and the
   Windows `%APPDATA%\GitHub CLI` hosts path.
+
+### Added — bible physical presence (PR #319)
+
+- **The production bible carries physical presence**: characters get
+  height / weight / build + distinguishing marks, actors get age range /
+  demeanor / voice, locations get lighting palette / sound / mood,
+  elements get material / scale / hero treatment. Sticky-fact rules pin
+  them all in the director brief (Step 2) — the prompt chain (character →
+  casting → sheets → video) stays consistent on Lina (151cm, 50kg).
 
 ## [0.10.2] - 2026-10-04
 

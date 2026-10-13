@@ -1,5 +1,17 @@
 # Pipeline Progress — brandly-cli
 
+## Round 31/256 — Issue closeout #310–#315 + housekeeping (on main @ f070c51)
+
+- [x] **Squash-merge linking gap:** PR #316's body said "Closes #309–#315"
+      but GitHub only auto-closed #309 — the `Closes` keyword in a
+      squash-merge links the first issue only. Verified all six fixes live
+      on `main` (fresh run: test_issue_310–315 → 31 passed), then closed
+      #310–#315 manually, each with fix location + test evidence.
+- [x] **Housekeeping branch** `chore/close-issues-310-315-housekeeping`:
+      CHANGELOG "goal-met audit PENDING" → "audit MET, PR #316 merged";
+      goal file deliverables checkbox closed with the merge-linking note.
+- [x] Open-issue count back to **0** (was 6 stale OPENs after a fully-merged PR).
+
 ## Round 30/256 — GOAL-OPEN-ISSUES-309-315 program (7 issues, RED → GREEN)
 
 - [x] **7 issue tests RED-first, then GREEN:** `tests/test_issue_309.py` …

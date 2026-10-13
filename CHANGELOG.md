@@ -154,7 +154,7 @@ All notable changes to this project are documented here.
 - Tag `v0.14.0` re-pointed from the pre-fix commit (`1706ed6`) to the release commit — nothing had been published from the original tag (no GitHub release, no PyPI artifact), so no consumers exist to break.
 ## [Unreleased]
 
-### Added — GOAL-OPEN-ISSUES-309-315 program (7 issues closed, goal-met audit PENDING)
+### Added — GOAL-OPEN-ISSUES-309-315 program (7 issues closed, goal-met audit MET, PR #316 merged)
 
 - **Gate seam-lines not failures (#309)**: multi-view reference sheets are
   divided into panels by thin grey divider lines BY DESIGN (sheet prompts

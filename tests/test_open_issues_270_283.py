@@ -397,6 +397,64 @@ class TestReferenceGateBeforePromotion:
         )
 
 
+def test_no_unrooted_cli_invocations(tmp_path: Path) -> None:
+    """Every CliRunner invocation passes --root (or --help).
+
+    An invocation without --root resolves the brandly root to the test
+    process cwd — under pytest that is the repo root, so the command writes
+    real artifacts (pre-production/, .brandly/) into the working tree.
+    Regen: `git status --short` shows `?? pre-production/` after the suite.
+
+    Safe alternatives: `--root <tmp>`, `env={"ROOT": ...}`, or
+    `runner.isolated_filesystem()`.
+    """
+    import ast as _ast
+
+    source = Path(__file__).read_text(encoding="utf-8")
+    tree = _ast.parse(source, filename=__file__)
+    lines = source.splitlines()
+
+    def _is_cli_runner(call: _ast.Call) -> bool:
+        fn = call.func
+        if isinstance(fn, _ast.Name):
+            return fn.id == "CliRunner"
+        return isinstance(fn, _ast.Attribute) and fn.attr == "CliRunner"
+
+    def _is_rooted(node: _ast.Call, argv: list[str]) -> bool:
+        if "--help" in argv or "--root" in argv:
+            return True
+        segment = _ast.get_source_segment(source, node) or ""
+        if '"ROOT"' in segment or "'ROOT'" in segment:
+            return True
+        window = "\n".join(lines[max(0, node.lineno - 14):node.lineno + 2])
+        return "isolated_filesystem" in window
+
+    offenders: list[str] = []
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.Call):
+            continue
+        func = node.func
+        if not (
+            isinstance(func, _ast.Attribute)
+            and func.attr == "invoke"
+            and isinstance(func.value, _ast.Call)
+            and _is_cli_runner(func.value)
+        ):
+            continue
+        if len(node.args) < 2 or not isinstance(node.args[1], _ast.List):
+            continue
+        argv = [
+            elt.value for elt in node.args[1].elts
+            if isinstance(elt, _ast.Constant)
+        ]
+        if not _is_rooted(node, argv):
+            offenders.append(f"line {node.lineno}: {argv!r}")
+    assert not offenders, (
+        "CliRunner invocations without --root write into the repo cwd:\n"
+        + "\n".join(offenders)
+    )
+
+
 # ---------------------------------------------------------------------------
 # I2 — #282: the wardrobe reference category is reachable + garment-only mode
 # ---------------------------------------------------------------------------
@@ -414,9 +472,13 @@ class TestWardrobeReference:
         """`brandly reference --subject-type` choices include wardrobe (#282)."""
         from brandly_cli.cli import cli
 
-        result = CliRunner().invoke(
-            cli, ["reference", "proj-x", "--subject-type", "wardrobe", "-s", "x"]
-        )
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            result = runner.invoke(
+                cli,
+                ["reference", "proj-x", "--subject-type", "wardrobe",
+                 "-s", "x"],
+            )
         # The command proceeds past the choice validation (a project-not-found
         # or generation error is fine — 'Invalid value' means the choice is
         # still missing).

@@ -122,10 +122,15 @@ def format_issue_body(ctx: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def ask_permission(ctx: dict[str, Any], body: str, *, dry_run: bool = False) -> bool:
+def ask_permission(
+    ctx: dict[str, Any], body: str, *, dry_run: bool = False
+) -> bool | None:
     """Show the issue preview and ask the user whether to submit.
 
-    Returns True if the user consents (or auto-consented via stored preference).
+    Returns True if the user consents (or auto-consented via stored
+    preference), False for an explicit "no", and None when the question could
+    not be asked (EOF — a headless/piped stdin), so callers can distinguish a
+    declined report from an un-askable one (#315).
     """
     from rich.console import Console
     from rich.markdown import Markdown
@@ -152,9 +157,14 @@ def ask_permission(ctx: dict[str, Any], body: str, *, dry_run: bool = False) -> 
         f"[link={ISSUE_TEMPLATE_URL}]dream-pixels-forge/brandly-cli[/link].[/dim]"
     )
     console.print()
-    choice = console.input(
-        "[bold]Submit issue?[/bold] [y/n/a] (y=submit, n=skip, a=auto-next-time): "
-    ).strip().lower()
+    # Issue #315: a headless shell hits EOF here; rich's input() raises
+    # EOFError which must surface as "no consent", not a traceback.
+    try:
+        choice = console.input(
+            "[bold]Submit issue?[/bold] [y/n/a] (y=submit, n=skip, a=auto-next-time): "
+        ).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        return None
     if choice in ("y", "yes"):
         return True
     if choice in ("a", "auto"):
@@ -203,14 +213,40 @@ def _pick_title(ctx: dict[str, Any]) -> str:
     return f"[auto] {etype}: {preview}"
 
 
+def _gh_hosts_candidates() -> list[Path]:
+    """Issue #315: every documented gh hosts.yml location, in priority order.
+
+    GH_CONFIG_DIR overrides gh's config dir; Windows stores hosts under
+    %APPDATA%/GitHub CLI; XDG_CONFIG_HOME overrides the Linux default.
+    """
+    candidates: list[Path] = []
+    gh_dir = os.environ.get("GH_CONFIG_DIR")
+    if gh_dir:
+        candidates.append(Path(gh_dir) / "hosts.yml")
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        candidates.append(Path(appdata) / "GitHub CLI" / "hosts.yml")
+    elif sys.platform == "win32":  # pragma: no cover - Windows-only fallback
+        candidates.append(
+            Path.home() / "AppData" / "Roaming" / "GitHub CLI" / "hosts.yml"
+        )
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        candidates.append(Path(xdg) / "gh" / "hosts.yml")
+    candidates.append(Path.home() / ".config" / "gh" / "hosts.yml")
+    return candidates
+
+
 def _resolve_token() -> str | None:
+    """Find a GitHub token: env vars first, then the gh CLI config."""
     for key in ("GITHUB_TOKEN", "GH_TOKEN"):
         val = os.environ.get(key)
         if val:
             return val.strip()
-    # Try ~/.config/gh/hosts.yml style config — simple fallback
-    gh_config = Path.home() / ".config" / "gh" / "hosts.yml"
-    if gh_config.exists():
+    # Issue #315: search the gh hosts.yml in every documented location.
+    for gh_config in _gh_hosts_candidates():
+        if not gh_config.is_file():
+            continue
         try:
             import yaml  # type: ignore[import-untyped]
             cfg = yaml.safe_load(gh_config.read_text())
@@ -218,7 +254,7 @@ def _resolve_token() -> str | None:
                 if isinstance(entry, dict) and entry.get("oauth_token"):
                     return entry["oauth_token"]
         except Exception:
-            pass
+            continue
     return None
 
 

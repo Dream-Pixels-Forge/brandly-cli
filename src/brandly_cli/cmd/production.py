@@ -1088,6 +1088,13 @@ def produce(
         or allow_referenceless
         or only
         or max_shots
+        # Issue #310: the retry family only exists in the progress-file
+        # runner. Any non-default retry flag routes the run there; the
+        # plan-based loop fail-stops and would silently ignore them.
+        or retries > 0
+        or backoff_factor != 1.0
+        or continue_on_fail
+        or park_after != 3
     )
     if use_runner:
         console.print(
@@ -2611,6 +2618,65 @@ def director_plan(root: Path, project_id: str | None = None) -> dict[str, Any]:
     return plan
 
 
+#: Issue #312: a screenplay heading starts a new act/scene — a markdown
+#: ``ACT …``/``SCENE …`` heading or a screenplay slug (``INT.``/``EXT.``).
+_SCREENPLAY_BREAK_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(ACT\b|SCENE\b|INT\.|EXT\.)",
+    re.IGNORECASE,
+)
+
+
+def _count_screenplay_acts(text: str) -> int:
+    """Count act/scene breaks in a screenplay document (issue #312)."""
+    return sum(1 for ln in text.splitlines() if _SCREENPLAY_BREAK_RE.match(ln))
+
+
+def _screenplay_scene_map(
+    root: Path, project_id: str, shot_count: int
+) -> dict[int, int]:
+    """Map 1-based shot index → scene number from the screenplay (issue #312).
+
+    Reads ``docs/screenplay/screenplay.md`` (contract + legacy ``docs/plan/``
+    location, mirroring the approve gate). Shots distribute contiguously
+    across the detected acts with the remainder spread to the earlier acts
+    (10 shots / 3 acts → 4+3+3). No screenplay or no act structure → ``{}``
+    (callers default every shot to scene 1 — backward compatible).
+    """
+    proj_dir = layout.resolve_project_dir(Path(root), project_id)
+    screenplay = layout.docs_dir(proj_dir, "screenplay") / "screenplay.md"
+    if not screenplay.is_file():
+        screenplay = layout.docs_dir(proj_dir, "plan") / "screenplay.md"
+    if not screenplay.is_file():
+        return {}
+    try:
+        text = screenplay.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    acts = _count_screenplay_acts(text)
+    if acts < 2:
+        return {}
+    if shot_count < acts:
+        return {}
+    base, remainder = divmod(shot_count, acts)
+    scene_map: dict[int, int] = {}
+    shot = 1
+    for scene in range(1, acts + 1):
+        size = base + (1 if scene <= remainder else 0)
+        for _ in range(size):
+            scene_map[shot] = scene
+            shot += 1
+    return scene_map
+
+
+def _scene_start(scene_map: dict[int, int], shot: int) -> int:
+    """First shot index of the scene containing ``shot`` (issue #312)."""
+    scene = scene_map.get(shot, 1)
+    start = shot
+    while start > 1 and scene_map.get(start - 1, 1) == scene:
+        start -= 1
+    return start
+
+
 class DirectorConfig:
     """Configuration for the Director orchestrator."""
 
@@ -3500,14 +3566,29 @@ class Director:
             # #257: the brief and the concept drive the shot prompts — never
             # the hardcoded demo strings. The brief describes the product
             # (action source); the concept describes the world (environment).
-            # Markdown headings are labels, not content — skipped.
+            # Markdown headings are labels, not content — skipped. Issue
+            # #311: markdown table rows (``| …`` header/data rows and
+            # ``|---|`` separators) are structure, not prose — a concept.md
+            # that opens with a table must not leak ``| Setting | Time | …``
+            # verbatim into every shot prompt as the environment.
             action = brief if brief else f"presents {proj.name or 'the product'}"
             concept_lines = [
                 ln.strip().lstrip("-* ").strip()
                 for ln in concept_md.splitlines()
-                if ln.strip() and not ln.strip().startswith("#")
+                if ln.strip()
+                and not ln.strip().startswith("#")
+                and not ln.strip().startswith("|")
             ]
             environment = next((ln for ln in concept_lines if ln), proj.style)
+
+            # Issue #312: the flat list collapsed multi-act screenplays into
+            # one scene. The (optional) screenplay document carries the act
+            # structure; shots distribute contiguously across the detected
+            # acts (remainder to earlier acts). No screenplay / no structure
+            # → one scene, as before.
+            scene_of_shot = _screenplay_scene_map(
+                self.cfg.root, proj.id, int(proj.shot_count or 0)
+            )
 
             cameras = list(CAMERA_MOVES)
 
@@ -3556,8 +3637,11 @@ class Director:
                         "style": proj.style,
                         # G3 scene-id inputs: one scene, ordered shots —
                         # scenes.json derives S01… from these at produce time.
-                        "scene": 1,
-                        "shot": i,
+                        # Issue #312: per-shot scene from the screenplay's act
+                        # structure (defaults to 1 when no screenplay exists);
+                        # per-scene shot numbers restart at each scene.
+                        "scene": scene_of_shot.get(i, 1),
+                        "shot": i - _scene_start(scene_of_shot, i) + 1,
                         # G12: Narrative beat label
                         "beat": beat,
                     }

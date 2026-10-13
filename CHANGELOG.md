@@ -154,6 +154,41 @@ All notable changes to this project are documented here.
 - Tag `v0.14.0` re-pointed from the pre-fix commit (`1706ed6`) to the release commit — nothing had been published from the original tag (no GitHub release, no PyPI artifact), so no consumers exist to break.
 ## [Unreleased]
 
+### Added — GOAL-OPEN-ISSUES-309-315 program (7 issues closed, goal-met audit PENDING)
+
+- **Gate seam-lines not failures (#309)**: multi-view reference sheets are
+  divided into panels by thin grey divider lines BY DESIGN (sheet prompts
+  require them) — an AI-judge issue describing only those seams demotes to
+  a `seam_lines` warning when a matte sheet is expected (never a FAIL);
+  the judge prompt now tells the reviewer the dividers are by design.
+- **Retry flags route to the progress-file runner (#310)**: any non-default
+  retry flag (`--retries` > 0, `--backoff-factor` != 1.0,
+  `--continue-on-fail`, `--park-after` != 3) sends the run through the
+  retry-capable runner — the plan-based loop fail-stops and would silently
+  ignore them.
+- **No table-header leak in shot prompts (#311)**: concept-line extraction
+  skips markdown table rows (`|…|`) and separator rows — the first real
+  prose line becomes the shot-prompt environment, never
+  `Setting: | Time | Visual | Audio |`.
+- **Scene numbers from the screenplay (#312)**: the script phase reads
+  `docs/screenplay/screenplay.md` (optional), extracts the act/scene
+  structure (`ACT`/`Scene` headings or `INT.`/`EXT.` sluglines) and
+  distributes shots contiguously across acts — 3-act screenplays no longer
+  collapse into one scene; no act structure → single scene (compatible).
+- **Identity anchors rank first (#313)**: the auto-ref cap priority is
+  `char_/wardrobe_` plates (0) → `Scene-*` keyframes (1) →
+  `loc_/prop_` plates (2) → unknown (9) — the cap drops keyframes before
+  identity plates; junk still ranks last (#295).
+- **Skills document the v2 media layout (#314)**: every shipped skill +
+  skills map points at `pre-production/<id>/<category>/` (the tree the CLI
+  writes since #117) — no skill claims images live under the legacy
+  `.brandly/<id>/images/` path (contract test greps the skills tree).
+- **`brandly report` signals headless non-submission (#315)**:
+  non-tty EOF at the consent prompt → explicit "NOT SUBMITTED" warning +
+  exit 2 (user-declined stays 0; `--auto` submit failure → exit 1);
+  `_resolve_token` also honors `GH_TOKEN`, `$GH_CONFIG_DIR`, and the
+  Windows `%APPDATA%\GitHub CLI` hosts path.
+
 ## [0.10.2] - 2026-10-04
 
 ### Fixed (reference plate resolution + nested hq guards — #197/#208/#210)

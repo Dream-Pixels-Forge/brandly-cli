@@ -601,18 +601,22 @@ def cap_reference_selection(
 
 
 def _ref_priority(ref: str) -> int:
-    """Priority rank for the reference cap — lower wins (issue #295).
+    """Priority rank for the reference cap — lower wins (issues #295, #313).
 
-    Canonical shot-named keyframes/clips (``Scene-XX-Shot-X-Y*``) rank first,
-    then the plate prefixes (``char_``/``loc_``/``prop_``/``wardrobe_``);
+    Character identity anchors (``char_``/``wardrobe_`` plates) rank first —
+    they lock who the character IS. Canonical shot-named keyframes/clips
+    (``Scene-XX-Shot-X-Y*``) rank second; ``loc_``/``prop_`` plates third;
     unknown-named files rank last so junk never displaces real references.
     """
     name = Path(ref).name.lower()
-    if re.match(r"^scene-\d{2}-shot-\d+", name):
-        return 0
-    for prefix in ("char_", "loc_", "prop_", "wardrobe_"):
+    for prefix in ("char_", "wardrobe_"):
         if name.startswith(prefix):
-            return 1
+            return 0
+    if re.match(r"^scene-\d{2}-shot-\d+", name):
+        return 1
+    for prefix in ("loc_", "prop_"):
+        if name.startswith(prefix):
+            return 2
     return 9
 
 

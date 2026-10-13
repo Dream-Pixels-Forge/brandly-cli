@@ -21,6 +21,7 @@ auditable report to ``.brandly/{project}/docs/tmp/``.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -62,6 +63,15 @@ GATE_WARN_CUTOFFS: dict[str, int] = {"distortion": 4, "slop": 4, "drift": 4}
 LENIENT_CUTOFF_BUMP = 2
 
 _VIDEO_EXTS = {".mp4", ".webm", ".mov", ".mkv"}
+
+#: Issue #309: the multi-view sheet prompts ask for thin grey divider lines
+#: BETWEEN panels by design. When a sheet is expected to have a matte
+#: background, an issue that only describes those by-design seams must be
+#: demoted to a warning — otherwise the gate FAILs its own output shape.
+_SEAM_ISSUE_RE = re.compile(
+    r"(divider|seam|dividing the panel|grid[ -]?line|panel line)",
+    re.IGNORECASE,
+)
 
 _VISION_SYSTEM = (
     "You are a strict QA reviewer for AI-generated video-production assets "
@@ -142,6 +152,13 @@ def _vision_user_prompt(
             "This is a reference sheet: set matte_background accordingly "
             "(the intended backdrop is a seamless neutral mid-grey studio "
             "backdrop)."
+            # Issue #309: multi-view sheets are divided into panels by thin
+            # grey divider lines BY DESIGN (see reference_prompts.py) — the
+            # judge must not report those by-design seams as issues, or the
+            # gate FAILs its own output shape.
+            " Multi-view reference boards are split into panels by THIN GREY "
+            "DIVIDER LINES by design — do NOT list those dividers or seam "
+            "lines between panels as issues."
         )
     if has_reference:
         parts.append(
@@ -623,8 +640,20 @@ def _apply_ai_verdict(
     result.score = max(0, min(100, quality))
 
     for issue in verdict.get("issues", []):
-        if str(issue).strip():
-            result.issues.append(str(issue).strip())
+        text = str(issue).strip()
+        if not text:
+            continue
+        # Issue #309: by-design sheet seams demote to a warning when the
+        # sheet is expected to have a matte background. Videos (no matte
+        # expectation) keep them as issues.
+        if expect_matt_background and _SEAM_ISSUE_RE.search(text):
+            result.add_warning(
+                f"By-design sheet seam (not a failure): {text}",
+                check="seam_lines",
+                detail=text,
+            )
+            continue
+        result.issues.append(text)
 
     # Hard distortion
     if distortion >= fail_cutoffs["distortion"]:

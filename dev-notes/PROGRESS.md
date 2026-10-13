@@ -1,5 +1,14 @@
 # Pipeline Progress — brandly-cli
 
+## Round 33/256 — v0.14.1 shipped + branches pruned
+
+- [x] **PR #318 merged** (changelog fold-in: bible feat into v0.14.1); tag
+      `v0.14.1` pushed; **GitHub release v0.14.1 published**;
+      **Release-to-PyPI workflow `success`**; post-release CI on `main`
+      green. Local branches pruned; tree clean.
+- [x] **Zero open issues** — the tracker is empty for the first time this
+      program. Next: fresh findings run, live demo resume, or new goal.
+
 ## Round 32/256 — Release v0.14.1 prep + workflow hardening
 
 - [x] **Release v0.14.1 (patch):** `__about__.py` 0.14.0 → 0.14.1 (single

@@ -103,12 +103,29 @@ The production bible is the **single source of truth** for a campaign. It lives 
 ### Character 1: [Name]
 - Sheet file: `assets/character-sheets/[name].png`
 - Key anchor traits: [3–5 features that never change]
+- Physical presence (director fans these out verbatim to every downstream
+  sheet/video prompt — never paraphrase, never drop):
+  - Height: [cm + ft/in, e.g. 151cm (4'11")]
+  - Weight: [kg + lb, e.g. 50kg (110lb)]
+  - Build: [petite/lean/athletic/curvy/stocky + proportions note,
+    e.g. petite, short-limbed, balanced head-to-body ratio]
+  - Actor notes: [age range, ethnicity, distinctive characteristics —
+    what makes THIS performer recognizable on screen]
 - Wardrobe variants: [list if multiple outfits]
 - Consistency rule: [what must stay identical across shots]
 
 ### Character 2: [Name]
 ...
 ```
+
+> **Why physique lives here:** the bible is the single source of truth the
+> director reads before dispatching any downstream skill (character-sheet,
+> casting, storyboard, video). Height/weight/build declared here flow
+> bible → director → sheet/video prompts **verbatim** — a 151cm/50kg
+> performer must never render as a generic tall body because a downstream
+> prompt omitted the numbers. If a field is unknown, write `Unknown — do
+> not invent` rather than leaving it blank; downstream prompts carry only
+> what the bible states.
 
 ### Section 5: Location References
 
@@ -117,6 +134,8 @@ The production bible is the **single source of truth** for a campaign. It lives 
 
 ### Location 1: [Name]
 - Sheet file: `assets/location-sheets/[name].png`
+- Physical characteristics: [dimensions/scale, materials, fixed layout —
+  what the camera must find identical every visit]
 - Time of day: [golden hour/midday/blue hour/night]
 - Key features: [elements that define this location]
 - Consistency rule: [what must stay identical]
@@ -129,6 +148,8 @@ The production bible is the **single source of truth** for a campaign. It lives 
 
 ### Product: [Name]
 - Sheet file: `assets/object-sheets/[name].png`
+- Physical characteristics: [dimensions/size reference, materials, weight
+  feel — what makes it read as THIS object, not a generic one]
 - Hero angles: [front 3/4, side, detail]
 - Colors/variations: [list]
 - Logo placement: [exact position on product]
@@ -244,6 +265,8 @@ Before starting generation:
 - [ ] Style preset chosen and documented
 - [ ] Color palette defined with hex codes
 - [ ] All character/object/location sheets planned
+- [ ] Every character entry declares height, weight, build, actor notes
+  (Section 4 physical presence — the director fans these out verbatim)
 - [ ] Shot plan drafted in Section 7
 - [ ] Audio direction noted in Section 8
 - [ ] Output specs defined in Section 9

@@ -1,5 +1,17 @@
 # Pipeline Progress — brandly-cli
 
+## Round 32/256 — Release v0.14.1 prep + workflow hardening
+
+- [x] **Release v0.14.1 (patch):** `__about__.py` 0.14.0 → 0.14.1 (single
+      source — hatch propagates); CHANGELOG `[Unreleased]` → dated
+      `[0.14.1]` section (re-labeled `Added` → `Fixed`: a 7-bug program,
+      no new capability). Proven path next: PR → CI → squash-merge →
+      tag `v0.14.1` → GitHub release → Release-to-PyPI auto-runs.
+- [x] **PR template (merge-linking lesson):** `.github/PULL_REQUEST_TEMPLATE.md`
+      — one `Closes #` line per issue (squash only auto-closes the first),
+      gate checklist (pytest/ruff/web/version-check), post-merge leftover
+      verification. Prevents a repeat of the Round 31 stale-OPENs closeout.
+
 ## Round 31/256 — Issue closeout #310–#315 + housekeeping (on main @ f070c51)
 
 - [x] **Squash-merge linking gap:** PR #316's body said "Closes #309–#315"

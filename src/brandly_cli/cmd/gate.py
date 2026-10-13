@@ -865,10 +865,14 @@ def report(
             console.print(f"[green]✓ Issue opened: {result['url']}[/green]")
             console.print(f"  Number: #{result.get('number')}")
         else:
+            # Issue #315: a failed --auto submission must be detectable by a
+            # calling agent — exit 1, not a silent success-looking exit 0.
             console.print(f"[red]Report failed: {result.get('error') or result}[/red]")
+            sys.exit(1)
         return
 
-    if ask_permission(ctx, body):
+    consent = ask_permission(ctx, body)
+    if consent:
         console.print("[dim]Submitting issue to GitHub...[/dim]")
         result = submit_issue(ctx, body)
         if result.get("ok"):
@@ -876,6 +880,17 @@ def report(
             console.print(f"  Number: #{result.get('number')}")
         else:
             console.print(f"[red]Report failed: {result.get('error') or result}[/red]")
+            sys.exit(1)
+    elif consent is None:
+        # Issue #315: EOF at the consent prompt (headless/piped stdin) — the
+        # run used to end as a silent success-looking no-op. Say NOT
+        # SUBMITTED explicitly and exit 2 so a calling agent can detect it.
+        console.print(
+            "[red]NOT SUBMITTED — no interactive consent (stdin is not a "
+            "terminal). Re-run in a terminal, or set GITHUB_TOKEN/GH_TOKEN "
+            "and re-run with --auto.[/red]"
+        )
+        sys.exit(2)
     else:
         console.print("[dim]Issue report skipped.[/dim]")
 

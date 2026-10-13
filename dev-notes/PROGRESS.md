@@ -1,5 +1,23 @@
 # Pipeline Progress — brandly-cli
 
+## Round 30/256 — GOAL-OPEN-ISSUES-309-315 program (7 issues, RED → GREEN)
+
+- [x] **7 issue tests RED-first, then GREEN:** `tests/test_issue_309.py` …
+      `tests/test_issue_315.py` each failed on the unfixed code for exactly
+      the issue's reason (309: divider-line issue FAILs a 90/pass sheet;
+      310: retry flags never reach the runner; 311: table header leaks into
+      every prompt; 312: 3-act collapses to scene 1; 313: cap drops all
+      identity plates; 314: legacy `.brandly/<id>/images/` claims in shipped
+      skills; 315: headless consent EOF exits 0 with nothing submitted).
+- [x] **Fixes (surgical):** `quality_gate.py` (seam-line demotion +
+      by-design prompt guidance); `cmd/production.py` (retry-flag routing +
+      table-row skipping + screenplay act distribution); `shot_runner.py`
+      (identity-first cap priority); 8 skill docs (v2 media tree);
+      `cmd/gate.py` (headless exit 2 + wider gh token resolution).
+- [x] Full suite green: **1630 passed, 1 skipped** (125s); `goal-met`
+      audit required before any completion claim or PR.
+
+
 ## Round 29/256 — Live end-to-end pipeline test (demo `coffee-mug-duo`) — findings filed as #291–#295; video blocked by provider capacity
 
 - [x] **Setup:** `demo/` created + gitignored (generated assets never pollute

@@ -894,7 +894,7 @@ def image(
     except Exception as e:
         # Issue #74: record the failure durably — a record left "running"
         # with no terminal state would look resumable forever.
-        _jobs.save_job({**job, "status": "failed", "error": f"{type(e).__name__}: {e}"}
+        _jobs.save_job({**job, "status": "failed", "error": f"{type(e).__name__}: {e}"})
         if json_out:
             console.quiet = quiet_original
             _print_machine_json(

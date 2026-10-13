@@ -100,7 +100,10 @@ Windows `%APPDATA%\GitHub CLI\hosts.yml` location.
 - [x] `python -m pytest tests/ -q` green — 1630 passed, 1 skipped
 - [x] `ruff check src/ tests/` clean
 - [x] CHANGELOG entry; dev-notes/PROGRESS.md round entry
-- [ ] Commit(s) on `fix/open-issues-309-315`, PR to `main`
+- [x] Commit(s) on `fix/open-issues-309-315`, PR to `main` — PR #316 MERGED
+      (commit f070c51). NOTE: squash-merge with "Closes #309…#315" only
+      auto-closed #309; #310–#315 closed manually with fix evidence
+      (chore: Round 31). CHANGELOG "audit PENDING" wording corrected post-merge.
 
 ## Non-goals
 

@@ -354,6 +354,8 @@ def record_media_spend(root: Path, project_id: str, kind: str, model_id: str) ->
         or IMAGE_MODEL_INFO.get(model_id, {}).get("cost_credits")  # type: ignore[call-overload]
         or 0
     )
+    from brandly_cli.async_compat import run_async
+
     if cost <= 0:
         return
     ct = CostTracker(root / ".brandly")
@@ -361,13 +363,13 @@ def record_media_spend(root: Path, project_id: str, kind: str, model_id: str) ->
 
     pm = ProjectManager(root)
     try:
-        proj = asyncio.run(pm.read(project_id))
+        proj = run_async(pm.read(project_id))
         budget = proj.budget if proj else None
     except Exception:
         budget = None
     try:
-        result = asyncio.run(ct.record_spend(project_id, kind, kind, cost, budget_credits=budget))
-        asyncio.run(pm.update(project_id, {"spent": result["total_spent"]}))
+        result = run_async(ct.record_spend(project_id, kind, kind, cost, budget_credits=budget))
+        run_async(pm.update(project_id, {"spent": result["total_spent"]}))
         console.print(
             f"[dim]  Spent: {result['credits']} credits for {kind} ({model_id})  "
             f"Total: {result['total_spent']}/{result['budget']}[/dim]"

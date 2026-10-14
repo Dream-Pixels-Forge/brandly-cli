@@ -404,10 +404,10 @@ def save_artifact(
     hint = sanitize_filename(prompt_hint)[:20] if prompt_hint else ""
     fname = filename or f"{type_label}_{ts}_{hint}{ext}"
     dest = artifacts_dir / fname
-    import asyncio
+    from brandly_cli.async_compat import run_async
 
     try:
-        asyncio.run(download_file(url, dest))
+        run_async(download_file(url, dest))
         return dest
     except Exception as e:
         _console.print(f"[yellow]⚠ Could not save artifact: {e}[/yellow]")
@@ -450,8 +450,6 @@ def fetch_image_atomic(
 
     try:
         if url:
-            import asyncio
-
             import httpx
 
             async def _dl(u: str) -> bytes:
@@ -460,7 +458,7 @@ def fetch_image_atomic(
                     resp.raise_for_status()
                     return resp.content
 
-            raw = asyncio.run(_dl(url))
+            raw = run_async(_dl(url))
         elif b64_json:
             try:
                 raw = base64.b64decode(b64_json)

@@ -158,6 +158,23 @@ The production bible is the **single source of truth** for a campaign. It lives 
 ### Section 7: Shot Plan
 
 ```markdown
+## 6. Physical Characteristics
+
+### Character Physical Stats
+
+| Character | Weight | Height | Body Type | Physique Notes |
+|----------|--------|--------|-----------|----------------|
+| **MIRA (30s)** | 50kg | 151cm | Slender | Light-built, agile movements |
+| **ELIAS (60s)** | 75kg | 175cm | Average | Sturdy, grounded presence |
+| **THE SOUP (non-human)** | N/A | N/A | N/A | The product itself, weightless |
+
+*Physical characteristics inform camera positioning, lighting, and wardrobe choices to complement each character's build and presence.*
+
+---
+
+---
+
+
 ## 7. Shot Plan
 
 [Link to brandly-storyboard output or embed abbreviated version]

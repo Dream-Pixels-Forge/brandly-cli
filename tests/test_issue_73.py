@@ -28,6 +28,7 @@ from click.testing import CliRunner
 from PIL import Image
 
 from brandly_cli.cli import cli
+from brandly_cli.io import fetch_image_atomic
 
 
 @pytest.fixture
@@ -252,6 +253,29 @@ def test_text_mode_preserved_without_json_flag(runner: CliRunner, tmp_path: Path
     # Issue #75: without a project context there is no implicit "untitled"
     # autosave — only an explicit --project-id records the image in a tree.
     assert not save.called, "implicit autosave under an inferred project context"
+
+
+# ---------------------------------------------------------------------------
+# Regression (ISS-0048): URL branch must import run_async before use
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_image_atomic_url_branch_imports_run_async(tmp_path: Path) -> None:
+    """The URL download branch must not NameError on ``run_async`` (ISS-0048).
+
+    The I1 refactor (e9e86be) swapped ``asyncio.run`` for ``run_async`` in
+    ``fetch_image_atomic`` but dropped the function-local import, so only
+    the URL payload path broke with ``NameError`` at runtime.
+    """
+    out = tmp_path / "direct.png"
+    with _patch_client():
+        result = fetch_image_atomic("https://cdn.example.com/direct.png", out)
+
+    assert result["path"] == out
+    assert result["format"] == "PNG"
+    assert result["width"] == 64
+    assert result["height"] == 48
+    assert out.is_file()
 
 
 if __name__ == "__main__":

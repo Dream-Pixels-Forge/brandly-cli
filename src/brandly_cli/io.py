@@ -452,6 +452,8 @@ def fetch_image_atomic(
         if url:
             import httpx
 
+            from brandly_cli.async_compat import run_async
+
             async def _dl(u: str) -> bytes:
                 async with httpx.AsyncClient(timeout=300) as client:
                     resp = await client.get(u, follow_redirects=True)

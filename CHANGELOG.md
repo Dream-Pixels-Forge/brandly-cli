@@ -198,6 +198,34 @@ All notable changes to this project are documented here.
   them all in the director brief (Step 2) — the prompt chain (character →
   casting → sheets → video) stays consistent on Lina (151cm, 50kg).
 
+## [0.14.2] - 2026-10-15
+
+### Fixed — I1 event-loop race + CI-lint/contract fallout (ISS-0048/ISS-0051)
+
+- **I1 event loop race condition**: `asyncio.run()` replaced with `run_async()`
+  (async_compat helper that tolerates a running loop) in `io.py` and
+  `cost_tracker.py` — credit burns and image fetches no longer crash with
+  "event loop is already running" during video generation.
+- **ISS-0048 — URL image downloads were broken by the I1 refactor**: the
+  `fetch_image_atomic` URL branch called `run_async` without importing it,
+  raising `NameError` (wrapped as `ImageFetchError: ... name 'run_async' is
+  not defined`) on every URL-payload image download; import completed and a
+  regression test added (`test_fetch_image_atomic_url_branch_imports_run_async`).
+  This was caught by CI lint (ruff F821/F401) — main was red for 3 runs until
+  fixed.
+- **ISS-0051 — #314 contract restored**: 6 sheet skills
+  (character/location/mecha/object/plant + consistency/anchoring-system) had
+  been rewritten to document the legacy `.brandly/<id>/images/` tree,
+  breaking the `TestNoLegacyMediaLayoutClaims` contract tests; restored to
+  `pre-production/<project_id>/images/` per the v2 media layout the CLI
+  actually writes (layout.py).
+
+### Added — production-bible physical characteristics
+
+- **Production-bible skill: Physical Characteristics section** — weight,
+  height, body type stats for cast consistency (extends the
+  physical-presence feature from PR #319).
+
 ## [0.10.2] - 2026-10-04
 
 ### Fixed (reference plate resolution + nested hq guards — #197/#208/#210)

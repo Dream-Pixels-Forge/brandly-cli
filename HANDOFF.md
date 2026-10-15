@@ -4,15 +4,15 @@
 > · **state line corrected 2026-10-15 (ISS-0048)** — the original 10-14 claims
 > ("main green, 58/58 tests passing, ruff clean"; "release v0.14.2 on code +
 > GitHub (attested, smoke-tested)") were **false**
-> **State (2026-10-15, verified):** main was RED — CI lint failed on 3 consecutive
-> commits (e9e86be, 8c36bbd, 9f772e1): F821 `run_async` undefined in io.py
-> `fetch_image_atomic` (a real NameError on the URL-download path) + F401 unused
-> `asyncio` in cost_tracker.py — both fixed by this commit (ISS-0048, local only,
-> not yet pushed) · suite after the fix: 1635 passed / 1 skipped / **2 pre-existing
-> #314 failures** introduced by 8c36bbd (see Known-open items) · **0 open issues ·
-> 0 open PRs · 0 stray branches** · v0.14.2 is **code-only** — no git tag, no
-> GitHub release, and PyPI remains at **0.14.1**; tag + release + publish pending
-> CI green
+> **State (2026-10-15, updated after ISS-0048/ISS-0051):** main green end-to-end —
+> CI-lint fallout of e9e86be fixed (ISS-0048, `d70e6ba`: F821 `run_async` undefined
+> in the io.py `fetch_image_atomic` URL branch + F401 unused `asyncio` in
+> cost_tracker.py) and the #314 contract failures from 8c36bbd resolved
+> (ISS-0051, `4223006`: 6 sheet skills restored to `pre-production/<id>/images/`) ·
+> full suite: **1637 passed / 1 skipped** · **0 open issues · 0 open PRs · 0 stray
+> branches** · CHANGELOG carries the [0.14.2] entry · v0.14.2 remains **unreleased** —
+> no git tag, no GitHub release, PyPI stays at **0.14.1**; tag + release + publish
+> pending (commits local; push pending coordinator review)
 
 ## What just happened (read this first)
 
@@ -71,15 +71,15 @@ CI; fixed by the ISS-0048 commit):
   the skill paths (matches runtime + the #314 ruling) or change the CLI layout
   and amend the #314 contract
 
-## Known-open items (filed, not yet addressed)
+## Known-open items
 
-- **#314 skill-layout contract broken by 8c36bbd (pre-existing, found 2026-10-15)** —
-  `tests/test_issue_314.py::TestNoLegacyMediaLayoutClaims` fails 2/2 on clean
-  main (proven with the fix stashed): 6 skill files now claim the legacy
+- **#314 skill-layout contract broken by 8c36bbd (found 2026-10-15)** —
+  `tests/test_issue_314.py::TestNoLegacyMediaLayoutClaims` failed 2/2 on clean
+  main (proven with the fix stashed): 6 skill files claimed the legacy
   `.brandly/<id>/images/` tree and the sheet skills lost their `pre-production/`
   mentions, while the CLI keeps writing `pre-production/<id>/<category>/`.
-  Blocks a fully green suite/CI test step until ruled on.
-- **ISS-0048** (this commit) — e9e86be lint/NameError fallout: fixed, with a
+  **RESOLVED 2026-10-15 by ISS-0051 (`4223006`)** — skills restored; both tests green.
+- **ISS-0048** (`d70e6ba`) — e9e86be lint/NameError fallout: fixed, with a
   regression test added in `tests/test_issue_73.py`.
 - See existing HANDOFF.md below for pre-existing known-open items
 

@@ -44,7 +44,7 @@ Ship every studio-grade improvement identified in the deep brainstorm as a **ver
 
 ---
 
-### v0.14.4 — Download + Verify + Dailies Review (Agnes output becomes real media)
+### v0.14.4 — Download + Verify + Dailies Review + Multi-Provider Router (Agnes output becomes real media)
 
 | Tool | Skill | What it does |
 |------|-------|--------------|
@@ -53,12 +53,15 @@ Ship every studio-grade improvement identified in the deep brainstorm as a **ver
 | `produce` (existing) | `brandly-video-generation` | Passes `project_id` and `requested_duration` to `poll_video`; stores duration truth in task record |
 | `stitch` (existing) | `dpf-senior-editor` | Before stitching, checks each clip is approved in the review queue; fails unless `--force` |
 | `review_queue` / `review_approve` / `review_reject` | `brandly-review-queue` | CLI commands for the dailies review queue; approve/reject clips; reject re-flags shot for re-run |
+| `VideoBackend` protocol | `brandly-video-generation` | Pluggable video backend interface — Agnes is one implementation; `shot_runner` depends on protocol |
 
 **Deliverables:**
 - `create_video_task` waits for completion, downloads the MP4/WebM, writes to `production/<id>/videos/scenes/<video_id>.mp4`
 - Shot record gains `requested_s`, `measured_s`, `delta_s` (duration truth — G7 from GOAL-ACCURACY)
 - Short clips are **never** recorded as `OK`
 - `stitch` refuses to assemble unapproved clips (unless `--force`)
+- `brandly review queue` lists unapproved clips; `review approve`/`review reject` manage them
+- `VideoBackend` protocol with `AgnesVideoBackend` implementation; `shot_runner` depends on protocol not concrete client
 
 **Acceptance criteria:**
 - A stub Agnes returning 4.5s for a 6s request produces a `SHORT` record, not `OK`
@@ -71,29 +74,23 @@ Ship every studio-grade improvement identified in the deep brainstorm as a **ver
 
 ---
 
-### v0.14.5 — Multi-Provider Router (Agnes is not the only crew)
+### v0.14.5 — Blender Spatial Execution (spatial_blocking renders frames)
 
 | Tool | Skill | What it does |
 |------|-------|--------------|
-| `produce` (existing) | `brandly-video-generation` | Provider router: Agnes primary → Hailuo → Kling → Seedance fallback on 503/quota |
-| (new) `provider_status` | (new `brandly-provider-router` skill) | Lists available backends, their rate limits, cost per second, reliable duration |
+| `spatial_blocking` | `brandly-3d-spatial` | Launches Blender headless (via natron or subprocess) to render camera frames, depth maps, keyframes from the spatial record |
 
 **Deliverables:**
-- `VideoBackend` protocol (submit → poll → fetch clip + capability descriptor)
-- Agnes is one implementation; `shot_runner` depends on the protocol
-- Capability descriptor drives G7 split policy and G13 quota estimate
-- Automatic failover with cost comparison per shot
+- `spatial_blocking` writes actual camera position/rotation, depth maps, and keyframe images to `3d-spatial/{cameras,keyframes,depthmaps}/`
+- Blender script generated from `lens_mm`, `camera_position`, `camera_rotation`, `aspect_ratio`
+- Depth map PNGs are real renders, not placeholders
 
 **Acceptance criteria:**
-- `shot_runner` no longer imports an Agnes client directly
-- A fake backend passes unit tests (second backend is a new file, not a change to `shot_runner`)
-- On Agnes 503 `video_queue_full`, the router retries on the next provider
+- `spatial_blocking --shot-id shot-001 --lens-mm 35mm ...` produces a depth map file under `3d-spatial/depthmaps/`
+- Render fails honestly if Blender is not installed
 
-**MCP annotations:** `provider_status` read-only; `produce` write
-
----
-
-### v0.14.7 — Blender Spatial Execution (spatial_blocking renders frames)
+**MCP annotations:** `readOnlyHint: false, destructiveHint: false, idempotentHint: false`  
+**Domain:** `pre_production`
 
 | Tool | Skill | What it does |
 |------|-------|--------------|

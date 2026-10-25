@@ -44,49 +44,34 @@ Ship every studio-grade improvement identified in the deep brainstorm as a **ver
 
 ---
 
-### v0.14.4 — Download + Verify (Agnes output becomes real media)
+### v0.14.4 — Download + Verify + Dailies Review (Agnes output becomes real media)
 
 | Tool | Skill | What it does |
 |------|-------|--------------|
-| `produce` (existing) | `brandly-video-generation` | After Agnes returns `video_id`, download the clip, verify duration/resolution via ffprobe, store locally with checksum |
-| `list_jobs` / `job-poll` | `brandly-video-generation` | Report `downloaded: true/false`, `local_path`, `checksum` |
+| `create_video_task` | `brandly-video-generation` | After Agnes returns `video_id`, download the clip, verify duration/resolution via ffprobe, store locally with checksum |
+| `poll_video` | `brandly-video-generation` | On completion, auto-downloads video and merges verification results (`requested_s`, `measured_s`, `delta_s`, `duration_status`) |
+| `produce` (existing) | `brandly-video-generation` | Passes `project_id` and `requested_duration` to `poll_video`; stores duration truth in task record |
+| `stitch` (existing) | `dpf-senior-editor` | Before stitching, checks each clip is approved in the review queue; fails unless `--force` |
+| `review_queue` / `review_approve` / `review_reject` | `brandly-review-queue` | CLI commands for the dailies review queue; approve/reject clips; reject re-flags shot for re-run |
 
 **Deliverables:**
-- `create_video_task` waits for completion, downloads the MP4/WebM, writes to `production/<id>/videos/scenes/`
+- `create_video_task` waits for completion, downloads the MP4/WebM, writes to `production/<id>/videos/scenes/<video_id>.mp4`
 - Shot record gains `requested_s`, `measured_s`, `delta_s` (duration truth — G7 from GOAL-ACCURACY)
 - Short clips are **never** recorded as `OK`
+- `stitch` refuses to assemble unapproved clips (unless `--force`)
 
 **Acceptance criteria:**
 - A stub Agnes returning 4.5s for a 6s request produces a `SHORT` record, not `OK`
 - Local file exists and is playable after `produce --wait`
 - Checksum matches source download
+- `stitch` fails on unapproved clips unless `--force`
+- `brandly review queue` lists unapproved clips; `review approve`/`review reject` manage them
 
 **MCP annotations:** `readOnlyHint: false, destructiveHint: false, idempotentHint: false`
 
 ---
 
-### v0.14.5 — Dailies Review (gate blocks stitch)
-
-| Tool | Skill | What it does |
-|------|-------|--------------|
-| `run_gate` (existing) | `brandly-film-critic-scorer` | Vision judge first clip of each scene (`scene-first` policy) |
-| (new) `review_queue` | (new `brandly-review-queue` skill) | Web UI panel listing generated clips with approve/reject per shot; blocks `stitch` until gate passes |
-
-**Deliverables:**
-- `produce` emits a vision verdict for the first clip of every scene
-- Web `/dailies` route shows generated clips with pass/fail per shot
-- `stitch` refuses to assemble a clip that hasn't passed gate (or requires `--force`)
-
-**Acceptance criteria:**
-- Stub judge returning drift on scene 1 blocks scene 1 and not scenes 2+
-- `--gate-ai off` restores today's behavior exactly
-- `stitch` on an ungated clip fails unless `--force`
-
-**MCP annotations:** `run_gate` read-only; `review_queue` read-only
-
----
-
-### v0.14.6 — Multi-Provider Router (Agnes is not the only crew)
+### v0.14.5 — Multi-Provider Router (Agnes is not the only crew)
 
 | Tool | Skill | What it does |
 |------|-------|--------------|

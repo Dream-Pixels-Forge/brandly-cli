@@ -21,18 +21,10 @@ from rich.table import Table
 from brandly_cli import assemble as assemble_mod
 from brandly_cli import layout, scenes, shot_runner, stitch
 from brandly_cli.agnes_client import (
-    create_video_task,
     generate_image,
-    poll_video,
-)
-from brandly_cli.ark_client import (
-    create_video_task as ark_create_video_task,
 )
 from brandly_cli.ark_client import (
     generate_image as ark_generate_image,
-)
-from brandly_cli.ark_client import (
-    poll_video as ark_poll_video,
 )
 from brandly_cli.async_compat import run_async
 from brandly_cli.audio_client import generate_music, generate_tts
@@ -80,7 +72,11 @@ from brandly_cli.planning import _read_production_plan_rows
 from brandly_cli.project_manager import ProjectManager
 from brandly_cli.style_presets import apply_style_preset
 from brandly_cli.types import PhaseResult
-from brandly_cli.video_backend import AgnesVideoBackend
+from brandly_cli.video_backend import (
+    AgnesVideoBackend,
+    ProviderRouter,
+    VideoBackend,
+)
 from brandly_cli.video_prompts import build_enhanced_video_prompt
 
 
@@ -861,6 +857,17 @@ def _print_missing_references(
     ),
 )
 @click.option(
+    "--video-backend",
+    "video_backend",
+    type=click.Choice(["agnes", "router"]),
+    default="agnes",
+    help=(
+        "Video backend to use: 'agnes' (default, direct Agnes API) or "
+        "'router' (multi-provider router with automatic failover). "
+        "Requires AGNES_API_KEY for Agnes backend."
+    ),
+)
+@click.option(
     "--aspect-ratio",
     "aspect_ratio",
     default=None,
@@ -980,6 +987,7 @@ def produce(
     i2v_attempts: int,
     text_fallback_attempts: int,
     no_text_fallback: bool,
+    video_backend: str = "agnes",
 ) -> None:
     """Generate a multi-shot film shot by shot from the production plan.
 
@@ -1058,6 +1066,23 @@ def produce(
     # Issue #192 + #214: preflight cost/quota warnings before any credit is
     # spent (the credit gate would otherwise fire mid-run, after assets).
     _preflight_warnings(root, project_id, shots, "agnes-video-2.5-flash")
+
+    # G14: Create the video backend. Defaults to AgnesVideoBackend for
+    # G14: Create the video backend. Defaults to AgnesVideoBackend for
+    # backwards compatibility. Use ProviderRouter with multiple backends
+    # for automatic failover on provider outages.
+    backend: VideoBackend = AgnesVideoBackend()
+    if video_backend == "router":
+        backend = ProviderRouter(
+            backends=[
+                (AgnesVideoBackend(), 1),
+            ],
+        )
+    elif video_backend == "agnes":
+        backend = AgnesVideoBackend()
+    else:
+        backend = AgnesVideoBackend()  # fallback for unexpected values  # noqa: F841
+    # optionally replaced by ProviderRouter. Used in _batch below.
 
     if dry_run:
         try:
@@ -1981,13 +2006,23 @@ def batch(
                 if style == "cinematic":
                     variant_prompt = apply_style_preset(variant_prompt, "cinematic", media="still")
                 requested_duration = 5
-                task = await create_video_task(
-                    variant_prompt,
+                task_result = await backend.submit(  # noqa: F821
+                    prompt=variant_prompt,
                     model=model,
+                    mode="text",
                     duration=requested_duration,
                     aspect_ratio="16:9",
+                    size="720P",
                     reference_images=imgs,
                 )
+                task = {
+                    "id": task_result.video_id,
+                    "video_id": task_result.video_id,
+                    "status": task_result.status,
+                    "progress": task_result.progress,
+                    "url": task_result.url,
+                    "created_at": task_result.metadata.get("created_at") if task_result.metadata else None,
+                }
             except Exception as e:
                 console.print(
                     f"[yellow]⚠ Variant {i + 1} failed to submit ({e}); "
@@ -2008,15 +2043,15 @@ def batch(
                 try:
                     # Issue #152: reference/keyframe mode polls are invalid
                     # without model_name (Agnes docs) — always forward it.
-                    result = await poll_video(
+                    result = await backend.poll(  # noqa: F821
                         video_id,
                         max_wait_seconds=300,
                         model_name=model,
                         project_id=project_id,
                         requested_duration=requested_duration,
                     )
-                    task["url"] = result.get("url")
-                    task["final_status"] = result.get("status")
+                    task["url"] = result.url
+                    task["final_status"] = result.status
                     # G7 duration truth fields from download_and_verify_video.
                     for key in (
                         "downloaded",
@@ -2027,8 +2062,13 @@ def batch(
                         "delta_s",
                         "duration_status",
                     ):
-                        if key in result:
-                            task[key] = result[key]
+                        if hasattr(result, key) and getattr(result, key) is not None:
+                            task[key] = getattr(result, key)
+                    # Also include any metadata fields
+                    if result.metadata:
+                        for key, val in result.metadata.items():
+                            if key not in task and val is not None:
+                                task[key] = val
                 except TimeoutError:
                     task["final_status"] = "timeout"
             results.append(task)
@@ -2720,6 +2760,9 @@ class DirectorConfig:
         self.pm = ProjectManager(self.root)
         self.ct = CostTracker(self.root / ".brandly")
         self.mem = UserPreferences(self.root)
+        #: G14: Video backend for generation (AgnesVideoBackend by default;
+        #: ProviderRouter for multi-provider failover).
+        self.video_backend = AgnesVideoBackend()
 
 
 class Director:
@@ -2889,39 +2932,53 @@ class Director:
             prompt, style, character=character, reference_images=reference_images
         )
 
-        is_ark = model.startswith("seedance")
-        if is_ark:
-            # Legacy parity: the Ark provider used to apply the "cinematic"
-            # preset internally; providers no longer touch the prompt layer.
-            enhanced = apply_style_preset(enhanced, "cinematic")
-            task = await ark_create_video_task(
-                enhanced,
-                model=model,
-                duration=duration,
-                aspect_ratio=aspect_ratio,
-                reference_images=reference_images,
-            )
-            video_id = task.get("task_id") or ""
-        else:
-            task = await create_video_task(
-                enhanced,
-                model=model,
-                mode=mode,
-                duration=duration,
-                aspect_ratio=aspect_ratio,
-                first_frame=first_frame,
-                last_frame=last_frame,
-                reference_images=reference_images,
-            )
-            video_id = task["video_id"]
+        task_result = await self.cfg.video_backend.submit(
+            prompt=enhanced,
+            model=model,
+            mode=mode,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            size="720P",
+            reference_images=reference_images,
+            first_frame=first_frame,
+            last_frame=last_frame,
+        )
+        task = {
+            "id": task_result.video_id,
+            "video_id": task_result.video_id,
+            "status": task_result.status,
+            "progress": task_result.progress,
+            "url": task_result.url,
+            "mode": mode,
+            "created_at": task_result.metadata.get("created_at") if task_result.metadata else None,
+        }
+        video_id = task_result.video_id or ""
 
         if wait and video_id:
-            if is_ark:
-                result = await ark_poll_video(video_id, max_wait_seconds=max_wait)
-            else:
-                result = await poll_video(video_id, max_wait_seconds=max_wait, model_name=model)
-            task["url"] = result.get("url")
-            task["final_status"] = result.get("status")
+            result = await self.cfg.video_backend.poll(
+                video_id,
+                max_wait_seconds=max_wait,
+                model_name=model,
+            )
+            task["url"] = result.url
+            task["final_status"] = result.status
+            # G7 duration truth fields from download_and_verify_video.
+            for key in (
+                "downloaded",
+                "local_path",
+                "checksum",
+                "requested_s",
+                "measured_s",
+                "delta_s",
+                "duration_status",
+            ):
+                if hasattr(result, key) and getattr(result, key) is not None:
+                    task[key] = getattr(result, key)
+            # Also include any metadata fields
+            if result.metadata:
+                for key, val in result.metadata.items():
+                    if key not in task and val is not None:
+                        task[key] = val
 
         # Persist to project phase
         proj = await self.cfg.pm.read(project_id)

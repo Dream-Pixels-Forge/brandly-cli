@@ -1860,7 +1860,16 @@ def video(
     if wait:
         console.print(f"[dim]Polling (max {max_wait}s)...[/dim]")
         try:
-            result = run_async(poll_video(video_id, max_wait_seconds=max_wait, model_name=model))
+            result = run_async(
+                poll_video(
+                    video_id,
+                    max_wait_seconds=max_wait,
+                    model_name=model,
+                    project_id=project_id,
+                    requested_duration=duration,
+                    root=root,
+                )
+            )
         except TimeoutError as e:
             console.print(f"[red]Error: {e}[/red]")
             console.print(

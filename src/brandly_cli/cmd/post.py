@@ -369,7 +369,15 @@ def probe(input: str, output: str) -> None:
     help="How to reach --ratio: crop (center-crop, default) or pad (letterbox with black bars)",
 )
 @click.option("--root", default=None, help="Working directory")
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Stitch clips even if they haven't been approved in the review queue (G5).",
+)
+@click.pass_context
 def stitch(
+    ctx: click.Context,
     clips: tuple[str, ...],
     output: str,
     transition: str,
@@ -377,10 +385,55 @@ def stitch(
     color_grade: str,
     ratio: str | None,
     fit: str,
+    force: bool,
     root: str | None,
 ) -> None:
-    """Stitch multiple video clips with transitions and color grading."""
+    """Stitch multiple video clips with transitions and color grading.
+
+    G5 Dailies Review: each clip must be approved in the review queue before
+    stitching. Use --force to bypass (agent override).
+    """
     from brandly_cli.stitch import stitch_videos
+    from brandly_cli.web.review import queue as review_queue
+
+    # G5: Check each clip is approved in the review queue before stitching.
+    unapproved = []
+    for clip in clips:
+        clip_path = Path(clip).resolve()
+        # Walk up from clip to find project root (directory containing .brandly/)
+        # and project_id (directory name under production/)
+        current = clip_path
+        found = None
+        while current != current.parent:
+            if current.name == "production" and current.parent.is_dir():
+                rel = clip_path.relative_to(current)
+                parts = rel.parts
+                if len(parts) >= 4 and parts[0] != "videos":
+                    project_id = parts[0]
+                    found = (project_id, current.parent)
+                    break
+            current = current.parent
+        if found is None:
+            unapproved.append(str(clip))
+            continue
+        project_id, found_root = found
+        queue_data = review_queue(found_root, project_id, stage="video")
+        item = next(
+            (i for i in queue_data["items"] if i["item_id"] == f"video:{clip_path.stem}"),
+            None,
+        )
+        if item is None or item.get("decision") != "approved":
+            unapproved.append(str(clip))
+
+    if unapproved and not force:
+        console.print(
+            f"[red]✗ {len(unapproved)} clip(s) not approved in review queue. "
+            f"Run 'brandly review queue' to review, then 'brandly review approve <item>' "
+            f"to approve, or use --force to bypass.[/red]"
+        )
+        for u in unapproved:
+            console.print(f"  {u}")
+        sys.exit(1)
 
     clip_paths = [Path(c) for c in clips]
     output_path = Path(output)
@@ -729,6 +782,183 @@ def template_list(root: str | None) -> None:
             console.print(f"  ★ {t}")
 
 
+@click.group(name="review")
+def review_group():
+    """Review queue: approve or reject generated clips before stitching."""
+    pass
+
+
+@review_group.command(name="queue")
+@click.option(
+    "--stage",
+    type=click.Choice(["storyboard", "video", "reference"]),
+    default="video",
+    help="Review stage to list (default: video).",
+)
+@click.option(
+    "--scene",
+    type=int,
+    default=None,
+    help="Filter to a specific scene number.",
+)
+@click.option(
+    "--below-threshold",
+    type=int,
+    default=None,
+    help="Filter to items whose gate score is below N/100.",
+)
+@click.pass_context
+def review_queue(
+    ctx: click.Context,
+    stage: str,
+    scene: int | None,
+    below_threshold: int | None,
+    root: str | None,
+) -> None:
+    """List items pending review in the dailies queue."""
+
+    root_path: Path = Path(root) if root else Path.cwd()
+    # Find project_id from root/.brandly/<project_id>/
+    project_id = project_id_from_root(root_path)
+    if project_id is None:
+        console.print(f"[red]No project found at {root_path}[/red]")
+        sys.exit(1)
+    proj_dir = layout.project_dir(root_path, project_id)
+    if not proj_dir.is_dir():
+        console.print(f"[red]No project found at {root_path}[/red]")
+        sys.exit(1)
+    data = review_queue(root_path, project_id, stage=stage, scene=scene, below_threshold=below_threshold)
+    items = data["items"]
+    if not items:
+        console.print("[green]No items pending review.[/green]")
+        return
+    table = Table(title=f"Review Queue — {project_id}")
+    table.add_column("Item ID", style="cyan")
+    table.add_column("Stage", style="magenta")
+    table.add_column("Scene", justify="right", style="yellow")
+    table.add_column("Path")
+    table.add_column("Gate Score", justify="right", style="green")
+    table.add_column("Shot ID")
+    for item in items:
+        gate = item.get("gate") or {}
+        score = gate.get("score", "—") if isinstance(gate, dict) else "—"
+        table.add_row(
+            item["item_id"],
+            item["stage"],
+            str(item.get("scene") or "—"),
+            item["path"],
+            str(score),
+            item.get("shot_id") or "—",
+        )
+    console.print(table)
+    console.print(f"\nTotal: {len(items)} item(s) pending review.")
+    items = data["items"]
+    if not items:
+        console.print("[green]No items pending review.[/green]")
+        return
+    table = Table(title=f"Review Queue — {project_id}")
+    table.add_column("Item ID", style="cyan")
+    table.add_column("Stage", style="magenta")
+    table.add_column("Scene", justify="right", style="yellow")
+    table.add_column("Path")
+    table.add_column("Gate Score", justify="right", style="green")
+    table.add_column("Shot ID")
+    for item in items:
+        gate = item.get("gate") or {}
+        score = gate.get("score", "—") if isinstance(gate, dict) else "—"
+        table.add_row(
+            item["item_id"],
+            item["stage"],
+            str(item.get("scene") or "—"),
+            item["path"],
+            str(score),
+            item.get("shot_id") or "—",
+        )
+    console.print(table)
+    console.print(f"\nTotal: {len(items)} item(s) pending review.")
+
+
+@review_group.command(name="approve")
+@click.argument("item_id")
+@click.option("--reviewer", default="agent", help="Reviewer name (default: agent).")
+@click.pass_context
+def review_approve(
+    ctx: click.Context,
+    item_id: str,
+    reviewer: str,
+    root: str | None,
+) -> None:
+    """Approve a queued review item."""
+
+    root_path: Path = Path(root) if root else Path.cwd()
+    # Find project_id from root/.brandly/<project_id>/
+    project_id = project_id_from_root(root_path)
+    if project_id is None:
+        console.print(f"[red]No project found at {root_path}[/red]")
+        sys.exit(1)
+    proj_dir = layout.project_dir(root_path, project_id)
+    if not proj_dir.is_dir():
+        console.print(f"[red]No project found at {root_path}[/red]")
+        sys.exit(1)
+    result = review_approve(root_path, project_id, item_id, reviewer)
+    if result["status"] == "error":
+        console.print(f"[red]✗ {result['error']}[/red]")
+        sys.exit(1)
+    console.print(
+        f"[green]✓ Approved {item_id}[/green]"
+        + (f" (shot {result['shot_id']})" if result.get("shot_id") else "")
+        + (" — stamped generation record" if result.get("stamped") else "")
+    )
+
+
+@review_group.command(name="reject")
+@click.argument("item_id")
+@click.option("--note", default="", help="Rejection note.")
+@click.option("--reviewer", default="agent", help="Reviewer name (default: agent).")
+@click.pass_context
+def review_reject(
+    ctx: click.Context,
+    item_id: str,
+    note: str,
+    reviewer: str,
+    root: str | None,
+) -> None:
+    """Reject a queued review item and re-flag its shot for re-run."""
+
+    root_path: Path = Path(root) if root else Path.cwd()
+    # Find project_id from root/.brandly/<project_id>/
+    project_id = project_id_from_root(root_path)
+    if project_id is None:
+        console.print(f"[red]No project found at {root_path}[/red]")
+        sys.exit(1)
+    proj_dir = layout.project_dir(root_path, project_id)
+    if not proj_dir.is_dir():
+        console.print(f"[red]No project found at {root_path}[/red]")
+        sys.exit(1)
+    result = review_reject(root_path, project_id, item_id, note, reviewer)
+    if result["status"] == "error":
+        console.print(f"[red]✗ {result['error']}[/red]")
+        sys.exit(1)
+    console.print(
+        f"[yellow]✗ Rejected {item_id}[/yellow]"
+        + (f" (shot {result['shot_id']})" if result.get("shot_id") else "")
+        + (" — re-flagged for re-run" if result.get("unflagged") else "")
+    )
+    if result.get("note_path"):
+        console.print(f"  Review note: {result['note_path']}")
+
+
+def project_id_from_root(root_path: Path) -> str | None:
+    """Find the project_id by looking for .brandly/<project_id>/ under root."""
+    brandly_dir = root_path / ".brandly"
+    if not brandly_dir.is_dir():
+        return None
+    for entry in brandly_dir.iterdir():
+        if entry.is_dir() and (entry / "project.json").is_file():
+            return entry.name
+    return None
+
+
 @click.command(name="mux")
 @click.argument("input", type=click.Path(exists=True))
 @click.argument("audio", nargs=-1, required=True, type=click.Path(exists=True))
@@ -799,6 +1029,7 @@ def register(cli) -> None:
     cli.add_command(speed)
     cli.add_command(probe)
     cli.add_command(stitch)
+    cli.add_command(review_group)
     cli.add_command(export_platforms)
     cli.add_command(thumbnail)
     cli.add_command(voice_match)

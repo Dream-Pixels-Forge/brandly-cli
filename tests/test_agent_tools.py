@@ -316,3 +316,141 @@ class TestAgnesChatKeyGuard:
         )
         assert result.exit_code == 0
         assert "agnes-2.5-flash" in result.output
+
+# ---------------------------------------------------------------------------
+# download_and_verify_video (G7)
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadAndVerifyVideo:
+    def test_download_and_verify_ok(self, tmp_path, monkeypatch):
+        """Downloaded clip with duration within tolerance is marked OK."""
+        from brandly_cli.agnes_client import download_and_verify_video
+
+        fake_audio = b"fake-video-bytes"
+
+        async def fake_download(url, dest_path):
+            Path(dest_path).write_bytes(fake_audio)
+            return Path(dest_path)
+
+        def fake_probe(path):
+            return 5.0  # exactly matches requested_duration=5
+
+        monkeypatch.setattr(
+            "brandly_cli.agnes_client.download_file", fake_download
+        )
+        monkeypatch.setattr(
+            "brandly_cli.agnes_client._probe_video_duration", fake_probe
+        )
+
+        result = __import__("asyncio").run(
+            download_and_verify_video(
+                "vid-001",
+                "https://cdn.example.com/vid-001.mp4",
+                "p1",
+                5,
+                root=str(tmp_path),
+            )
+        )
+
+        assert result["downloaded"] is True
+        assert result["requested_s"] == 5
+        assert result["measured_s"] == 5.0
+        assert result["delta_s"] == 0.0
+        assert result["duration_status"] == "ok"
+        assert result["checksum"] != ""
+        assert result["local_path"].endswith("vid-001.mp4")
+        assert Path(result["local_path"]).is_file()
+        assert Path(result["local_path"]).read_bytes() == fake_audio
+
+    def test_download_and_verify_short(self, tmp_path, monkeypatch):
+        """Clip shorter than tolerance is marked short."""
+        from brandly_cli.agnes_client import download_and_verify_video
+
+        fake_audio = b"fake-video-bytes"
+
+        async def fake_download(url, dest_path):
+            Path(dest_path).write_bytes(fake_audio)
+            return Path(dest_path)
+
+        def fake_probe(path):
+            return 3.0  # requested 5s, got 3s -> short
+
+        monkeypatch.setattr(
+            "brandly_cli.agnes_client.download_file", fake_download
+        )
+        monkeypatch.setattr(
+            "brandly_cli.agnes_client._probe_video_duration", fake_probe
+        )
+
+        result = __import__("asyncio").run(
+            download_and_verify_video(
+                "vid-002",
+                "https://cdn.example.com/vid-002.mp4",
+                "p1",
+                5,
+                root=str(tmp_path),
+            )
+        )
+
+        assert result["downloaded"] is True
+        assert result["requested_s"] == 5
+        assert result["measured_s"] == 3.0
+        assert result["delta_s"] == -2.0
+        assert result["duration_status"] == "short"
+
+    def test_download_failure_non_fatal(self, tmp_path, monkeypatch):
+        """Download failure returns error status, not an exception."""
+        from brandly_cli.agnes_client import download_and_verify_video
+
+        async def fake_download(url, dest_path):
+            raise OSError("network down")
+
+        monkeypatch.setattr(
+            "brandly_cli.agnes_client.download_file", fake_download
+        )
+
+        result = __import__("asyncio").run(
+            download_and_verify_video(
+                "vid-003",
+                "https://cdn.example.com/vid-003.mp4",
+                "p1",
+                5,
+                root=str(tmp_path),
+            )
+        )
+
+        assert result["downloaded"] is False
+        assert result["output_path"] == ""
+        assert result["duration_status"] == "download_failed"
+        assert "network down" in result["download_error"]
+
+    def test_unknown_duration_when_ffprobe_missing(self, tmp_path, monkeypatch):
+        """When ffprobe is unavailable, duration_status is unknown."""
+        from brandly_cli.agnes_client import download_and_verify_video
+
+        fake_audio = b"fake-video-bytes"
+
+        async def fake_download(url, dest_path):
+            Path(dest_path).write_bytes(fake_audio)
+            return Path(dest_path)
+
+        monkeypatch.setattr(
+            "brandly_cli.agnes_client.download_file", fake_download
+        )
+        monkeypatch.setattr("shutil.which", lambda cmd: None)
+
+        result = __import__("asyncio").run(
+            download_and_verify_video(
+                "vid-004",
+                "https://cdn.example.com/vid-004.mp4",
+                "p1",
+                5,
+                root=str(tmp_path),
+            )
+        )
+
+        assert result["downloaded"] is True
+        assert result["duration_status"] == "unknown"
+        assert result["measured_s"] is None
+        assert result["delta_s"] is None

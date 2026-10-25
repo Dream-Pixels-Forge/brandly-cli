@@ -1980,10 +1980,11 @@ def batch(
                 # (prompt layer) because providers no longer import style_presets.
                 if style == "cinematic":
                     variant_prompt = apply_style_preset(variant_prompt, "cinematic", media="still")
+                requested_duration = 5
                 task = await create_video_task(
                     variant_prompt,
                     model=model,
-                    duration=5,
+                    duration=requested_duration,
                     aspect_ratio="16:9",
                     reference_images=imgs,
                 )
@@ -2008,10 +2009,26 @@ def batch(
                     # Issue #152: reference/keyframe mode polls are invalid
                     # without model_name (Agnes docs) — always forward it.
                     result = await poll_video(
-                        video_id, max_wait_seconds=300, model_name=model
+                        video_id,
+                        max_wait_seconds=300,
+                        model_name=model,
+                        project_id=project_id,
+                        requested_duration=requested_duration,
                     )
                     task["url"] = result.get("url")
                     task["final_status"] = result.get("status")
+                    # G7 duration truth fields from download_and_verify_video.
+                    for key in (
+                        "downloaded",
+                        "local_path",
+                        "checksum",
+                        "requested_s",
+                        "measured_s",
+                        "delta_s",
+                        "duration_status",
+                    ):
+                        if key in result:
+                            task[key] = result[key]
                 except TimeoutError:
                     task["final_status"] = "timeout"
             results.append(task)

@@ -5,14 +5,21 @@ Features:
 - 503 body classification (permanent vs routing vs transient, issue #148)
 - Clear error messages for different failure modes
 - Graceful fallback suggestions
+- Video download + duration verification (issue #148/G7): downloaded clips are
+  measured with ffprobe; requested vs measured duration is recorded so short
+  takes are never silently reported as OK.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import json
 import mimetypes
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +27,7 @@ import httpx
 from rich.console import Console
 
 from brandly_cli.constants import DEFAULT_AGNES_IMAGE_MODEL, DEFAULT_AGNES_VIDEO_MODEL
-from brandly_cli.io import now_iso
+from brandly_cli.io import download_file, now_iso
 
 console = Console()
 
@@ -902,20 +909,149 @@ async def get_video_status(
     }
 
 
+# ---------------------------------------------------------------------------
+# Video download + duration verification (G7)
+# ---------------------------------------------------------------------------
+
+def _sha256_file(path: Path) -> str:
+    """Return the SHA-256 hex digest of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _probe_video_duration(path: Path) -> float | None:
+    """Return the duration of a video clip in seconds using ffprobe.
+
+    Returns None if the file doesn't exist, isn't a valid video, or ffprobe
+    is not available.
+    """
+    if not path.is_file() or not shutil.which("ffprobe"):
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=duration",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout)
+        streams = data.get("streams", [])
+        if not streams:
+            return None
+        dur = streams[0].get("duration")
+        return float(dur) if dur is not None else None
+    except Exception:
+        return None
+
+
+async def download_and_verify_video(
+    video_id: str,
+    video_url: str,
+    project_id: str,
+    requested_duration: int | None,
+    *,
+    root: str | Path | None = None,
+) -> dict[str, Any]:
+    """Download a completed Agnes video and verify its duration.
+
+    Downloads the video from ``video_url`` to
+    ``production/<project_id>/videos/scenes/<video_id>.mp4``, measures its
+    actual duration via ffprobe, and compares against the requested duration.
+
+    Returns a dict with ``downloaded``, ``local_path``, ``checksum``,
+    ``requested_s``, ``measured_s``, ``delta_s``, and ``duration_status``
+    (``ok`` / ``short`` / ``continuation`` / ``unknown``).
+    """
+    from brandly_cli.layout import resolve_media_root
+
+    root_path = Path(root) if root else Path.cwd()
+    videos_root = resolve_media_root(root_path, project_id, "videos")
+    scenes_dir = videos_root / "scenes"
+    scenes_dir.mkdir(parents=True, exist_ok=True)
+
+    local_path = scenes_dir / f"{video_id}.mp4"
+
+    # Download the video.
+    try:
+        await download_file(video_url, local_path)
+    except Exception as e:  # download failure is not fatal — report it
+        return {
+            "downloaded": False,
+            "local_path": "",
+            "checksum": "",
+            "requested_s": requested_duration,
+            "measured_s": None,
+            "delta_s": None,
+            "duration_status": "download_failed",
+            "download_error": str(e),
+        }
+
+    checksum = _sha256_file(local_path)
+    measured_s = _probe_video_duration(local_path)
+
+    requested_s = requested_duration
+    duration_status = "unknown"
+    delta_s = None
+
+    if measured_s is not None and requested_s is not None:
+        delta_s = round(measured_s - requested_s, 2)
+        tolerance = max(1.0, abs(requested_s) * 0.10)
+        if abs(delta_s) <= tolerance:
+            duration_status = "ok"
+        else:
+            duration_status = "short"
+
+    return {
+        "downloaded": True,
+        "local_path": str(local_path),
+        "checksum": checksum,
+        "requested_s": requested_s,
+        "measured_s": round(measured_s, 2) if measured_s is not None else None,
+        "delta_s": delta_s,
+        "duration_status": duration_status,
+    }
+
+
 async def poll_video(
     video_id: str,
     *,
     max_wait_seconds: int = 300,
     interval_seconds: int = 5,
     model_name: str | None = None,
+    project_id: str | None = None,
+    requested_duration: int | None = None,
+    root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Poll until video generation completes or times out.
 
     Handles rate limits gracefully by waiting and retrying.
 
+    When the video completes, downloads it and verifies its duration against
+    the requested duration (G7 — duration truth).
+
     Args:
         video_id: The video ID to poll.
-        model_name: Model name for retrieval (required for keyframe/reference modes).
+        model_name: Model name for retrieval (required for keyframe/reference
+            modes; optional for text mode).
+        project_id: Project ID for storing the downloaded clip.
+        requested_duration: The duration (in seconds) requested at create time.
+        root: Project root directory (defaults to cwd).
     """
     import asyncio
 
@@ -933,6 +1069,17 @@ async def poll_video(
 
             if result["status"] == "completed":
                 console.print(f"[green]✓ Video generated after {attempts} polls[/green]")
+                # Download + verify duration (G7).
+                video_url = result.get("url")
+                if video_url and project_id:
+                    verification = await download_and_verify_video(
+                        video_id,
+                        video_url,
+                        project_id,
+                        requested_duration,
+                        root=root,
+                    )
+                    result.update(verification)
                 return result
             if result["status"] == "failed":
                 raise RuntimeError(

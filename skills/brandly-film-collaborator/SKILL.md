@@ -6,6 +6,17 @@ description: >
 
 # Brandly Film Collaborator — Multi-Person AI Filmmaking
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-film-collaborator** (this skill) | **HOW** teams collaborate | Git-based multi-person film collaboration, role enforcement, file ownership, invitation flow |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution per role within the collaboration framework |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands and the mandatory phase order, see brandly-init. For CLI execution, see brandly-video-generation. This skill only covers HOW to organize multi-person film collaboration.
+
+
 Divide AI film production across a team using git. One person owns stills. Another owns video. Another owns assembly. Everyone works from the same canon. No headache.
 
 > "A film is never made alone. AI filmmaking shouldn't be either."

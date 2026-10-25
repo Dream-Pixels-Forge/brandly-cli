@@ -5,6 +5,17 @@ description: "61-category action prompt engineering for AI video. Transforms sho
 
 # DPF Continue Action Film — 61-Category Action Prompt Engineering
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-continuous-action-film** (this skill) | **HOW** action prompts are made | 61-category action prompt engineering, model-tuned prompts, beat structure, camera signatures |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution via `brandly produce` with the action prompts |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands and the mandatory phase order, see brandly-init. For CLI execution (`brandly produce`), see brandly-video-generation. This skill only covers HOW to write action prompts.
+
+
 Transform shotlists, scripts, scenes, and keyframes into **model-optimized action prompts** with cinematic-grade precision. This skill is the **action director's lens** — spanning combat, documentary, commercial, sport, genre, and experimental action.
 
 > "Every frame is directed. Every category has its own physics, its own camera, its own grammar. This skill maps 61 action categories to every AI video model."
@@ -886,53 +897,6 @@ razor-sharp. [Lighting]. [Style]. ~10s.
 ```
 
 > WARNING: Single-prompt version is hit-or-miss on Hailuo — model may not honor the 3-phase choreography. 3-clip chain is recommended.
-
----
-
-### Shot-List Chain — Cut Scenes in Brandly Language
-
-**Signature:** A cut scene (multiple angles, dialogue, motivated beats) directed as a *clip chain*: each clip is ONE unbroken take; joins happen in post, never in generation.
-
-**Golden rule: never write a "cut" into a clip prompt.** One Agnes request generates one take — it cannot contain a cut. Cutting is `brandly stitch`'s job. The model-facing language is: `Ends on …`, `Clip N-1→N handoff: match …`, `Continuity from Clip N-1`.
-
-**Scene brief structure (human-readable, one document):**
-
-```
-REFERENCES       one @ref line per sheet: what it defines + "Do not use: …" exclusions
-SCENE CONTEXT    who / where / what, one paragraph
-FORMAT MODE      N clips, total duration; "one unbroken take per clip; the chain is
-                 joined in post — a join never happens inside a generation"
-CLIP 1..N        beat name, camera (locked-off unless motivated), action, dialogue,
-                 "Ends on …"
-PERFORMANCE      acting notes: control, gesture size, when a smile is allowed
-PHYSICS          what must stay physically plausible in every clip
-LIGHTING / AUDIO / STYLE — global blocks; AUDIO is per-clip SFX + music bridged
-                 across the joins
-CONTINUITY CHAIN "Carry over across all N clips: …" + one handoff line per join +
-                 "Prompt suffix (Clip N)" for clips 2..N
-POSITIVE LOCKS   positively stated locks: join points, identity, wardrobe, exact
-                 dialogue lines, "never / no …" rules
-```
-
-**Per-clip prompt as it reaches Agnes (ShotChain.clip_prompt):**
-
-```
-[CLIP 2]
-Subject / Environment / Camera / Motion / Action / Lighting / Grade / Duration
-Ends on the colleague's voice stopping.
-[IDENTITY LOCK — Shot 2: Continuity] same subject, preserve traits, no drift
-[CONTINUITY] Same face, gold hoops, white silk blouse. Continuity from Clip 1.
-[CONSTRAINTS] …
-[NEGATIVE] …
-```
-
-**Execution:** `brandly produce` registers one clip at a time (`Scene-XX-Shot-X-Y`), `brandly gate` checks questionable takes, `brandly stitch` joins at the declared points. Bridge music/SFX across the joins so the chain reads as one scene.
-
-**Key constraints:**
-- One dominant camera move per clip; locked-off is the default for dialogue beats
-- `Ends on` names a CAUSE (finished sentence, cap click, disconnect tone) — never a timecode
-- Every handoff line matches an outgoing state to an incoming state: "…at end of Clip N, …at start of Clip N+1"
-- POSITIVE LOCKS restates the join points and identity; `[NEGATIVE]` keeps the visual exclusions — the two never overlap
 
 ---
 

@@ -1,224 +1,58 @@
 # HANDOFF — brandly-cli
+> Status: **v0.14.2 shipped+verified · ISS-0052 (legacy removal) inventory ready, ZERO code changes · For new session**
 
-> **Written:** 2026-10-14, after Physical Characteristics addition and I1 bug fix program
-> · **state line corrected 2026-10-15 (ISS-0048)** — the original 10-14 claims
-> ("main green, 58/58 tests passing, ruff clean"; "release v0.14.2 on code +
-> GitHub (attested, smoke-tested)") were **false**
-> **State (2026-10-15, updated after ISS-0048/ISS-0051):** main green end-to-end —
-> CI-lint fallout of e9e86be fixed (ISS-0048, `d70e6ba`: F821 `run_async` undefined
-> in the io.py `fetch_image_atomic` URL branch + F401 unused `asyncio` in
-> cost_tracker.py) and the #314 contract failures from 8c36bbd resolved
-> (ISS-0051, `4223006`: 6 sheet skills restored to `pre-production/<id>/images/`) ·
-> full suite: **1637 passed / 1 skipped** · **0 open issues · 0 open PRs · 0 stray
-> branches** · CHANGELOG carries the [0.14.2] entry · v0.14.2 remains **unreleased** —
-> no git tag, no GitHub release, PyPI stays at **0.14.1**; tag + release + publish
-> pending (commits local; push pending coordinator review)
+## 1. Current state
+DONE (evidence):
+- CI/CD restored: `d70e6ba` (ISS-0048: missing `run_async` import io.py:461 + F401 cost_tracker), `4223006` (ISS-0051: revert 8c36bbd, #314 paths), `1aa97ab` (changelog 0.14.2). CI green run `38692580349` (4/4 jobs).
+- v0.14.2 released: tag + GitHub release + PyPI (workflow `38693605090`). 3-way verified (code=tag=release=PyPI 0.14.2); wheel content inspected — fix present. ISS-0048/0051 closed.
+- HEAD `1aa97ab`, tree clean. `LEGACY-REMOVAL-INVENTORY.md` at repo root = untracked, git-excluded (`.git/info/exclude`).
 
-## What just happened (read this first)
+IN PROGRESS — **ISS-0052** (high, blocking): legacy layout removal → v0.15.0. Full audit DONE (explore agent); inventory at `./LEGACY-REMOVAL-INVENTORY.md` (file:line precision, sections A–G, coupling map, 14 RED tests). Two implement-coder dispatches aborted — **no code changes exist**.
 
-Three back-to-back programs, landed via direct commits to main — but CI went
-RED on lint at the I1 refactor (e9e86be) and stayed red through all three
-commits (the 3 failures were masked at the lint step, so tests never ran in
-CI; fixed by the ISS-0048 commit):
+## 2. Remaining work (in order)
+1. Read `./LEGACY-REMOVAL-INVENTORY.md` fully.
+2. Dispatch `implement/implement-coder`: read inventory first, RED-first all 14 negative tests (observe fail, save output — #11 is a live bug), remove/rewrite per A–G + coupling map, version→0.15.0, CHANGELOG after [0.14.2], HANDOFF/PROGRESS append, conventional commit `ISS-0052`. NO push/tag/release. (Subagents CANNOT see swarm context files — embed everything or point at the repo-root inventory.)
+3. Verify gates: `ruff check src/ tests/`; `python3 -m mypy src/` (6 PIL baseline only); import-linter (`.importlinter:23` must drop `brandly_cli.migrate`); `python3 scripts/version_check.py` → 0.15.0; full pytest (baseline 1637 passed/1 skipped — expect shrink+grow, demand the arithmetic).
+4. Push main → `gh run watch` (~2m15s, 4 jobs).
+5. `gh release create v0.15.0 --notes-file` — extract [0.15.0] changelog section (awk from heading to next `## [` — NOT to [0.14.1]; 0.14.2 mistake lesson).
+6. Watch "Release to PyPI" workflow → 3-way verify (code=tag=release=PyPI 0.15.0) + download wheel, zipfile-inspect content (fix present).
+7. Close ISS-0052, swarm_snapshot, heartbeat. Delete inventory file + its `.git/info/exclude` line.
 
-1. **I1 Bug Fix Program** → Fixed critical asyncio.run() race condition
-   - Replaced `asyncio.run()` with `run_async()` in:
-     - `src/brandly_cli/io.py` (2 calls)
-     - `src/brandly_cli/cost_tracker.py` (3 calls)
-   - Fixed event loop race condition preventing credit burns during video generation
+## 3. Verified ground truth
+- Swarm `.prides` state lives OUTSIDE repo → context files invisible to subagents. Embed full context in dispatch prompts.
+- `/tmp/opencode` WIPED on server restart (proven 2026-10-16) → durable working files = repo root + `.git/info/exclude`.
+- `python3` (no `python`); ruff 0.17.0 at `~/.local/bin/ruff`.
+- mypy: 6 PIL `import-untyped` errors = pre-existing LOCAL noise, CI unaffected — never chase.
+- `.importlinter:23` lists `brandly_cli.migrate` — MUST edit when migrate.py deleted or gate fails.
+- release.yml triggers on release **published** (`gh release create` auto-tags); PyPI = OIDC trusted publishing, no tokens.
+- **USER MANDATES LOCKED (do not re-litigate)**: v2-only layout; delete `migrate` entirely (v1 projects not auto-upgradable — accepted); remove ALL legacy location fallbacks; 3d-spatial → `pre-production/<id>/3d-spatial/`; STRICT docs taxonomy: `docs/general`=concept,trends,scenes(+casting doc IF ever — none exists; casting phase outputs are pre-production images, untouched), `docs/screenplay`=screenplay, `docs/plan`=plan+production_plan ONLY, `docs/bible`+`docs/tmp` untouched; ship v0.15.0.
+- Latent bug fixed by ISS-0052: `cli.py:446 _latest_project_media` scans legacy-only → `brandly gate` auto-detect blind on v2 (caller `cmd/gate.py:398`).
+- #314 `LEGACY_RE` gap: single-line only — `skills/brandly-video-generation/SKILL.md:22-33` multi-line legacy tree evades → widen contract.
+- Legacy WRITE path `web/routes/clips.py:163` (writes `.brandly/<id>/videos/scenes/`) must be fixed WITH `state.py` read or regenerated clips 404.
+- CHANGELOG newest block ascending — insert [0.15.0] after [0.14.2], before [0.10.2] (~line 228).
+- Direct push to main = repo norm; user approves releases; RED→GREEN mandatory (repo AGENTS.md).
 
-2. **Physical Characteristics Enhancement Program** → Added missing character stats to production bible
-   - Added Section 6: Physical Characteristics to brandly-production-bible skill
-   - Includes weight, height, body type, and physique notes for:
-     - MIRA (30s): 50kg, 151cm, Slender
-     - ELIAS (60s): 75kg, 175cm, Average  
-     - THE SOUP (non-human): N/A, N/A, N/A (the product itself)
-   - Updated both shipped skills (`brandly-cli/skills/`) and agent skills (`.agents/skills/`)
+## 4. Files changed this session
+- `d70e6ba`: io.py, cost_tracker.py, tests/test_issue_73.py, HANDOFF.md
+- `4223006`: 6 skills/*.md (#314 paths)
+- `1aa97ab`: CHANGELOG.md, HANDOFF.md
+- v0.14.2: git tag, GitHub release, PyPI artifacts
+- Untracked+excluded: LEGACY-REMOVAL-INVENTORY.md; `.git/info/exclude` (+1 line)
 
-3. **Skill Path Correction Program** → Fixed internal path references to match project structure
-   - Updated 6 skill files to use `.brandly/` instead of `pre-production/` paths
-   - Affected skills: brandly-character-sheet, brandly-location-sheet, brandly-object-sheet,
-     brandly-plant-sheet, brandly-mecha-sheet, brandly-production-bible
-
-## The enforced state (what these changes changed)
-
-### Physical Characteristics Section (New)
-- **Production Bible Structure** now includes mandatory Section 6: Physical Characteristics
-- **Character Stats** provide essential data for:
-  - Camera positioning (height influences shot framing)
-  - Lighting setup (build affects shadow placement)
-  - Wardrobe choices (physique informs clothing fit and style)
-- **Validation**: Physical characteristics now appear in generated bibles via the skill
-
-### I1 Bug Fix (Critical)
-- **Root Cause**: `asyncio.run()` cannot be called inside a running event loop
-- **Impact**: Video generation jobs were failing silently or with cryptic errors
-- **Fix**: Used project's `run_async()` utility which properly handles nested event loops
-- **Verification (corrected 2026-10-15)**: no regression test shipped with the
-  refactor — and it in fact broke the issue-#73 URL-download tests with
-  `NameError: name 'run_async' is not defined` (plus CI lint). The ISS-0048
-  commit restores those tests green and adds
-  `test_fetch_image_atomic_url_branch_imports_run_async` to pin the import.
-
-### Skill Path Corrections (8c36bbd — direction contradicts runtime, see Known-open)
-- **Claim**: skills referenced `pre-production/` but "actual project uses `.brandly/`"
-- **Reality (verified 2026-10-15)**: the CLI still writes the v2 layout
-  `pre-production/<id>/<category>/` (`layout.py` `resolve_media_root` →
-  `pre-production/<project_id>/`); the 8c36bbd rewrite to `.brandly/` contradicts
-  runtime behavior and broke the #314 contract — `tests/test_issue_314.py`
-  fails 2/2 on clean main
-- **Fix (corrected)**: no correct fix landed; needs a maintainer ruling — revert
-  the skill paths (matches runtime + the #314 ruling) or change the CLI layout
-  and amend the #314 contract
-
-## Known-open items
-
-- **#314 skill-layout contract broken by 8c36bbd (found 2026-10-15)** —
-  `tests/test_issue_314.py::TestNoLegacyMediaLayoutClaims` failed 2/2 on clean
-  main (proven with the fix stashed): 6 skill files claimed the legacy
-  `.brandly/<id>/images/` tree and the sheet skills lost their `pre-production/`
-  mentions, while the CLI keeps writing `pre-production/<id>/<category>/`.
-  **RESOLVED 2026-10-15 by ISS-0051 (`4223006`)** — skills restored; both tests green.
-- **ISS-0048** (`d70e6ba`) — e9e86be lint/NameError fallout: fixed, with a
-  regression test added in `tests/test_issue_73.py`.
-- See existing HANDOFF.md below for pre-existing known-open items
-
-## Environment notes
-
-- All changes verified on Linux (primary development platform)
-- Test suite runs in <1 second for unit tests
-- No Windows/macOS specific changes in this update
-
-## Conventions that must not break
-
-- RED → GREEN per increment (TDD followed for all fixes)
-- Land via direct commits to main (these were small, verified fixes)
-- Skills maintain consistent format with `name:` and `description:` frontmatter
-- Physical characteristics data aligns with existing character sheet conventions
-
-# HANDOFF — brandly-cli
-
-> **Written:** 2026-10-10, after the enforcement program (PR #306, `6e9c004`)
-> **State:** main green (1595 passed / 0 failed, ruff + mypy + import contracts
-> clean) · **0 open issues · 0 open PRs · 0 stray branches** · release
-> **v0.13.0** on code + GitHub + PyPI (attested, smoke-tested)
-
-## What just happened (read this first)
-
-Three back-to-back programs, all landed via PRs with CI green:
-
-1. **13-issue fix program (#270–#283) → v0.13.0** — pipeline honesty (async
-   surface, phase machine), reference truth (gate-before-promotion, wardrobe),
-   layout contract (`--output` root, folder routing, storyboards), document
-   chain (trends category, single beat map, `--target-duration`), agent driver
-   (`--agent-runner agnes`), screenplay phase. Ledger: `PROGRESS.md` Rounds
-   27–28, goal in `GOAL-OPEN-ISSUES-270-283.md` (goal-met audit MET).
-2. **Live demo pipeline test** (`demo/coffee-mug-duo` — two people showing a
-   coffee mug, 30s target, storyboards on): the document chain
-   (trends → concept → screenplay → script) + the storyboard keyframe pass
-   completed live with real credits; video generation blocked by provider
-   capacity (Agnes `503 video_queue_full`, 2+ hours). Road findings filed:
-   #291 (closed by maintainer as known), #292–#295. `demo/` is gitignored.
-3. **Enforcement program (#297–#302, #304) → PR #306** — the pipeline now
-   honors the layout contract + the skills' production flow. Everything below.
-
-## The enforced state (what PR #306 changed)
-
-**Phase chain (13 phases, the skills' production flow):**
-`init → trends → concept → bible → casting → screenplay → script → asset →
-audio → re_edit → validate → publish → done`
-
-- **bible (#297)** — derives `docs/bible/production_bible.md` from brief +
-  concept + trends via the agent runner; **Section 4: Characters is
-  mandatory** (fail-honest without it — casting cannot run).
-- **casting (#301)** — parses Section 4 → per character: cast set (hero 3:2 /
-  portrait 3:4 / full-body 2:3) + the GOLD sheet, composition-gated, under
-  `pre-production/<id>/character/` (`char_<name>_cast-*` / `char_<name>_sheet`).
-- **screenplay (#298)** — writes `docs/screenplay/screenplay.md` (NOT plan/).
-- **storyboard (#300)** — panels carry the grid-style-lock **graphite
-  preamble**; approved panels are **tiled in code (PIL)** into ONE
-  `storyboard_grid_4x4.png` (4 cols × ≥4 rows, edge-to-edge, no text).
-- **taxonomy (#299)** — `docs/general/` (trends, concept, scenes.json);
-  `docs/plan/` = pre-generation plans only; the shots.json root placement is
-  the documented load-bearing exception (timeline editor path).
-- **run logs (#304)** — `run --execute` writes `docs/tmp/run_<ts>.log`
-  (structured: RUN START / PHASE START|DONE|FAIL). Agents never invent
-  locations.
-- **resumability (#292)** — the storyboard pass consults
-  `docs/tmp/storyboard_progress.txt`; approved keyframes skip regeneration
-  (no credit re-spend on retries); per-shot console lines.
-- **retries (#293)** — the pipeline-path produce runner gets `retries=1`.
-- **provider saturation (#294)** — create-failure details persist to
-  `docs/tmp/video_create_fail_<ts>.md`; the asset phase classifies
-  `[provider saturated] … wait several minutes and re-run`.
-- **ref cap (#295)** — canonical names (Scene-XX / char_ / loc_ / prop_ /
-  wardrobe_) outrank unknown files; junk can never displace real references.
-
-**Prevention layer (E7):** the generated `AGENTS.md` teaches the layout
-contract, the production flow, the run-log convention, and the
-no-junk-in-media-tree rule. `tests/test_layout_contract_enforcement.py`
-(21 tests) pins ALL of it — a source-contract sweep forbids hardcoded
-`docs/plan` paths in production.py, and the taxonomy/AGENTS contracts are
-asserted. **Do not weaken these tests — they are the anti-drift mechanism.**
-
-## Known-open items (filed, not yet enforced)
-
-- **#291** (closed by maintainer as known): empty error messages on transient
-  failures — the fix pattern is documented in the issue
-  (`{type(e).__name__}: {e}` everywhere; `_generate_shot` and the storyboard
-  pass already do it). Sweep `grep -rn "failed: {e}" src/brandly_cli/` when
-  reopening.
-- **#294 (partial)** — the saturation *classification* shipped; the provider
-  *fallback* (alternate backend when Agnes is saturated) did not. The G14
-  `VideoBackend` seam is the extension point.
-- **#300 (ruling recorded in code)** — the grid always builds 4 columns ×
-  ≥4 rows; cells beyond the panel count render as clean white paper. If the
-  maintainer wants strict 16-frame grids only, tighten `_tile_contact_sheet`.
-- **#302 (partial)** — the drift fixes shipped; the *caster prompt quality*
-  (bible Section 4 → per-character prompts) is a first pass; refine with real
-  bibles.
-
-## Demo project (gitignored, resumable)
-
-`demo/coffee-mug-duo` — two people showing a coffee mug, 30s target, food
-category, storyboards on. Document chain + 5 gate-approved keyframes on disk;
-blocked at video by provider capacity.
-
+## 5. Verify when you land
+```bash
+git log --oneline -1    # 1aa97ab, tree clean
+ls LEGACY-REMOVAL-INVENTORY.md   # exists (untracked, excluded)
+ruff check src/ tests/            # green
+python3 scripts/version_check.py # 0.14.2 (until coder bumps 0.15.0)
+python3 -m pytest tests/ -q      # 1637 passed, 1 skipped (~108s)
 ```
-brandly --root demo run coffee-mug-duo --execute --yes
-```
-(The attempt counter may need the documented project.json reset —
-`phases.asset.attempts = 1`.)
 
-## Conventions that must not break
+## 6. Goal spec & verdict
+- Goal A: restore CI/CD + ship v0.14.2 → **MET** (CI 38692580349 green; PyPI 0.14.2; wheel inspected).
+- Goal B: legacy removal v0.15.0 (ISS-0052) → **NOT-MET / IN PROGRESS**. Inventory ready; zero code changes. Next = §2 step 2 (dispatch implement-coder).
 
-- RED → GREEN per increment (`AGENTS.md` §0, `CONVENTIONS.md` §2)
-- Land via branch → PR → CI green → `gh pr merge --squash --delete-branch`
-- `PHASE_HANDOFF_SPECS` is the dispatch contract — deliver what it says or
-  correct it; never leave the two divergent
-- Writers route through `layout.docs_dir(...)` — never hardcode a docs folder
-- PR bodies: one `Fixes #N` keyword per line (space-separated lists only
-  auto-close the first issue)
-- Release flow: bump `__about__.py` (single source) + CHANGELOG → PR → CI →
-  tag `vX.Y.Z` + `gh release create` → the Release-to-PyPI workflow (OIDC +
-  attestations) → verify all three surfaces + fresh-venv smoke test
-
-## Environment notes
-
-- Windows local: rich ≥14 required (import-linter 2.15's nested Live crashes
-  on rich 13's flat `_live` singleton) — the env was upgraded to rich 15.0.0,
-  suite re-verified green.
-- The demo run's Agnes video endpoint saturated (`video_queue_full`) for 2+
-  hours — provider capacity, not code. The classification + resume path (#294)
-  now makes this a wait-and-resume, not a dead end.
-
-## Suggested next session
-
-1. Re-run the demo pipeline (command above) — the enforced chain (bible →
-   casting → screenplay → script → asset) end-to-end with real credits; watch
-   `docs/tmp/run_*.log`.
-2. Reopen #291 and do the empty-error-message sweep (pattern in the issue).
-3. #294 provider fallback: `--fallback-model` on the produce path when a
-   second provider key is configured.
-4. Cut v0.14.0 when the demo completes end-to-end (the enforcement program is
-   feature-worthy: bible + casting + grid).
+## 7. Environment facts
+- Repo `/home/dimona/Dream-Pixels-Forge/Dev/cli/brandly-cli`; origin `Dream-Pixels-Forge/brandly-cli`; gh authed.
+- CI gate order (ci.yml): version_check → ruff → import-linter → mypy → py_compile → pytest → build → twine; web-quality separate (npm — untouched by ISS-0052).
+- No JS test runner (repo issue #61) — Python source-contract tests are the SPA verification convention.

@@ -14,6 +14,17 @@ description:
 
 # Title Sequence
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-title-sequence** (this skill) | **HOW** title sequences are designed | Typography pairing, composition layouts, title storyboards, mood boards, memorability analysis |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution via `brandly image` / `brandly produce` for title cards |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands and the mandatory phase order, see brandly-init. For CLI execution (`brandly image` / `brandly produce`), see brandly-video-generation. This skill only covers HOW to design title sequences.
+
+
 Premium title sequence design — from Photoshop visual prototype through After Effects animation
 to final delivery. This skill ensures every title sequence has **storytelling intent, emotional
 resonance, and skip-proof memorability**.

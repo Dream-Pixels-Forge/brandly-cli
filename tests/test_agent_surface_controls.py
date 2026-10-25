@@ -51,9 +51,9 @@ class TestControlToolManifest:
         for tool in CONTROL_TOOLS:
             assert tool in names, f"{tool} missing from the agent tool manifest"
 
-    def test_manifest_has_22_tools(self) -> None:
-        # 15 (9 library + 6 cli) + 7 control tools
-        assert len(tool_names()) == 22
+    def test_manifest_has_38_tools(self) -> None:
+        # 24 library + 14 CLI = 38 total agent-callable tools
+        assert len(tool_names()) == 38
 
     def test_read_only_classification(self) -> None:
         # status/progress/estimate are read-only (safe without asking)

@@ -345,6 +345,21 @@ VIDEO_STYLE_MODELS = {
         ),
         "lighting": "golden_hour",
     },
+    "short-film": {
+        "model_tags": (
+            "short film aesthetic, festival-quality narrative, "
+            "1.85:1 academy flat aspect, deliberate pacing, "
+            "character-driven composition, film stock texture, "
+            "subtle color grading, arthouse cinematography, "
+            "shallow depth of field, naturalistic performance"
+        ),
+        "negatives": (
+            "TV commercial look, flat digital video, "
+            "oversaturated, plastic skin, uncanny valley, "
+            "low budget, music video style, vlog aesthetic"
+        ),
+        "lighting": "golden_hour",
+    },
     "documentary": {
         "model_tags": (
             "documentary realism, available natural light, "

@@ -15,6 +15,17 @@ description: >
 
 # Brandly Film Critic Scorer — Script, Shotlist & Scene Evaluation
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-film-critic-scorer** (this skill) | **HOW** work is scored | 1—10 cinematic scoring, dimension analysis, improvement recommendations, critique reports |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution for re-generating work after critique |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands and the mandatory phase order, see brandly-init. For CLI execution, see brandly-video-generation. This skill only covers HOW to score and critique film artifacts.
+
+
 Score AI film scripts, shotlists, scenes, and story concepts on a 1–10 scale. Provide dimension-level analysis, actionable improvement suggestions for low-scoring work, and strength recognition for high-scoring work. Every critique is grounded in cinematic best practices.
 
 > "A score without a path to improvement is just a number. Every 4 can become an 8 with the right note."

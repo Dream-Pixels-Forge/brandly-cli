@@ -23,6 +23,8 @@ PANEL_WIRING: dict[str, str] = {
     "monitor": "ProductionMonitorPanel",
     "review": "ReviewQueuePanel",
     "agnes_ai": "AgnesPanel",
+    "casting": "CastingPanel",
+    "docs": "DocsPanel",
 }
 
 

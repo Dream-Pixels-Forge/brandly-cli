@@ -1,13 +1,14 @@
 ---
 name: brandly-video-generation
 description: >
-  Generate AI video content using the brandly-cli toolchain with professional prompt engineering.
+  Teaches HOW things are generated - image/video/audio generation, prompting, camera moves, lighting presets, provider routing, download, assembly, editing. Defers to brandly-init for WHERE things land (layout contract, directory structure, artifact paths, phase order, gates).
   Use when the user wants to create videos from prompts, generate cinematic sequences,
   maintain character consistency across shots, use reference images for identity locking,
   or build video ads/commercials.
   Triggers on "generate video", "create video ad", "AI video generation",
   "character consistency", "reference image video", "cinematic prompt",
   "shot list", "brandly video", "make a commercial", "video campaign".
+  NOT for project orchestration or phase ordering (use brandly-init),
   NOT for video editing (use dpf-senior-editor),
   NOT for 3D animation (use dpf-blender-engineer),
   NOT for motion graphics (use hyperframes-animation).
@@ -15,7 +16,20 @@ description: >
 
 # Brandly CLI Video & Image Generation
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-video-generation** (this skill) | **HOW** things are generated | Prompting, camera moves, lighting presets, provider models, image/video/audio generation, download, assembly, editing |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init, verification |
+
+**brandly-video-generation does NOT teach project init, phase ordering, artifact placement, or gate management.** For where each artifact lands and the mandatory phase order, see `brandly-init`. This skill only covers generation technique: how to write prompts, set camera/lighting, choose providers, download results, stitch, and export.
+
+
 This skill covers professional video and image generation using **Agnes AI** through the `brandly-cli` toolset. It emphasizes **character consistency**, **cinematic prompting**, and **reference image anchoring** for production-quality output.
+
+**Defer to `brandly-init` for WHERE things land** (layout contract, directory structure, artifact paths, phase order, gates). This skill covers HOW to generate: prompting, camera moves, lighting, provider routing, download, assembly, editing.
+
 
 ## Pipeline & Folder Structure
 
@@ -29,7 +43,10 @@ Everything lives under `.brandly/<project_id>/` (single layout, no legacy `refs/
     videos/scenes/ insert/ transition/ general/
     audio/soundtrack/ sfx/ foley/ voiceover/ general/
     3d-spatial/cameras/ keyframes/ depthmaps/ general/
-    project.json  cost.json  brand.json  export/  metrics/
+    project.json  cost.json  export/
+
+**Note on layout authority:** This section describes generation output folders. For the authoritative layout contract, directory structure, artifact paths, and phase order, see `brandly-init` (WHERE things land). This skill covers HOW to generate within those folders.
+
 ```
 
 Key rules:
@@ -62,26 +79,18 @@ Key rules:
   before continuing, to make sure the result matches expectations. Rejecting
   writes a review note to `docs/tmp/review_<stage>_<ts>.md`. In non-interactive
   (piped/EOF) runs the defaults auto-approve.
-- **Brand kit (v0.6.0, G7)**: `.brandly/<project>/brand.json` (palette, claim
-  allowlist, `style_lock`, logo + overlay spec) — project-level only, never user
-  config. Enforced at three layers: prompt lock (palette/claims/third-party-mark
-  ban; style mismatch raises `BrandLockConflict`), gate claim-lock (off-allowlist
-  on-screen text hard-fails `brandly gate`), and `export-platforms --brand`
-  (ffmpeg logo overlay). All fail-closed. See `## Brand Kit & Metrics (v0.6.0)`.
-- **Metrics snapshots (v0.6.0, G8)**: `.brandly/<project>/metrics/<platform>-<date>.json`
-  — project-local ingested platform metrics, never the user config store.
-  Written by `brandly metrics import` (offline CSV/JSON) and `brandly metrics
-  ingest` (YouTube Analytics API, credential-gated, dry-run-first);
-  `brandly analyze` prefers them over heuristics and labels the source.
 
 ## Quick Start
 
 ```bash
 # Initialize project first
-brandly init --name "Campaign" --idea "description" --style cinematic --shots 4 --budget 500
+brandly init --name "Campaign" --idea "description" --style live action cinematic --shots 4 --budget 5000
+
+**Defer to `brandly-init` for project init:** WHERE the project lands is governed by `brandly-init`. This skill covers generation after init is complete.
+
 
 # Generate a cinematic prompt
-brandly prompt -s "Product name" -a "what happens" -e "where" -n 4 --style cinematic -c "character description"
+brandly prompt -s "Product name" -a "what happens" -e "where" -n 4 --style live action cinematic -c "character description"
 
 # Generate the primary reference image first (saves to images/<category>/,
 # auto-injected into later video calls)
@@ -89,13 +98,13 @@ brandly reference <project_id> --subject-type object \
   --subject "Nike Air Max 1, white colorway, visible Air unit" --style-preset commercial
 
 # Generate video (Agnes AI — polls + downloads to videos/scenes/ by default)
-brandly video <project_id> -p "your prompt" --style cinematic \
+brandly video <project_id> -p "your prompt" --style live action cinematic \
   --reference-images "url1"
 # Keyframe mode (auto-detected when frames are provided):
 brandly video <project_id> -p "..." --first-frame start.png --last-frame end.png
 
 # Generate image (Agnes AI — no project needed)
-brandly image -p "description" --style-preset photorealistic --size 2K
+brandly image -p "description" --style-preset cinematic still --size 2K
 
 # A job that timed out? Poll + download later:
 brandly job-resume <video_id> --project-id <project_id>
@@ -122,8 +131,6 @@ brandly job-resume <video_id> --project-id <project_id>
 | **Create mecha refs**            | → `../brandly-mecha-sheet/SKILL.md`      |
 | **Create animal refs**           | → `../brandly-animal-sheet/SKILL.md`     |
 | **Create plant refs**            | → `../brandly-plant-sheet/SKILL.md`      |
-| **Set up / verify a brand kit**  | `## Brand Kit & Metrics (v0.6.0)` below |
-| **Ingest platform metrics**      | `## Brand Kit & Metrics (v0.6.0)` below |
 
 ---
 
@@ -132,7 +139,10 @@ brandly job-resume <video_id> --project-id <project_id>
 ### Step 1: Project Initialization
 
 ```bash
-brandly init --name "Product Campaign" --idea "Brief description" --style cinematic --budget 500 --shots 5
+brandly init --name "Product Campaign" --idea "Brief description" --style live action cinematic --budget 5000 --shots 5
+
+**Defer to `brandly-init` for project init:** WHERE the project lands (current working directory enforcement, `AGENTS.md` + `.brandly/` placement) is governed by `brandly-init`. This skill covers generation after init is complete.
+
 ```
 
 ### Step 2: Generate Cinematic Prompt
@@ -145,8 +155,8 @@ brandly prompt \
   -a "walks gracefully through a sunlit garden" \
   -e "elegant French garden with blooming roses" \
   -n 4 \
-  --style cinematic \
-  -c "elegant woman, mid-20s, long blonde hair in loose waves, wearing a flowing red silk dress, delicate jewelry"
+  --style live action cinematic \
+  -c "elegant woman, mid-20s, 50kg weight, 157cm height, long blonde hair in loose waves, wearing a flowing red silk dress, delicate jewelry"
 ```
 
 ### Step 3: Generate Video
@@ -154,7 +164,7 @@ brandly prompt \
 ```bash
 brandly video <project_id> \
   -p "generated prompt from step 2" \
-  --style cinematic \
+  --style live action cinematic \
   --character "elegant woman, mid-20s, long blonde hair" \
   --reference-images "https://example.com/reference.jpg"
 ```
@@ -194,18 +204,18 @@ brandly image \
 
 | Style                    | Use Case                 | Credit Cost | Description                     |
 | ------------------------ | ------------------------ | ----------- | ------------------------------- |
-| `cinematic`              | Storytelling, narratives | 250         | Golden hour lighting, emotional |
-| `ugc`                    | Social media content     | 150         | Natural window, authentic       |
-| `montage`                | Fast-paced sequences     | 200         | Quick cuts, dynamic             |
-| `multi_shot`             | Multi-angle campaigns    | 300         | Character consistency focus     |
-| `continuous`             | Single take              | 200         | Flowing, uninterrupted          |
-| `unboxing`               | Product reveals          | 180         | Focus on unpacking experience   |
-| `lifestyle`              | Aspirational content     | 170         | Warm, relatable everyday        |
-| `collage_motion_graphic` | Animated graphics        | 350         | Motion design, text animations  |
-| `brand_short_video`      | Brand spots              | 280         | Short-form brand content        |
-| `explainer_video`        | How-to, tutorials        | 400         | Educational, clear messaging    |
+| `live action cinematic`              | Storytelling, narratives | 2500         | Golden hour lighting, emotional |
+| `ugc`                    | Social media content     | 1500         | Natural window, authentic       |
+| `montage`                | Fast-paced sequences     | 2000         | Quick cuts, dynamic             |
+| `multi_shot`             | Multi-angle campaigns    | 3000         | Character consistency focus     |
+| `continuous`             | Single take              | 2000         | Flowing, uninterrupted          |
+| `unboxing`               | Product reveals          | 1800         | Focus on unpacking experience   |
+| `lifestyle`              | Aspirational content     | 1700         | Warm, relatable everyday        |
+| `collage_motion_graphic` | Animated graphics        | 3500         | Motion design, text animations  |
+| `brand_short_video`      | Brand spots              | 2800         | Short-form brand content        |
+| `explainer_video`        | How-to, tutorials        | 4000         | Educational, clear messaging    |
 
-**Note:** `commercial`, `documentary`, `luxury`, and `action` are **image-only** `--style-preset` values — they are NOT valid as `--style` for `brandly video`. Use `cinematic` for premium looks, `ugc` for authentic feel.
+**Note:** `commercial`, `documentary`, `luxury`, and `action` are **image-only** `--style-preset` values — they are NOT valid as `--style` for `brandly video`. Use `live action cinematic` for premium looks, `ugc` for authentic feel.
 
 ## Camera Control
 
@@ -326,6 +336,9 @@ For production-quality campaigns, follow this sequence:
 
 Skipping steps 1–4 will result in inconsistent, unpredictable output.
 
+**Phase order authority:** For the mandatory phase order (trends → concept → bible → casting → screenplay → script → asset → audio → re_edit → validate → publish) and gate approvals, see `brandly-init`. This skill covers generation technique within each phase.
+
+
 As you execute, track everything in `docs/plan/production_plan.md` —
 the single source of truth for each plan's origin (`brandly reference`,
 `brandly image`, `brandly video`, `brandly job-resume`) and status
@@ -349,12 +362,12 @@ brandly reference <project_id> --subject-type object \
 # Character reference (cast-led narrative)
 brandly reference <project_id> --subject-type character \
   --subject "Maya, 25, dark braids, olive skin, emerald eyes" \
-  --style-preset photorealistic --size 2K --ratio 1:1
+  --style-preset cinematic still --size 2K --ratio 1:1
 
 # Location reference (environment-heavy)
 brandly reference <project_id> --subject-type location \
   --subject "Modern loft apartment, white marble, city skyline, golden hour" \
-  --style-preset cinematic --size 2K --ratio 16:9
+  --style-preset live action cinematic --size 2K --ratio 16:9
 ```
 
 After the reference is saved (objects land in `images/prop/` as
@@ -410,11 +423,11 @@ For consistent generation across all projects, use the companion asset sheet ski
 ```bash
 # Create character reference
 brandly image --prompt "Character sheet: [detailed description]" \
-  --style-preset photorealistic --size 4K
+  --style-preset cinematic still --size 4K
 
 # Create location reference
 brandly image --prompt "Location reference: [environment description]" \
-  --style-preset cinematic --size 4K
+  --style-preset live action cinematic --size 4K
 
 # Create object reference
 brandly image --prompt "Product reference: [object description]" \
@@ -430,124 +443,39 @@ The Director agent automatically uses these techniques when generating videos:
 3. Stores results in project artifacts
 4. Tracks costs and progress
 
-## Brand Kit & Metrics (v0.6.0)
+**Defer to `brandly-init` for project init:** WHERE the project lands is governed by `brandly-init`. This skill covers generation after init is complete.
 
-v0.6.0 adds two command groups around the generation loop: `brandly brand`
-(brand-kit enforcement, G7) and `brandly metrics` (platform-metrics ingest, G8).
-Both are **fail-closed** — a missing kit, logo, credential, or malformed row
-stops the run instead of silently degrading.
-
-### Brand kit (G7)
-
-The kit lives at `.brandly/<project>/brand.json` (project-level only, never
-user config or `.env`): palette, claim allowlist, pinned `style_lock`, logo +
-overlay spec.
-
-```bash
-# 1. Set up the kit (before generating commercial work)
-brandly brand init <project_id> \
-  --logo assets/logo.png \
-  --color "#0F172A" --color "#22D3EE" \
-  --claim "Up to 50% off" --claim "Free shipping" \
-  --style cinematic \
-  --overlay-corner bottom-right --overlay-safe-zone 0.1 --overlay-opacity 0.9
-
-# 2. Verify / inspect
-brandly brand verify <project_id>      # exits 1 on missing or malformed kit
-brandly brand show <project_id>        # text or --json
-```
-
-Three enforcement layers:
-
-- **Prompt layer** — the CLI appends a *Brand lock* after the style preset:
-  palette dominance, copy restricted to the claims, ban on third-party logos /
-  trademarks / watermarks. A requested `--style` that disagrees with the
-  kit's `style_lock` raises `BrandLockConflict` — fail closed, never blend
-  styles.
-- **Gate layer** — `brandly gate --scene/--all-scenes` collects registered
-  on-screen text (`text_overlay` / `caption` / `captions`); anything outside
-  the claim allowlist hard-fails the gate (violations recorded under
-  `report["brand"]`; blank/unregistered text never blocks).
-- **Export layer** — `export-platforms --brand` composites the kit's logo
-  onto every export via ffmpeg overlay (corner / safe-zone / opacity from the
-  kit's overlay spec). Missing kit, logo, or file fails closed.
-
-```bash
-# Platform exports with the kit's logo baked in
-brandly export-platforms <project_id> --platforms tiktok --platforms youtube_standard --brand
-```
-
-### Metrics ingest (G8)
-
-Ingested metrics live project-local at
-`.brandly/<project>/metrics/<platform>-<date>.json` (never the user config
-store). Row schema: `{date, views, likes, watch_time_seconds, ctr_pct}` —
-CSV or JSON, fail-closed on unknown platform, malformed rows, or out-of-range
-values (date ISO `YYYY-MM-DD`; non-negative counts; `ctr_pct` 0–100).
-
-```bash
-# Offline: import a CSV/JSON export from a platform
-brandly metrics import metrics.csv --platform youtube --project <project_id>
-brandly metrics show                # latest ingested snapshot per platform
-
-# Live: YouTube Analytics API adapter (dry-run-first, credential-gated)
-brandly metrics ingest --platform youtube --property UCxxxx --days 28 --dry-run
-brandly config set youtube:analytics <token>   # store the credential once
-brandly metrics ingest --platform youtube --property UCxxxx
-```
-
-- The credential lives in the user config store (`youtube:analytics`), never
-  in project files. No credential → the live pull fails closed; `--dry-run`
-  renders the exact request without calling the API.
-- `brandly analyze <video> [--root .]` now prefers the latest ingested
-  snapshot over heuristics and always labels the source in its output
-  (`ingested` vs `heuristic`); the CTR row blends the ingested `ctr_pct`.
-- Today only `youtube` is a supported platform; TikTok/Instagram analytics
-  adapters (and live-upload adapters) are the planned follow-ups.
 
 ## Example: Full Product Campaign
 
 ```bash
 # 1. Initialize project
-brandly init --name "Summer Soda Campaign" --idea "Refreshing soda commercial for summer" --style cinematic --shots 4 --budget 500
+brandly init --name "Summer Soda Campaign" --idea "Refreshing soda commercial for summer" --style live action cinematic --shots 4 --budget 500
 
-# 2. Set up the brand kit (G7) — so the prompt layer locks palette +
-#    claims + style before any generation
-brandly brand init <project_id> \
-  --logo assets/logo.png \
-  --color "#0F172A" --color "#22D3EE" \
-  --claim "50% off this week" \
-  --style cinematic
-
-# 3. Generate cinematic prompt
+# 2. Generate cinematic prompt
 brandly prompt \
   -s "A cold can of soda" \
   -a "opens with a refreshing fizz, condensation dripping" \
   -e "sunny beach with crystal clear water" \
-  -n 4 --style cinematic \
-  -c "young woman, 25, athletic build, suntanned skin, wearing swimsuit and sunglasses"
+  -n 4 --style live action cinematic \
+  -c "young woman, 25, 55kg, 160cm height, athletic build, suntanned skin, wearing swimsuit and sunglasses"
 
-# 4. Generate video with reference image (Agnes AI)
+# 3. Generate video with reference image (Agnes AI)
 brandly video <project_id> \
   --prompt "MASTER PROMPT: A cold can of soda opens..." \
   --style cinematic \
-  --character "young woman, 25, athletic build" \
+  --character "young woman, 25, 55kg, 160cm height, athletic build" \
   --reference-images "https://example.com/model-ref.jpg" \
   --wait
 
-# 5. Generate hero image (Agnes AI)
+# 4. Generate hero image (Agnes AI)
 brandly image \
   --prompt "Product hero shot of soda can on ice" \
   --style-preset commercial \
   --size 2K
 
-# 6. Export all assets (+ kit's logo on platform exports, G7 export layer)
+# 5. Export all assets
 brandly export <project_id>
-brandly export-platforms <project_id> --platforms tiktok --platforms youtube_standard --brand
-
-# 7. After publishing, close the loop with real platform data (G8)
-brandly metrics import youtube-export.csv --platform youtube --project <project_id>
-brandly analyze <exported-video> --root .   # source label: `ingested` vs `heuristic`
 ```
 
 ## Provider Routing
@@ -556,7 +484,7 @@ brandly analyze <exported-video> --root .   # source label: `ingested` vs `heuri
 | ----------------------- | -------- | ----------------------- | ------------------------------------------------------ |
 | `brandly image`         | Agnes AI | `agnes-image-2.5-flash` | Style presets, 1K/2K/3K/4K output                      |
 | `brandly video`         | Agnes AI | `agnes-video-2.5-flash` | Requires project, ref-image anchoring                  |
-| `brandly minimax-image` | MiniMax  | `image-01`              | Subject reference, seed, up to 2K                      |
+| `brandly minimax-image` | MiniMax  | `MiniMax-H3`              | Subject reference, seed, up to 2K                      |
 | `brandly minimax-video` | MiniMax  | `MiniMax-H3`            | First/last frame, ref video/audio, native stereo audio |
 
 **Choose based on your needs:**
@@ -573,7 +501,7 @@ brandly analyze <exported-video> --root .   # source label: `ingested` vs `heuri
 
 ## API Notes
 
-- **Image models** (Agnes): `agnes-image-2.5-flash` (current default — latest gen, same API contract as 2.1, sizes 1K-4K), `agnes-image-2.1-flash` / `agnes-image-2.0-flash` (legacy)
+- **Image models** (Agnes): `agnes-image-2.5-flash` 
 - **Video models** (Agnes): `agnes-video-2.5-flash` (only Agnes video model — 720P, 4-12s, ≤5 ref images, ≤3 ref audios, no ref video; rate-limited to 1 req/min)
 - **MiniMax image**: `image-01`, `image-01-live` — subject reference, `--seed` reproducibility, `--style` art settings (live)
 - **MiniMax video**: `MiniMax-H3` (ref video/audio, 2K, native synchronized stereo audio via [sound] prompt tag), `MiniMax-H3-Max` (fast, first/last frame only)
@@ -609,27 +537,7 @@ Run `brandly rate-limits` for the live table. Headlines:
 
 ### Low Quality Output
 
-- Use `cinematic` or `commercial` style
+- Use `live action cinematic` or `commercial` style
 - Add specific lighting and camera details
 - Include film stock references (Kodak Vision3, Fuji Superia)
 - Use `--size 2K` or higher for images
-
-### Brand Kit or Metrics Fails (v0.6.0)
-
-- **Gate fails with off-allowlist copy** — `report["brand"]` lists the
-  violating texts; fix the on-screen copy or add it to the kit's claim
-  allowlist (re-run `brandly brand init ... --force`, then `brandly brand
-  verify`). Blank/unregistered text fields never block the gate.
-- **`BrandLockConflict`** — the requested `--style` disagrees with the
-  kit's `style_lock`. Use the locked style (or re-init the kit with a
-  different `--style`); the lock never blends styles.
-- **`export-platforms --brand` fails closed** — no kit (`brandly brand
-  init` first), no logo set (re-init with `--logo`), or logo file missing
-  on disk.
-- **`metrics ingest` reports no credential** — store it once with
-  `brandly config set youtube:analytics <token>`; preview the exact
-  request without calling the API via `--dry-run`.
-- **`metrics import` rejects a file** — rows must be `{date (ISO
-  YYYY-MM-DD), views, likes, watch_time_seconds, ctr_pct}`; counts are
-  non-negative, `ctr_pct` is 0–100; only `--platform youtube` is
-  supported today.

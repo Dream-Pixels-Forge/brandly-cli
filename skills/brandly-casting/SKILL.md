@@ -14,6 +14,17 @@ description: >
 
 # Brandly Casting
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-casting** (this skill) | **HOW** casting is done | Character casting from the bible, portrait and wardrobe generation, character sheet creation |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution via `brandly image` / `brandly reference` for cast images |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands and the mandatory phase order, see `brandly-init`. For CLI execution, see `brandly-video-generation`. This skill only covers HOW to cast characters and build cast sets.
+
+
 Cast characters from the production bible and turn the cast into a consistent
 character sheet. The bible's Characters section (Section 4) is the source;
 the cast set it produces is the reference material for everything downstream.

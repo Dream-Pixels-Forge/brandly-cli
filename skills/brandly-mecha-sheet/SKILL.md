@@ -12,6 +12,17 @@ description: >
 
 # Brandly Mecha Sheet
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| brandly-mecha-sheet (this skill) | **HOW** things are generated | Reference sheet design, prompt craft, visual specification for one asset type |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution via `brandly image` / `brandly video` / `brandly produce` |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands and the mandatory phase order, see `brandly-init`. For CLI execution (`brandly image`, `brandly video`, `brandly produce`), see `brandly-video-generation`. This skill only covers HOW to design the reference sheet itself.
+
+
 Create comprehensive mecha reference sheets that ensure **consistent mechanical design** across all AI-generated content. Essential for sci-fi campaigns, tech products, and industrial design.
 
 ## When to Use
@@ -229,7 +240,7 @@ brandly reference <project_id> \
   --ratio 16:9
 ```
 
-The generated reference is saved to `pre-production/<project_id>/images/<category>/`
+The generated reference is saved to `.brandly/<project_id>/images/<category>/`
 with the `mecha_*` prefix and is auto-injected as the first
 reference image (strongest influence) in every `brandly video` call.
 Pass `--require-reference` to `brandly video` to fail-fast when the

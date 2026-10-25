@@ -18,6 +18,17 @@ description: >
 
 # Brandly Camera — Hollywood Camera Language & Lighting
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-camera** (this skill) | **HOW** shots are directed | Camera language, framing, angles, movement, lighting rules for shot direction briefs |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution via `brandly video` / `brandly produce` using the camera language |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands and the mandatory phase order, see brandly-init. For CLI execution, see brandly-video-generation. This skill only covers HOW to write camera and lighting direction.
+
+
 Use this skill to write **production-grade shot direction** for every
 `brandly video` and `brandly prompt` call.  Each shot you describe should
 read like a cinematographer's brief: exact framing, motivated movement,

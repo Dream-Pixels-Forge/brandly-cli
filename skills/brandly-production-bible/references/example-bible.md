@@ -66,22 +66,12 @@ warm, intimate, aspirational, dreamy, luxurious
 
 ## 4. CHARACTERS
 
-### Character 1: Lina
-- Sheet file: assets/characters/lina.png
-- Key anchor traits: Warm light-brown skin, dark curly shoulder-length hair,
-  bright brown eyes, full lips, small mole above left eyebrow
-- Physical presence (director fans these out verbatim to every downstream
-  sheet/video prompt — never paraphrase, never drop):
-  - Height: 151cm (4'11")
-  - Weight: 50kg (110lb)
-  - Build: petite, short-limbed, balanced head-to-body ratio — reads clearly
-    shorter and lighter than an average adult; full-body framings must show
-    true proportions, never elongate
-  - Actor notes: woman in her late 20s, Southeast Asian descent; compact,
-    energetic screen presence; distinctive mole above left eyebrow is the
-    instant identifier in wide shots
-- Must never change: Eye color, skin tone, hair color and curl pattern,
-  height/weight proportions, mole position
+### Character 1: Maya
+- Sheet file: assets/characters/maya.png
+- Physic: 50kg weight, 156cm heigh and slinder
+- Key anchor traits: Olive skin (warm undertone), emerald green almond eyes,
+  long dark brown hair in loose braids, subtle freckles across nose
+- Must never change: Eye color, skin tone, hair color, braid style in this campaign
 - Can vary: Expression, outfit (all outfits must be neutral/cream tones)
 - Wardrobe variants: Cream silk slip dress (primary), white linen (optional B-roll)
 
@@ -91,13 +81,11 @@ warm, intimate, aspirational, dreamy, luxurious
 
 ### Location 1: Modern Bedroom
 - Sheet file: assets/locations/modern_bedroom.png
-- Physical characteristics: compact 3.5×4m bedroom, low platform bed
-  (mattress top ~45cm — Lina at 151cm sits with feet flat on the floor),
-  white marble nightstand 60cm tall, floor-to-ceiling windows 2.4m high
 - Time of day: Golden hour (sunrise, ~6:30am)
 - Key features: Floor-to-ceiling windows, white marble nightstand,
   rumpled white linens, sheer curtains, city skyline visible
 - Consistency rule: Keep window light as primary source, never switch to artificial
+- 3/4 view creating depth dimension of the room
 
 ───────────────────────────────────────
 
@@ -105,9 +93,6 @@ warm, intimate, aspirational, dreamy, luxurious
 
 ### Product: Lumière Perfume
 - Sheet file: assets/products/lumiere.png
-- Physical characteristics: 12cm tall flacon, ~250g filled weight — fits a
-  petite hand (Lina's grip wraps fully around the bottle); rose gold cap
-  3cm, amber-gold liquid visible through clear glass
 - Hero angles: Front 3/4 (primary), top-down (lifestyle), side profile (detail)
 - Colors/variations: Clear glass bottle, rose gold cap, amber-gold liquid
 - Logo placement: Etched on front of bottle, centered, small scale
@@ -119,12 +104,12 @@ warm, intimate, aspirational, dreamy, luxurious
 | Shot # | Type | Duration | Prompt Summary | Assets Used | Status |
 |--------|------|----------|----------------|-------------|--------|
 | 1 | EST | 4s | Dawn bedroom, light filling room | location | ✅ |
-| 2 | MS | 3s | Lina reaches for bottle | character, location | ✅ |
+| 2 | MS | 3s | Maya reaches for bottle | character, location | ✅ |
 | 3 | CU | 3s | Fingers on rose gold cap | product | ✅ |
 | 4 | ECU | 3s | Perfume mist in golden light | product | ✅ |
-| 5 | CU | 4s | Lina eyes closed, serene | character | ✅ |
+| 5 | CU | 4s | Maya eyes closed, serene | character | ✅ |
 | 6 | ORB | 4s | 360° bottle reveal | product, location | ✅ |
-| 7 | W | 4s | Lina at window, silhouette | character, location | ✅ |
+| 7 | W | 4s | Maya at window, silhouette | character, location | ✅ |
 | 8 | HERO | 5s | Product lockup, text space | product | ⏳ |
 
 ───────────────────────────────────────
@@ -164,7 +149,7 @@ Reference: Kodak Vision3 500T look.
 
 | Asset | Path | Generated | Last Updated |
 |-------|------|-----------|--------------|
-|  Lina char ref | assets/characters/lina.png | 2026-01-15 | 2026-01-15 |
+| Maya char ref | assets/characters/maya.png | 2026-01-15 | 2026-01-15 |
 | Bedroom loc | assets/locations/modern_bedroom.png | 2026-01-15 | 2026-01-15 |
 | Lumiere prod | assets/products/lumiere.png | 2026-01-16 | 2026-01-16 |
 | Shot 1 video | assets/videos/shot_01.mp4 | 2026-01-17 | 2026-01-17 |
@@ -177,6 +162,6 @@ Reference: Kodak Vision3 500T look.
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 1.0 | 2026-01-15 | Initial creation | — |
-| 1.1 | 2026-01-16 | Added Lina wardrobe variants | — |
+| 1.1 | 2026-01-16 | Added Maya wardrobe variants | — |
 | 1.2 | 2026-01-18 | Updated VO script, added social cutdown spec | — |
 ```

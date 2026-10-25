@@ -14,6 +14,17 @@ description: >
 
 # Brandly Consistency
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-consistency** (this skill) | **HOW** consistency is locked | Anchoring system, drift diagnosis, visual identity locking across shots and assets |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution via `brandly video` / `brandly produce` with consistency anchors |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands and the mandatory phase order, see brandly-init. For CLI execution, see brandly-video-generation. This skill only covers HOW to maintain visual and narrative consistency.
+
+
 Consistency is the hardest problem in AI-generated video. This skill provides the **systematic approach** to locking identity across every shot, every asset, and every generation pass.
 
 ## When to Use

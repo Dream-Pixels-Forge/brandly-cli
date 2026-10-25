@@ -5,6 +5,17 @@ description: "Transform any idea into a professional screenplay with strong narr
 
 # Screenplay Architect
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-screenplay-architect** (this skill) | **HOW** screenplays are written | Narrative arc, character transformation, act structure, story beats, directorial vision in script |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution from the screenplay via `brandly produce` |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands (screenplay goes in `docs/screenplay/screenplay.md`) and the mandatory phase order, see `brandly-init`. For CLI execution, see `brandly-video-generation`. This skill only covers HOW to write screenplays.
+
+
 A professional screenplay creation and improvement skill that transforms ideas into production-ready scripts with cinematic structure, character transformation, and directorial vision baked in from page one.
 
 ## When to Use

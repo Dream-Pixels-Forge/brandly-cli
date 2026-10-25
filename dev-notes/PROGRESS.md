@@ -1,5 +1,13 @@
 # Pipeline Progress — brandly-cli
 
+## Round 34/256 — v0.14.3 shipped — Audio Pipeline (sound_design)
+
+- [x] **v0.14.3 released:** `__about__.py` 0.14.2 → 0.14.3; CHANGELOG `[0.14.3]` section added; tag `v0.14.3` pushed; release published.
+- [x] **`sound_design` tool now generates real audio:** Calls MiniMax `generate_tts` (voiceover) / `generate_music` (music/sfx/foley), downloads MP3 to `production/<id>/audio/<category>/<track_id>.mp3`, records metadata JSON. Download failure is non-fatal; provider error is surfaced.
+- [x] **Skill mapping:** `sound_design` → `brandly-audio` in `SKILL_MAP`; new `skills/brandly-audio/SKILL.md` created.
+- [x] **Tests:** `tests/test_agent_tool_audio.py` (4 tests: voiceover download, music download, download failure non-fatal, provider error) — all pass.
+- [x] **Ruff clean:** import ordering fixed in `web/server.py`. Mypy clean.
+
 ## Round 33/256 — v0.14.1 shipped + branches pruned
 
 - [x] **PR #318 merged** (changelog fold-in: bible feat into v0.14.1); tag
@@ -1710,3 +1718,75 @@ defaults; shipped as four TDD PRs behind one release, per
 - Docs only: no code, no tests added. The 500s/day ceiling is accepted as-is by
   decision; growth is planned via G13/G14 rather than fought now.
 
+
+---
+
+## 2026-10-25 — Paper design: 08 · Pre-Production (BLOCKED mid-build)
+
+**Goal:** design the two new Studio panels (08 · Pre-Production, 09 ·
+Production) as Paper artboards, per the design→code pipeline (a panel
+without an artboard is out of scope — CONVENTIONS §4).
+
+**Where the work lives:** companion Paper file
+**`Brandly Studio — Extensions`** (`01M5RF240J44QRNBXN1J1KGE3V`), page
+**"Brandly Studio — Web UI"** (`p-2-0`). Created via `create_file` with
+`cloneFileId` (plain `create_file` is permission-blocked for this MCP
+account; clone is allowed). The frozen master
+(`01M3VWT0PHVWKPN9JSECCES8T4`) is **read-only** for this account
+("Edit access is required") — artboards must be moved/copied into it once
+access is granted.
+
+**Done:**
+- All 25 frozen `--studio-*` tokens created in the companion file (values
+  from the master; `create_tokens`, not `set_tokens` — set_tokens only
+  updates existing tokens).
+- Artboard **08 · Pre-Production** (`9M-0`, 1440×900): full sidebar
+  (PROJECTS ×3 rows, WORKSPACE nav with the two NEW rows — Pre-Production
+  active, Production — badges, footer v0.9.7), section strip
+  (BIBLE ANCHORED / PHASE 4/11 · CASTING / SHORT-FILM 21:9), Content Grid
+  with Left Column (Cast & Wardrobe card incl. 3 initials-plates +
+  Wardrobe Try-On chips + Locations card ×2 rows) and Right Column
+  (3D Spatial Blocking card with frustum SVG viewport + blocking rows,
+  Sound Design card ×4 type-slotted rows). Structure is complete and
+  correctly nested.
+- Stemsfy file reverted (staging page reset, artboard deleted).
+
+**Parser gotcha (load-bearing for resuming):** `write_html` **silently
+drops camelCase flex props** (`flexDirection`, `alignItems`,
+`justifyContent`, `flexGrow`, `flexBasis`, `flexShrink`) — containers
+render with `display: flex` but default row direction and collapse.
+`update_styles` (camelCase) **does** apply them. Fix pattern: write
+content first, then batch `update_styles` per container. (The master
+file's JSX exports are camelCase because that is Paper's *export* format.)
+
+**Remaining for 08 (inner rows only — containers are fixed):**
+patch via `update_styles`, node IDs discoverable with `get_children`
+(parse the **last** text content block; earlier blocks are file metadata):
+- every card child-0 (header): `flexDirection: row, alignItems: center,
+  justifyContent: space-between, flexShrink: 0`
+- card bodies: cast → column/gap 12; wardrobe → row/center/gap 8;
+  locations → column/gap 8; spatial viewport wrap → row/center;
+  sound → column/gap 8
+- plate columns (3): `flexDirection: column, flexGrow: 1, flexBasis: 0%,
+  minWidth: 0`
+- all list rows (locations ×2, blocking ×2, sound ×4, nav rows ×12,
+  project rows ×3): `flexDirection: row, alignItems: center`
+- fixed-width slots (type chips 76–78px, category chips): `flexShrink: 0`;
+  row name/spacer text: `flexGrow: 1`
+- sidebar root `9N-0`: `flexDirection: column`; nav1 `A9-0`:
+  `flexDirection: column, flexGrow: 1, flexBasis: 0%`
+
+**Not started:** artboard 09 · Production (director console + DoP rail +
+cascade stepper + editor EDL rail). Plan: duplicate 08's artboard
+(`duplicate_nodes`), rename, swap active nav row (Pre-Production →
+Production), replace Main children (CR-0 subtree) with the production
+layout.
+
+**Blocker:** Paper MCP **weekly limit reached** (resets in ~6 days; Pro
+upgrade removes it). No reads or writes possible until then. Alternate
+unblock: grant this account edit access to the frozen master
+`01M3VWT0PHVWKPN9JSECCES8T4` so finished artboards can be moved into the
+real page `p-3-0` grid (row 3) instead of staying in the companion file.
+
+**Status:** out of scope until resumed — no web code was written against
+these artboards (per §4, code follows design, never precedes it).

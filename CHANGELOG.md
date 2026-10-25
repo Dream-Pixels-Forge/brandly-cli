@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [0.14.3] - 2026-10-26
+
+### Added — Audio Pipeline (studio roadmap v0.14.3)
+
+- **`sound_design` tool** (`brandly-audio` skill): Generates audio tracks (soundtrack, sfx, foley, voiceover) via MiniMax Audio API — TTS (`speech-2.8-hd`) for voiceover, music generation (`music-3.0`) for music/sfx/foley — then downloads the MP3 to `production/<id>/audio/<category>/<track_id>.mp3` and records metadata as JSON.
+- **Agent tool surface**: `sound_design` added to `pre_production` domain, mapped to `brandly-audio` skill in `SKILL_MAP`.
+- **New skill**: `skills/brandly-audio/SKILL.md` — audio tool contract, TTS/music models, download + storage layout.
+
+### Fixed
+
+- Import ordering in `web/server.py` (ruff I001).
+- `sound_design` previously wrote metadata only; now calls `generate_tts`/`generate_music`, downloads the remote URL, and reports `downloaded`, `output_path`, `duration_ms`.
+
 ## [0.11.0] - 2026-10-06
 
 ### Added — Accuracy Program (G7–G14)

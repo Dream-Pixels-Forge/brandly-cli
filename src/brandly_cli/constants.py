@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 VideoStyle = Literal[
     "cinematic",
+    "short-film",
     "ugc",
     "montage",
     "multi_shot",
@@ -23,6 +24,7 @@ VideoStyle = Literal[
 
 VIDEO_STYLES: list[VideoStyle] = [
     "cinematic",
+    "short-film",
     "ugc",
     "montage",
     "multi_shot",
@@ -36,6 +38,7 @@ VIDEO_STYLES: list[VideoStyle] = [
 
 STYLE_COSTS: dict[VideoStyle, int] = {
     "cinematic": 250,
+    "short-film": 280,
     "ugc": 150,
     "montage": 200,
     "multi_shot": 300,

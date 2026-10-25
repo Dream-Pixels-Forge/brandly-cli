@@ -32,7 +32,7 @@ from brandly_cli.utils import (
 
 class TestConstants:
     def test_video_styles_complete(self) -> None:
-        assert len(VIDEO_STYLES) == 10
+        assert len(VIDEO_STYLES) == 11
 
     def test_style_costs_all_defined(self) -> None:
         for style in VIDEO_STYLES:

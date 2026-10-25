@@ -71,13 +71,8 @@ Copy this template and fill in each section as you build your campaign.
 
 ### Character 1: [Name]
 - Sheet file: assets/characters/[name].png
+- Physic: [weight in (kg)], [height in (cm)]
 - Key anchor traits: [trait 1], [trait 2], [trait 2]
-- Physical presence (director fans these out verbatim to every downstream
-  sheet/video prompt — never paraphrase, never drop):
-  - Height: [cm + ft/in, e.g. 151cm (4'11")]
-  - Weight: [kg + lb, e.g. 50kg (110lb)]
-  - Build: [petite/lean/athletic/curvy/stocky + proportions note]
-  - Actor notes: [age range, ethnicity, distinctive characteristics]
 - Must never change: 
 - Can vary:
 - Wardrobe variants:
@@ -91,10 +86,10 @@ Copy this template and fill in each section as you build your campaign.
 
 ### Location 1: [Name]
 - Sheet file: assets/locations/[name].png
-- Physical characteristics: [dimensions/scale, materials, fixed layout]
 - Time of day:
 - Key features:
 - Consistency rule:
+- Always shot in 3/4 view for depth creation
 
 ───────────────────────────────────────
 
@@ -102,7 +97,7 @@ Copy this template and fill in each section as you build your campaign.
 
 ### Product: [Name]
 - Sheet file: assets/products/[name].png
-- Physical characteristics: [dimensions/size reference, materials, weight feel]
+- Physic: weight, height, materials, physic behavior
 - Hero angles:
 - Colors/variations:
 - Logo placement:

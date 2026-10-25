@@ -209,3 +209,266 @@ class ExportManifest(BaseModel):
     media_files: list[str] = Field(default_factory=list)
     media_count: int = 0
     total_files: int = 0
+
+
+# ---------------------------------------------------------------------------
+# .brandly Documents — Bible & Screenplay (foundation layer)
+# ---------------------------------------------------------------------------
+
+
+class BibleContent(BaseModel):
+    """Production bible content — the single source of truth that informs
+    every downstream tool (cast, wardrobe, location, sound, director, DP)."""
+
+    project_id: str
+    title: str
+    logline: str
+    tone: str = ""
+    genre: str = ""
+    visual_style: str = "cinematic"
+    color_palette: str = ""
+    characters: list[dict[str, Any]] = Field(default_factory=list)
+    locations: list[dict[str, Any]] = Field(default_factory=list)
+    props: list[dict[str, Any]] = Field(default_factory=list)
+    wardrobe_notes: str = ""
+    sound_notes: str = ""
+    camera_notes: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class ScreenplayContent(BaseModel):
+    """Screenplay / beat sheet — drives shot generation and scheduling."""
+
+    project_id: str
+    title: str
+    logline: str
+    acts: list[dict[str, Any]] = Field(default_factory=list)
+    scenes: list[dict[str, Any]] = Field(default_factory=list)
+    total_duration: int = 0
+    tone: str = ""
+    pacing: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Pre-production — Cast, Wardrobe, Sheets, Location, Sound, Spatial
+# ---------------------------------------------------------------------------
+
+
+class CastMember(BaseModel):
+    """A cast member with identity anchor and reference plates."""
+
+    name: str
+    role: str  # lead, supporting, extra
+    description: str = ""
+    reference_images: list[str] = Field(default_factory=list)
+    wardrobe: list[str] = Field(default_factory=list)
+    voice_notes: str = ""
+    created_at: str = ""
+
+
+class WardrobeTry(BaseModel):
+    """Wardrobe variation for a character."""
+
+    character_name: str
+    outfit_name: str
+    description: str = ""
+    image_path: str = ""
+    category: str = ""  # casual, formal, period, tactical, etc.
+    created_at: str = ""
+
+
+class ReferenceSheet(BaseModel):
+    """Generated reference sheet for a subject (character, location, prop, etc.)."""
+
+    subject_type: str  # character, location, prop, vehicle, mecha, animal, plant
+    subject_name: str
+    image_path: str
+    category: str = ""
+    prompt: str = ""
+    created_at: str = ""
+
+
+class LocationDesign(BaseModel):
+    """Location / set design with visual reference."""
+
+    name: str
+    description: str = ""
+    image_path: str = ""
+    category: str = ""  # interior, exterior, studio, practical
+    lighting_notes: str = ""
+    created_at: str = ""
+
+
+class SoundTrack(BaseModel):
+    """Audio track design (soundtrack, sfx, foley, voiceover)."""
+
+    id: str
+    type: str  # music | sfx | foley | voiceover
+    description: str = ""
+    prompt: str = ""
+    duration: int | None = None
+    output_path: str = ""
+    category: str = "general"
+    created_at: str = ""
+
+
+class SpatialFrame(BaseModel):
+    """3D spatial reference frame from Blender (camera position, angle, blocking)."""
+
+    shot_id: str
+    camera_position: list[float] = Field(default_factory=list)  # [x, y, z]
+    camera_rotation: list[float] = Field(default_factory=list)  # [x, y, z]
+    lens_mm: str = ""
+    aspect_ratio: str = "16:9"
+    depth_map_path: str = ""
+    keyframe_path: str = ""
+    blocking_notes: str = ""
+    created_at: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Production — Director, DoP, Cascade, Editor
+# ---------------------------------------------------------------------------
+
+
+class ShotDirection(BaseModel):
+    """Director's direction for a single shot."""
+
+    shot_id: str
+    scene_id: str
+    prompt: str
+    model: str = "agnes-video-2.5-flash"
+    style: str = "cinematic"
+    duration: int = 5
+    aspect_ratio: str = "16:9"
+    first_frame: str | None = None
+    last_frame: str | None = None
+    reference_images: list[str] = Field(default_factory=list)
+    reference_roles: list[str] = Field(default_factory=list)
+    camera_notes: str = ""
+    lighting_notes: str = ""
+    sound_notes: str = ""
+    created_at: str = ""
+
+
+class CascadeStage(BaseModel):
+    """One stage in a cinematic high-end cascade pipeline."""
+
+    name: str
+    phase: str  # trends, concept, bible, casting, screenplay, script, asset, audio, re_edit, validate, publish
+    tool: str  # which brandly tool to invoke
+    input: dict[str, Any] = Field(default_factory=dict)
+    output: dict[str, Any] = Field(default_factory=dict)
+    status: str = "pending"
+    gate_passed: bool | None = None
+    created_at: str = ""
+
+
+class DirectorOfPhotography(BaseModel):
+    """DoP specifications for a shot or scene."""
+
+    shot_id: str
+    lens: str = "50mm"
+    aperture: str = "f/2.8"
+    lighting_setup: str = "three_point"  # three_point, natural, dramatic, golden_hour
+    color_grade: str = "cinematic"
+    composition: str = "rule_of_thirds"
+    camera_move: str = "static"
+    notes: str = ""
+
+
+class EditDecision(BaseModel):
+    """Editor's cut decision for a clip."""
+
+    clip_id: str
+    start_time: float = 0.0
+    end_time: float = 0.0
+    transition: str = "cut"  # cut, fade, wipe, dissolve
+    transition_duration: float = 0.5
+    color_grade: str = "none"
+    volume: float = 1.0
+    created_at: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Film Action / Fight Choreography (higgsfield-fight-scene integration)
+#
+# The cascade pipeline handles film action by breaking fights into beats
+# (1–2 seconds each). Each beat: position → action (limb, trajectory,
+# target) → opponent's physical reaction → new position. JKD logic:
+# intercept rather than block, shortest line, minimal movement.
+#
+# Prompts are Seedance-proof: pure body geometry, zero martial-arts
+# terminology, zero prohibitions, physics of consequences. Every fight
+# prompt ends with the identical FIGHT STYLE LOCK.
+# ---------------------------------------------------------------------------
+
+
+class Fighter(BaseModel):
+    """A fighter in an action scene — hero, opponent, master, student."""
+
+    name: str
+    role: str  # hero, opponent, master, student
+    lead_hand: str = "right"  # right or left — strong side forward in JKD
+    style: str = "jkd"  # jkd, wing_chun, classical, street
+    description: str = ""
+    reference_images: list[str] = Field(default_factory=list)
+
+
+class FightBeat(BaseModel):
+    """One beat of a fight — roughly 1–2 seconds of screen time.
+
+    An 8-second shot holds 4–6 beats maximum, including 1–2 beats of
+    stance/pause. The pause is part of the fight: broken rhythm requires
+    written stop-stills.
+    """
+
+    beat_number: int
+    start_time: float
+    end_time: float
+    position: str  # stance/geometry description (e.g. S1 bai-jong geometry)
+    action: str  # which limb, from where, along which path, to where
+    reaction: str  # opponent's physical response following the strike vector
+    new_position: str  # position after the beat resolves
+    camera_angle: str = "profile"  # profile, three_quarter, front
+    shot_size: str = "medium"  # wide, medium, close — legs visible for kicks
+
+
+class FightChoreography(BaseModel):
+    """A complete fight scene choreography — beats, pattern, style lock.
+
+    Written in Seedance-proof prompt language: pure body geometry, zero
+    martial-arts terminology, zero prohibitions, physics of consequences.
+    """
+
+    project_id: str
+    scene_id: str
+    fighters: list[Fighter] = Field(default_factory=list)
+    opponents: list[Fighter] = Field(default_factory=list)
+    weapons: list[str] = Field(default_factory=list)
+    location: str = ""
+    emotion: str = ""
+    shot_duration: int = 6  # seconds — beats = duration / 1.5, max 4-6
+    winner: str = ""
+    pattern: str = "P1"  # P1-P6 or custom
+    beats: list[FightBeat] = Field(default_factory=list)
+    style_lock: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class CascadeFightStage(BaseModel):
+    """A cascade stage that carries fight choreography for film action."""
+
+    name: str
+    phase: str  # trends, concept, bible, casting, screenplay, script, asset, audio, re_edit, validate, publish
+    tool: str  # which brandly tool to invoke
+    input: dict[str, Any] = Field(default_factory=dict)
+    output: dict[str, Any] = Field(default_factory=dict)
+    status: str = "pending"
+    gate_passed: bool | None = None
+    fight_choreography: FightChoreography | None = None
+    created_at: str = ""

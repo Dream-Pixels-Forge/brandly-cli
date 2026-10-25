@@ -29,6 +29,14 @@ AGNES_BASE_URL = os.getenv(
     "https://apihub.agnes-ai.com/v1",
 )
 
+#: Agnes video-status polling lives at the hub root, NOT under /v1:
+#: GET https://apihub.agnes-ai.com/agnesapi?video_id=...&model_name=...  (agnes skill)
+#: Derived from AGNES_BASE_URL by stripping the trailing /v1 so regional
+#: overrides (apihub.agnes-ai.cn, api.agnes-ai.cn) route polling correctly too.
+AGNES_POLL_BASE = (
+    AGNES_BASE_URL[: -len("/v1")] if AGNES_BASE_URL.endswith("/v1") else AGNES_BASE_URL
+)
+
 
 def _get_api_key() -> str:
     key = os.getenv("AGNES_API_KEY")
@@ -252,7 +260,7 @@ def _classify_status(status: int, parsed: dict[str, Any]) -> str:
         ):
             return "check_catalog"
         return "retry"  # unknown 503 code (e.g. service_unavailable)
-    if status == 429 or status >= 500:
+    if status in (408, 429) or status >= 500:
         return "retry"
     return "permanent"
 
@@ -857,7 +865,7 @@ async def get_video_status(
             params["model_name"] = model_name
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(
-                f"{AGNES_BASE_URL}/agnesapi",
+                f"{AGNES_POLL_BASE}/agnesapi",
                 headers=_headers(),
                 params=params,
             )
@@ -940,7 +948,7 @@ async def poll_video(
             # 429 and any 5xx are transient per the docs (issue #150) — a
             # 500/502/504 mid-poll must not kill --wait/produce while the
             # async task keeps running server-side.
-            if e.response.status_code == 429 or 500 <= e.response.status_code <= 599:
+            if e.response.status_code in (408, 429) or 500 <= e.response.status_code <= 599:
                 # Monotonic backoff, capped: 10, 20, 40, 60, 60, ... (was a
                 # non-monotonic 10 * 2 ** (attempts % 3) cycle).
                 wait_time = min(10 * (2 ** min(attempts - 1, 3)), 60)

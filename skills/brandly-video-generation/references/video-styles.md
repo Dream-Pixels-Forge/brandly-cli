@@ -2,7 +2,7 @@
 
 Detailed breakdown of available video styles.
 
-> **Important:** These are the ONLY valid values for `brandly video --style`. Image `--style-preset` values (`photorealistic`, `editorial`, `cinematic`, `commercial`, `documentary`) are a separate system.
+> **Important:** These are the ONLY valid values for `brandly video --style`. Image `--style-preset` values (`realistic`, `editorial`, `live action cinematic`, `commercial`, `documentary`) are a separate system.
 
 ---
 
@@ -250,7 +250,7 @@ consistent lighting, same subject
 
 | Content Type | Best Style | Why |
 |-------------|-----------|-----|
-| Brand story | cinematic | Emotional connection |
+| Brand story | live action cinematic | Emotional connection |
 | Social media ad | ugc | Relatable, shareable |
 | Lifestyle product | lifestyle | Warm, aspirational |
 | Product features | montage | Quick highlights |
@@ -267,7 +267,7 @@ consistent lighting, same subject
 
 These are **image-only** `--style-preset` values and will fail with `brandly video --style`:
 
-- ~~commercial~~ → Use `cinematic` or `brand_short_video` instead
-- ~~documentary~~ → Use `cinematic` or `lifestyle` instead
-- ~~luxury~~ → Use `cinematic` or `lifestyle` instead
+- ~~commercial~~ → Use `live action cinematic` or `brand_short_video` instead
+- ~~documentary~~ → Use `live action cinematic` or `lifestyle` instead
+- ~~luxury~~ → Use `live action cinematic` or `lifestyle` instead
 - ~~action~~ → Use `montage` or `continuous` instead

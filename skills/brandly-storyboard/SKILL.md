@@ -12,7 +12,18 @@ description: >
 
 # Brandly Storyboard
 
-Transform a campaign brief into a structured, shot-by-shot visual plan that AI video models can execute with consistency. A storyboard is the **blueprint** — it defines every shot before you generate anything.
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-storyboard** (this skill) | **HOW** storyboards are made | Multi-shot storyboards, shot lists, shot sequences, scene breakdowns |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution via `brandly produce` from the storyboard shot list |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands (storyboards go in `docs/storyboard/`) and the mandatory phase order, see brandly-init. For CLI execution (`brandly produce`), see brandly-video-generation. This skill only covers HOW to create storyboards.
+
+
+Transform a campaign brief into a structured 4x4 grid layout in graphite pencil style, shot-by-shot visual plan that AI video models can execute with consistency. A storyboard is the **blueprint** — it defines every shot before you generate anything.
 
 ## When to Use
 
@@ -31,7 +42,6 @@ Transform a campaign brief into a structured, shot-by-shot visual plan that AI v
 | See shot format templates | `references/shot-formats.md` |
 | Reference pacing and rhythm | `references/pacing-guide.md` |
 | See example full storyboards | `references/examples.md` |
-| Generate a 4x4 grid contact sheet | `references/grid-style-lock.md` **(MANDATORY)** |
 
 ---
 

@@ -37,12 +37,59 @@ ToolRunner = Callable[[list[str]], tuple[int, str, str]]
 
 MANIFEST_VERSION = 1
 
-#: Handlers that only read state — safe for an agent to call unprompted.
-READ_ONLY_TOOLS = frozenset(
-    {"list_projects", "get_project", "list_jobs", "list_models", "get_timeline", "run_gate", "plan",
-     # P5 (#256): pipeline-control read-only surface
-     "status", "progress", "estimate"}
-)
+#: Read-only tools — delegated to the agent_tools package which owns the set.
+READ_ONLY_TOOLS = agent_tools.is_read_only
+
+#: Skill enforcement map — tool name -> owning Agent Skill slug.
+SKILL_MAP = agent_tools.SKILL_MAP
+
+#: MCP annotations per tool domain — signals to clients about side effects.
+TOOL_ANNOTATIONS: dict[str, dict[str, Any]] = {
+    # Read-only / project discovery
+    "list_projects":      {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "get_project":        {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "list_jobs":          {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "list_models":        {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "get_timeline":       {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "run_gate":           {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "plan":               {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "status":             {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "progress":           {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "estimate":           {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "read_bible":         {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "read_screenplay":    {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    # .brandly documents — write (create foundation artifacts)
+    "write_bible":        {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "write_screenplay":   {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    # Generation / media (spend credits, create resources)
+    "generate_image":     {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "generate_image_cli": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    # Pre-production (spend credits, create reference assets)
+    "cast_characters":    {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "try_wardrobe":       {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "animate_cast_15sec": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "generate_sheet":     {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "location_architect": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "sound_design":       {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "spatial_blocking":   {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    # Pipeline / write (spend credits, mutate state)
+    "produce":            {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "stitch":             {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "export_platforms":   {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "job_poll":           {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "init":               {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "approve":            {"readOnlyHint": False, "destructiveHint": True,  "idempotentHint": False},
+    "record_cost":        {"readOnlyHint": False, "destructiveHint": True,  "idempotentHint": False},
+    "memory":             {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "update_clip":        {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "reorder_timeline":   {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    # Production (spend credits, create production assets)
+    "director":           {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "cascade":            {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "fight_choreography": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "director_of_photography": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "editor":             {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+}
 
 
 def python_executable() -> str:
@@ -196,10 +243,11 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "parameters": {
             "type": "object",
+            "title": "Produce",
             "properties": {
                 "project_id": {"type": "string", "description": "Project id."},
                 "shots": {"type": "string", "description": "Path to the shot-list JSON file."},
-                "interval": {"type": "number", "description": "Seconds between shots (Agnes: 60)."},
+                "interval": {"type": "number", "minimum": 1, "description": "Seconds between shots (Agnes: 60)."},
                 "character": {"type": "string", "description": "Identity anchor override."},
                 "no_auto_refs": {"type": "boolean", "description": "Disable auto-injected refs."},
                 "allow_referenceless": {"type": "boolean", "description": "Allow shots w/o refs."},
@@ -213,11 +261,12 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         "description": "Assemble clips into one video (transitions + color grade) — post-production.",
         "parameters": {
             "type": "object",
+            "title": "Stitch",
             "properties": {
                 "clips": {"type": "array", "items": {"type": "string"}, "description": "Clip paths."},
                 "output": {"type": "string", "description": "Output video path."},
                 "transition": {"type": "string", "description": "fade|wipe|dissolve|none."},
-                "transition_duration": {"type": "number", "description": "Transition seconds."},
+                "transition_duration": {"type": "number", "minimum": 0, "description": "Transition seconds."},
                 "color_grade": {"type": "string", "description": "cinematic|warm|cool|none."},
             },
             "required": ["clips", "output"],
@@ -229,6 +278,7 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         "description": "Export platform-optimized deliverables (tiktok, instagram_reel, youtube_standard).",
         "parameters": {
             "type": "object",
+            "title": "Export Platforms",
             "properties": {
                 "project_id": {"type": "string"},
                 "platforms": {"type": "array", "items": {"type": "string"}},
@@ -246,9 +296,10 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "parameters": {
             "type": "object",
+            "title": "Job Poll",
             "properties": {
                 "job_id": {"type": "string", "description": "Job id from brandly image --json."},
-                "max_age": {"type": "integer", "description": "Expiry seconds for running jobs."},
+                "max_age": {"type": "integer", "minimum": 1, "description": "Expiry seconds for running jobs."},
                 "output": {"type": "string", "description": "Copy the result image here."},
             },
             "required": ["job_id"],
@@ -263,11 +314,12 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "parameters": {
             "type": "object",
+            "title": "Generate Image CLI",
             "properties": {
                 "prompt": {"type": "string"},
                 "model": {"type": "string"},
-                "size": {"type": "string"},
-                "ratio": {"type": "string"},
+                "size": {"type": "string", "enum": ["1K", "2K", "3K", "4K"]},
+                "ratio": {"type": "string", "enum": ["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"]},
                 "output": {"type": "string", "description": "Explicit destination file."},
                 "project_id": {"type": "string", "description": "Record under this project."},
             },
@@ -284,6 +336,7 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "parameters": {
             "type": "object",
+            "title": "Plan",
             "properties": {
                 "project_id": {"type": "string", "description": "Project id."},
                 "json": {"type": "boolean", "description": "Emit the machine-readable handoff document."},
@@ -300,12 +353,13 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "parameters": {
             "type": "object",
+            "title": "Init",
             "properties": {
                 "name": {"type": "string", "description": "Product name."},
                 "idea": {"type": "string", "description": "Product idea / brief."},
                 "style": {"type": "string", "description": "Video style (default cinematic)."},
-                "budget": {"type": "integer", "description": "Max credits (default 500)."},
-                "shots": {"type": "integer", "description": "Shot count (default 5)."},
+                "budget": {"type": "integer", "minimum": 1, "description": "Max credits (default 500)."},
+                "shots": {"type": "integer", "minimum": 3, "maximum": 10, "description": "Shot count (default 5)."},
             },
             "required": ["name", "idea"],
         },
@@ -319,6 +373,7 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "parameters": {
             "type": "object",
+            "title": "Status",
             "properties": {
                 "project_id": {"type": "string", "description": "Project id."},
             },
@@ -331,6 +386,7 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         "description": "Read detailed pipeline progress for a project (read-only).",
         "parameters": {
             "type": "object",
+            "title": "Progress",
             "properties": {
                 "project_id": {"type": "string", "description": "Project id."},
             },
@@ -346,6 +402,7 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "parameters": {
             "type": "object",
+            "title": "Approve",
             "properties": {
                 "project_id": {"type": "string", "description": "Project id."},
                 "phase": {"type": "string", "description": "Phase to approve."},
@@ -362,10 +419,11 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "parameters": {
             "type": "object",
+            "title": "Estimate",
             "properties": {
                 "style": {"type": "string", "description": "Video style."},
-                "shots": {"type": "integer", "description": "Shot count."},
-                "target_duration": {"type": "integer", "description": "Target total seconds (quota-aware)."},
+                "shots": {"type": "integer", "minimum": 1, "description": "Shot count."},
+                "target_duration": {"type": "integer", "minimum": 1, "description": "Target total seconds (quota-aware)."},
             },
         },
     },
@@ -378,6 +436,7 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "parameters": {
             "type": "object",
+            "title": "Record Cost",
             "properties": {
                 "project_id": {"type": "string"},
                 "phase": {"type": "string"},
@@ -396,8 +455,9 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
         ),
         "parameters": {
             "type": "object",
+            "title": "Memory",
             "properties": {
-                "action": {"type": "string", "description": "list|show|set"},
+                "action": {"type": "string", "enum": ["list", "show", "set"], "description": "list|show|set"},
                 "hook": {"type": "string", "description": "Hook value for set."},
             },
             "required": ["action"],
@@ -410,9 +470,30 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
 # Manifest
 # ---------------------------------------------------------------------------
 
+#: Tool domain groupings for MCP clients (helps clients surface related tools).
+TOOL_DOMAINS: dict[str, list[str]] = {
+    "project":  ["list_projects", "get_project", "init", "status", "progress", "plan"],
+    "documents": ["write_bible", "read_bible", "write_screenplay", "read_screenplay"],
+    "media":    ["generate_image", "generate_image_cli", "list_models"],
+    "pre_production": [
+        "cast_characters", "try_wardrobe", "animate_cast_15sec",
+        "generate_sheet", "location_architect", "sound_design", "spatial_blocking",
+    ],
+    "generation": ["produce", "job_poll"],
+    "production": [
+        "director", "cascade", "fight_choreography", "director_of_photography", "editor",
+        "stitch", "export_platforms", "update_clip", "reorder_timeline", "run_gate",
+        "approve", "record_cost", "memory",
+    ],
+}
 
 def tool_manifest() -> dict[str, Any]:
-    """Return the full agent-callable capability set (JSON-serializable)."""
+    """Return the full agent-callable capability set (JSON-serializable).
+
+    Each tool entry carries MCP ``annotations`` (readOnlyHint,
+    destructiveHint, idempotentHint) and ``skill`` (the owning Agent Skill
+    slug) so clients can route to the right skill documentation.
+    """
     tools: list[dict[str, Any]] = []
 
     for name, spec in agent_tools.BUILTIN_TOOLS.items():
@@ -421,7 +502,11 @@ def tool_manifest() -> dict[str, Any]:
                 "name": name,
                 "description": spec["description"],
                 "parameters": spec["schema"],
-                "read_only": name in READ_ONLY_TOOLS,
+                "read_only": READ_ONLY_TOOLS(name),
+                "skill": agent_tools.skill_for(name),
+                "annotations": TOOL_ANNOTATIONS.get(
+                    name, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False}
+                ),
                 "kind": "library",
                 "command": None,
             }
@@ -433,13 +518,17 @@ def tool_manifest() -> dict[str, Any]:
                 "name": name,
                 "description": spec["description"],
                 "parameters": spec["parameters"],
-                "read_only": name in READ_ONLY_TOOLS,
+                "read_only": READ_ONLY_TOOLS(name),
+                "skill": agent_tools.skill_for(name),
+                "annotations": TOOL_ANNOTATIONS.get(
+                    name, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False}
+                ),
                 "kind": "cli",
                 "command": spec["command"],
             }
         )
 
-    return {"version": MANIFEST_VERSION, "tools": tools}
+    return {"version": MANIFEST_VERSION, "tools": tools, "domains": TOOL_DOMAINS}
 
 
 def get_tool(name: str) -> dict[str, Any] | None:
@@ -645,7 +734,7 @@ def dispatch(
 
     if name in agent_tools.BUILTIN_TOOLS:
         envelope["kind"] = "library"
-        envelope["read_only"] = name in READ_ONLY_TOOLS
+        envelope["read_only"] = READ_ONLY_TOOLS(name)
         schema = agent_tools.BUILTIN_TOOLS[name]["schema"]
         if root and "root" in schema.get("properties", {}) and "root" not in call_args:
             call_args["root"] = str(root)
@@ -666,7 +755,7 @@ def dispatch(
         return envelope
 
     envelope["kind"] = "cli"
-    envelope["read_only"] = name in READ_ONLY_TOOLS
+    envelope["read_only"] = READ_ONLY_TOOLS(name)
     try:
         argv = build_command(name, call_args, root=root)
     except (KeyError, ValueError) as e:

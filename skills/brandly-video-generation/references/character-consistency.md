@@ -144,3 +144,78 @@ For critical consistency needs:
 3. Use same character description
 4. Review each shot before proceeding
 5. Composite in post-production if needed
+
+---
+
+## Multi-Character Identity Bleed (issue #51)
+
+### The Problem
+
+When **two or more characters co-appear** in a single shot, Agnes's
+image-to-video anchors *every* figure's face to the **dominant**
+(first-listed) reference plate. A shot meant to show "Silas alone,
+drawing the gun" renders **Elias's** face on Silas. The dominant
+character bleeds into every figure in frame.
+
+This is the #1 cause of "the second character looks wrong" in
+multi-character scenes.
+
+### The Fix: Dedicated Single-Subject Hero Plates
+
+For each co-appearing character, generate a **clean 1:1 hero portrait**
+that shows ONLY that character (no other person in frame, no scene
+context). Use that plate — not the multi-character turnaround — as the
+reference for shots where that character is the on-screen subject.
+
+```
+char_eliasmona.png        <- Elias hero plate (Elias only)
+char_silas-hero.png       <- Silas hero plate (Silas only, white/scarred)
+char_mariam.png           <- Miriam hero plate (Miriam only)
+```
+
+Per-shot reference rules:
+
+| Shot subject | Reference plate(s) to pass |
+|---|---|
+| Elias alone | `char_eliasmona` |
+| Silas alone | `char_silas-hero`  (NOT `char_eliasmona`) |
+| Elias + Silas co-appear | BOTH plates, in the order the dominant one goes first |
+| Object / location only | `prop_*` / `loc_*` |
+
+### The Gate Check
+
+`brandly video` and `brandly produce` now pass the shot's
+co-appearing character names to the quality gate. When 2+ characters
+are declared present, the vision prompt asks the model to verify each
+figure is rendered with **its own** identity (not the dominant
+character's face) and to set `identity_bleed` in the verdict. A
+`true` bleed is a **gate failure** — the shot must be regenerated with
+a hero plate for the bled character.
+
+In the shot list JSON, declare presence with the `characters` key:
+
+```json
+{
+  "id": "shot04_silas_close",
+  "refs": ["char_silas-hero", "loc_exterior_church_wide"],
+  "character": "Silas Vanesky, 62, gaunt WHITE man, scarred jaw, silver Glock — NOT Elias (Elias is Black, in a soutane)",
+  "characters": "Silas Vanesky, Elias Mona",
+  "prompt": "..."
+}
+```
+
+The `characters` array drives the gate's `expected_characters` list.
+The `character` string is the per-shot identity anchor for the prompt.
+The `refs` list is the reference plate set — **use the hero plate for
+the on-screen subject, not the multi-character turnaround**.
+
+### Quick Diagnostic
+
+If a generated clip shows the wrong face on a secondary character:
+
+1. Check the reference plates you passed — did you pass a
+   multi-character turnaround that includes the dominant face?
+2. Regenerate with a dedicated hero plate for that character.
+3. If the bleed persists, split the shot into two: a close-up of the
+   secondary character (their hero plate only), cut to a wide that
+   shows both (both plates, dominant first).

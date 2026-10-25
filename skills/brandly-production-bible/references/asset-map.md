@@ -94,6 +94,7 @@ Each asset can have a companion `.txt` file storing the anchor block:
 type: character
 name: Maya
 anchors: olive skin warm undertone, emerald green almond eyes, long dark brown hair loose braids, subtle freckles
+physic: 50kg, 156cm height, slinder
 immutable: eye color, skin tone, hair color, braid style
 variable: expression, outfit (neutral tones only)
 --END-ANCHOR--

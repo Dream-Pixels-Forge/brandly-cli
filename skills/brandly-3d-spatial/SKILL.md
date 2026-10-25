@@ -23,6 +23,17 @@ metadata:
 
 # 3D Spatial — Blender → Agnes Pipeline
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-3d-spatial** (this skill) | **HOW** spatial references are made | Blender 3D composition guides, spatial anchor frames, camera positioning for Agnes keyframe mode |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution via `brandly video` / `brandly produce` using the spatial references |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands and the mandatory phase order, see brandly-init. For CLI execution, see brandly-video-generation. This skill only covers HOW to create Blender spatial reference frames.
+
+
 ## ⚠️ CRITICAL: Spatial References, NOT Visual Targets
 
 **Blender renders are SPATIAL REFERENCES. They tell Agnes WHERE to place things, NOT WHAT they look like.**

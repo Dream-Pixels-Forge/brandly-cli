@@ -15,6 +15,17 @@ description: >
 
 # DPF Concept Art — Visual Storytelling Core
 
+## Concern separation (read first)
+
+| Skill | Concern | Responsibility |
+|-------|---------|----------------|
+| **brandly-concept-art** (this skill) | **HOW** concept art is made | Visual development, pre-production design, worldbuilding, mood boards, visual bibles |
+| **brandly-init** | **WHERE** things land | Layout contract, directory structure, artifact paths, phase order, gate approvals, project init cwd enforcement |
+| **brandly-video-generation** | **HOW** execution | CLI execution via `brandly reference` / `brandly image` / `brandly video` from concept frames |
+
+This skill does NOT teach project init, phase ordering, artifact placement, or gate management. For where each artifact lands and the mandatory phase order, see brandly-init. For CLI execution, see brandly-video-generation. This skill only covers HOW to create concept art and visual development.
+
+
 This skill provides foundational principles for visual storytelling based on professional Concept Art practice. It ensures all visual work has **intent, collaboration, and individuality** — the three pillars that make visual narratives memorable.
 
 ## Why This Matters

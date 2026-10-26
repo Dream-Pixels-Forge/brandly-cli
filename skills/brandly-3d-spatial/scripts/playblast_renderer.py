@@ -1,321 +1,282 @@
-"""Blender PlayBlast renderer for Agnes pipeline.
+"""
+Blender Python script for rendering spatial reference frames for Agnes AI video generation.
 
-IMPORTANT: PlayBlast (bpy.ops.render.opengl) requires OpenGL context
-and does NOT work in Blender background mode (--background).
+This script is run inside Blender via:
+    blender --background --python playblast_renderer.py -- --config scene.json --output ./output_dir
 
-For command-line rendering, use the fallback render engine (EEVEE/Cycles)
-with optimized settings for speed.
+It reads a JSON configuration file and renders camera position/angle frames as PNG images
+suitable for use as Agnes AI video generation references (first_frame, last_frame,
+reference_images).
 
 Usage:
-    # Interactive (PlayBlast works)
-    blender --python playblast_renderer.py -- --config scene.json --output ./renders
+    blender --background --python playblast_renderer.py -- --config scene_config.json --output ./3d-spatial/cameras --mode single
 
-    # Background (PlayBlast unavailable, uses EEVEE fallback)
-    blender --background --python playblast_renderer.py -- --config scene.json --output ./renders
+Arguments:
+    --config   Path to JSON configuration file (default: scene_config.json)
+    --output   Output directory for rendered frames (default: ./blender_renders)
+    --mode     Render mode: single, keyframes, multi (default: single)
+
+Configuration file format:
+    {
+        "resolution": [1920, 1080],
+        "fps": 24,
+        "cameras": [
+            {
+                "name": "shot_001",
+                "position": [1.2, 2.0, 1.6],
+                "rotation": [0, 0, 0],
+                "lens_mm": 50,
+                "look_at": [0, 0, 1.2],
+                "character_position": [0, 0, 0],
+                "character_height": 1.8
+            }
+        ],
+        "keyframes": [
+            {"frame": 0, "position": [0, -5, 1.6], "look_at": [0, 0, 1.2]},
+            {"frame": 48, "position": [0, -2, 1.6], "look_at": [0, 0, 1.2]}
+        ]
+    }
 """
 
+import bpy
 import json
+import math
 import os
 import sys
-
-import bpy
-from mathutils import Vector
+from mathutils import Vector, Euler, Matrix
 
 
 def parse_args():
-    """Parse command line arguments after '--'."""
-    argv = sys.argv
-    if "--" in argv:
-        argv = argv[argv.index("--") + 1:]
-    else:
-        argv = []
+    """Parse command line arguments."""
+    import sys
 
-    config_path = None
-    output_dir = "./blender_renders"
-    render_mode = "single"  # single, first_last, animation
+    config = "scene_config.json"
+    output = "./blender_renders"
+    mode = "single"
+
+    argv = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else sys.argv[1:]
 
     i = 0
     while i < len(argv):
         if argv[i] == "--config" and i + 1 < len(argv):
-            config_path = argv[i + 1]
+            config = argv[i + 1]
             i += 2
         elif argv[i] == "--output" and i + 1 < len(argv):
-            output_dir = argv[i + 1]
+            output = argv[i + 1]
             i += 2
         elif argv[i] == "--mode" and i + 1 < len(argv):
-            render_mode = argv[i + 1]
+            mode = argv[i + 1]
             i += 2
         else:
             i += 1
 
-    return config_path, output_dir, render_mode
+    return config, output, mode
+
+
+def load_config(config_path):
+    """Load JSON configuration file."""
+    with open(config_path, "r") as f:
+        return json.load(f)
+
+
+def setup_scene(config):
+    """Configure Blender scene settings."""
+    scene = bpy.context.scene
+    render = scene.render
+
+    resolution = config.get("resolution", [1920, 1080])
+    render.resolution_x = resolution[0]
+    render.resolution_y = resolution[1]
+    render.resolution_percentage = 100
+
+    fps = config.get("fps", 24)
+    render.fps = fps
+    render.fps_base = 1
+
+    # Set up world lighting
+    world = bpy.context.world
+    if world is None:
+        world = bpy.data.worlds.new("World")
+        bpy.context.scene.world = world
+
+    world.use_nodes = True
+    bg = world.node_tree.nodes.get("Background")
+    if bg:
+        bg.inputs[0].default_value = (0.1, 0.1, 0.1, 1.0)  # Dark gray background
+        bg.inputs[1].default_value = 0.5  # Weak strength
 
 
 def clear_scene():
-    """Remove all objects."""
-    bpy.ops.object.select_all(action='SELECT')
+    """Remove all objects from the scene."""
+    bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
 
 
-def create_camera(name, position, look_at, focal_length=50):
-    """Create a camera."""
+def create_camera(name, position, rotation, look_at, lens_mm):
+    """Create a camera at the specified position and rotation."""
     cam_data = bpy.data.cameras.new(name)
-    cam_data.lens = focal_length
-    cam_obj = bpy.data.objects.new(name, cam_data)
-    bpy.context.collection.objects.link(cam_obj)
-    cam_obj.location = position
+    cam_data.lens = lens_mm
+    cam_data.sensor_width = 36.0  # Full frame 35mm
 
+    cam_obj = bpy.data.objects.new(name, cam_data)
+    cam_obj.location = Vector(position)
+    cam_obj.rotation_euler = Euler(rotation, "XYZ")
+
+    # Point camera at look_at target
     direction = Vector(look_at) - Vector(position)
-    rot_quat = direction.to_track_quat('-Z', 'Y')
-    cam_obj.rotation_euler = rot_quat.to_euler()
+    cam_obj.rotation_euler = direction.to_track_quat("Z", "Y").to_euler()
+
+    bpy.context.collection.objects.link(cam_obj)
+    bpy.context.view_layer.objects.active = cam_obj
 
     return cam_obj
 
 
-def create_character_placeholder(position, height=1.8):
-    """Create simple character placeholder."""
-    bpy.ops.mesh.primitive_cylinder_add(
-        radius=0.2,
-        depth=height * 0.6,
-        location=(position[0], position[1], position[2] + height * 0.5)
-    )
-    body = bpy.context.active_object
-    body.name = 'Character_Body'
-
-    bpy.ops.mesh.primitive_uv_sphere_add(
-        radius=0.15,
-        location=(position[0], position[1], position[2] + height * 0.85)
-    )
-    head = bpy.context.active_object
-    head.name = 'Character_Head'
-
-    mat = bpy.data.materials.new(name='Character')
-    body.data.materials.append(mat)
-    head.data.materials.append(mat)
-
-    return body, head
-
-
-def create_ground(size=20):
-    """Create ground plane."""
-    bpy.ops.mesh.primitive_plane_add(size=size, location=(0, 0, 0))
-    ground = bpy.context.active_object
-    ground.name = 'Ground'
-    return ground
-
-
-def try_playblast(total_frames):
-    """Attempt PlayBlast render (requires OpenGL context).
-
-    Returns True if successful, False if unavailable.
-    """
-    # Check if we're in background mode
-    if bpy.app.background:
-        print("PlayBlast unavailable in background mode")
-        return False
-
-    # Check if opengl operator exists
-    if not hasattr(bpy.ops.render, 'opengl'):
-        print("PlayBlast operator not available")
-        return False
-
-    try:
-        # PlayBlast - viewport render
-        bpy.ops.render.opengl(animation=True)
-        print("PlayBlast render completed")
-        return True
-    except RuntimeError as e:
-        print(f"PlayBlast failed: {e}")
-        return False
-
-
-def setup_eevee_fast():
-    """Configure EEVEE for fast rendering."""
-    scene = bpy.context.scene
-    scene.render.engine = 'BLENDER_EEVEE'
-
-    # Reduce samples for speed
-    if hasattr(scene, 'eevee'):
-        scene.eevee.taa_render_samples = 4  # Minimal samples
-
-
-def setup_scene(resolution=(1920, 1080), fps=24):
-    """Configure scene settings."""
-    scene = bpy.context.scene
-    scene.render.resolution_x = resolution[0]
-    scene.render.resolution_y = resolution[1]
-    scene.render.fps = fps
-    scene.frame_start = 0
-
-
-def animate_camera(camera, keyframes):
-    """Animate camera with keyframes."""
+def render_frame(cam_obj, output_path, scene_config):
+    """Render a single frame from the camera."""
     scene = bpy.context.scene
 
-    for kf in keyframes:
-        frame = kf['frame']
-        scene.frame_set(frame)
+    # Set camera
+    scene.camera = cam_obj
 
-        camera.location = kf['position']
-        camera.keyframe_insert(data_path='location', frame=frame)
+    # Set output path
+    scene.render.filepath = str(output_path)
 
-        pos = Vector(kf['position'])
-        look = Vector(kf['look_at'])
-        direction = look - pos
-        rot_quat = direction.to_track_quat('-Z', 'Y')
-        camera.rotation_euler = rot_quat.to_euler()
-        camera.keyframe_insert(data_path='rotation_euler', frame=frame)
-
-        if 'focal_length' in kf:
-            camera.data.lens = kf['focal_length']
-            camera.data.keyframe_insert(data_path='lens', frame=frame)
+    # Render
+    bpy.ops.render.render(write_still=True)
 
 
-def render_frame_by_frame(output_dir, total_frames):
-    """Fallback: render frames using EEVEE."""
-    scene = bpy.context.scene
+def render_spatial_composition(config):
+    """Render all camera positions from config."""
+    output_dir = config.get("output_dir", "./blender_renders")
     os.makedirs(output_dir, exist_ok=True)
 
-    setup_eevee_fast()
+    # Clear existing scene
+    clear_scene()
 
+    # Setup scene
+    setup_scene(config)
+
+    cameras = config.get("cameras", [])
     rendered = []
-    for frame_num in range(total_frames):
-        scene.frame_set(frame_num)
-        filepath = os.path.join(output_dir, f'frame_{frame_num:04d}.png')
-        scene.render.filepath = filepath
-        bpy.ops.render.render(write_still=True)
-        rendered.append(filepath)
-        print(f"Rendered frame {frame_num}: {filepath}")
+
+    for i, cam_config in enumerate(cameras):
+        name = cam_config.get("name", f"camera_{i}")
+        position = cam_config.get("position", [0, 0, 0])
+        rotation = cam_config.get("rotation", [0, 0, 0])
+        look_at = cam_config.get("look_at", [0, 0, 0])
+        lens_mm = cam_config.get("lens_mm", 50)
+
+        # Create camera
+        cam_obj = create_camera(name, position, rotation, look_at, lens_mm)
+
+        # Render frame
+        output_path = os.path.join(output_dir, f"{name}.png")
+        render_frame(cam_obj, output_path, config)
+
+        rendered.append(
+            {
+                "name": name,
+                "path": str(output_path),
+                "position": position,
+                "rotation": rotation,
+                "lens_mm": lens_mm,
+                "look_at": look_at,
+            }
+        )
 
     return rendered
 
 
-def render_single_frame(output_dir):
-    """Render single frame from active camera."""
-    scene = bpy.context.scene
+def render_keyframes(config):
+    """Render keyframe animations."""
+    output_dir = config.get("output_dir", "./blender_renders")
     os.makedirs(output_dir, exist_ok=True)
 
-    setup_eevee_fast()
+    # Setup scene
+    setup_scene(config)
 
-    filepath = os.path.join(output_dir, 'first_frame.png')
-    scene.render.filepath = filepath
-    bpy.ops.render.render(write_still=True)
-    print(f"Rendered single frame: {filepath}")
+    keyframes = config.get("keyframes", [])
+    rendered = []
 
-    return filepath
+    # Create a single camera that we'll move between keyframes
+    cam_obj = None
 
+    for i, kf in enumerate(keyframes):
+        position = kf.get("position", [0, 0, 0])
+        rotation = kf.get("rotation", [0, 0, 0])
+        look_at = kf.get("look_at", [0, 0, 0])
+        lens_mm = kf.get("lens_mm", 50)
+        name = kf.get("name", f"keyframe_{i}")
 
-def render_first_and_last(output_dir, total_frames):
-    """Render first and last frames for Agnes keyframe mode."""
-    scene = bpy.context.scene
-    os.makedirs(output_dir, exist_ok=True)
+        if cam_obj is None:
+            # Create camera on first keyframe
+            cam_obj = create_camera(name, position, rotation, look_at, lens_mm)
+        else:
+            # Reuse existing camera
+            cam_obj.location = Vector(position)
+            cam_obj.rotation_euler = Euler(rotation, "XYZ")
+            cam_obj.data.lens = lens_mm
 
-    setup_eevee_fast()
+        # Update scene
+        scene = bpy.context.scene
+        scene.camera = cam_obj
 
-    # First frame
-    scene.frame_set(0)
-    first_path = os.path.join(output_dir, 'first_frame.png')
-    scene.render.filepath = first_path
-    bpy.ops.render.render(write_still=True)
-    print(f"Rendered first frame: {first_path}")
+        # Render
+        output_path = os.path.join(output_dir, f"{name}.png")
+        render_frame(cam_obj, output_path, config)
 
-    # Last frame
-    scene.frame_set(total_frames - 1)
-    last_path = os.path.join(output_dir, 'last_frame.png')
-    scene.render.filepath = last_path
-    bpy.ops.render.render(write_still=True)
-    print(f"Rendered last frame: {last_path}")
+        rendered.append(
+            {
+                "name": name,
+                "path": str(output_path),
+                "position": position,
+                "rotation": rotation,
+                "lens_mm": lens_mm,
+                "look_at": look_at,
+                "frame": kf.get("frame", i),
+            }
+        )
 
-    return first_path, last_path
+    return rendered
 
 
 def main():
-    config_path, output_dir, render_mode = parse_args()
+    config_path, output_dir, mode = parse_args()
 
     # Load config
-    if config_path and os.path.exists(config_path):
-        with open(config_path) as f:
-            config = json.load(f)
-    else:
-        config = {
-            "resolution": [1920, 1080],
-            "fps": 24,
-            "cameras": [
-                {
-                    "name": "Main Camera",
-                    "position": [0, -5, 1.6],
-                    "look_at": [0, 0, 1.2],
-                    "focal_length": 50
-                }
-            ],
-            "character_position": [0, 0, 0],
-            "character_height": 1.8,
-            "ground_size": 20
-        }
-
-    # Clear scene
-    clear_scene()
-
-    # Setup scene
-    setup_scene(
-        resolution=config.get("resolution", [1920, 1080]),
-        fps=config.get("fps", 24)
-    )
-
-    # Create ground
-    create_ground(config.get("ground_size", 20))
-
-    # Create character
-    char_pos = config.get("character_position", [0, 0, 0])
-    char_height = config.get("character_height", 1.8)
-    create_character_placeholder(char_pos, char_height)
-
-    # Create cameras
-    cameras = []
-    for cam_config in config.get("cameras", []):
-        cam = create_camera(
-            cam_config.get("name", "Camera"),
-            cam_config.get("position", [0, -5, 1.6]),
-            cam_config.get("look_at", [0, 0, 0]),
-            cam_config.get("focal_length", 50)
-        )
-        cameras.append(cam)
-
-    # Set first camera as active
-    if cameras:
-        bpy.context.scene.camera = cameras[0]
-
-    # Animate if keyframes present
-    if "keyframes" in config:
-        animate_camera(cameras[0], config["keyframes"])
-        total_frames = max(kf["frame"] for kf in config["keyframes"]) + 1
-    else:
-        total_frames = config.get("total_frames", 48)
+    config = load_config(config_path)
+    config["output_dir"] = output_dir
 
     # Render based on mode
-    os.makedirs(output_dir, exist_ok=True)
+    if mode == "single":
+        rendered = render_spatial_composition(config)
+    elif mode == "keyframes":
+        rendered = render_keyframes(config)
+    elif mode == "multi":
+        # Render all cameras as separate frames
+        rendered = render_spatial_composition(config)
+    else:
+        print(f"Unknown mode: {mode}")
+        sys.exit(1)
 
-    # Try PlayBlast first (only works in interactive mode)
-    playblast_ok = try_playblast(total_frames)
+    # Write summary
+    summary_path = os.path.join(output_dir, "render_summary.json")
+    with open(summary_path, "w") as f:
+        json.dump(
+            {
+                "config": config_path,
+                "output_dir": output_dir,
+                "mode": mode,
+                "rendered_count": len(rendered),
+                "rendered": rendered,
+            },
+            f,
+            indent=2,
+        )
 
-    if not playblast_ok:
-        # Fallback to EEVEE rendering
-        print("Using EEVEE fallback rendering...")
-        setup_eevee_fast()
-
-        if render_mode == "single":
-            render_single_frame(output_dir)
-        elif render_mode == "first_last":
-            render_first_and_last(output_dir, total_frames)
-        else:
-            render_frame_by_frame(output_dir, total_frames)
-
-    # Save config
-    config_path_out = os.path.join(output_dir, 'scene_config.json')
-    with open(config_path_out, 'w') as f:
-        json.dump(config, f, indent=2)
-
-    print(f"\nDone! Output in {output_dir}")
+    print(f"Rendered {len(rendered)} frames to {output_dir}")
+    print(f"Summary saved to {summary_path}")
 
 
 if __name__ == "__main__":

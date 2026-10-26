@@ -15,6 +15,9 @@ Tools map to skills by domain:
 
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -334,38 +337,94 @@ def _spatial_blocking(
     root: str | None = None,
 ) -> dict[str, Any]:
     """Create a 3D spatial reference frame using Blender."""
-    try:
-        proj_dir = project_dir(Path(root or "."), project_id)
-        spatial = SpatialFrame(
-            shot_id=shot_id,
-            camera_position=camera_position or [0.0, 0.0, 0.0],
-            camera_rotation=camera_rotation or [0.0, 0.0, 0.0],
-            lens_mm=lens_mm,
-            aspect_ratio=aspect_ratio,
-            depth_map_path=depth_map_path,
-            keyframe_path=keyframe_path,
-            blocking_notes=blocking_notes,
-            created_at=now_iso(),
-        )
-        cam_dir = spatial_dir(proj_dir, "cameras")
-        cam_dir.mkdir(parents=True, exist_ok=True)
-        path = cam_dir / f"{shot_id}.json"
-        write_json(path, spatial.model_dump())
-        return {
-            "project_id": project_id,
-            "shot_id": shot_id,
-            "camera_position": spatial.camera_position,
-            "camera_rotation": spatial.camera_rotation,
-            "lens_mm": lens_mm,
-            "aspect_ratio": aspect_ratio,
-            "path": str(path),
-            "blender_script": blender_script,
-        }
-    except Exception as e:
-        return {"error": f"spatial_blocking: {e}"}
+    proj_dir = project_dir(Path(root or "."), project_id)
+    cam_dir = spatial_dir(proj_dir, "cameras")
+    cam_dir.mkdir(parents=True, exist_ok=True)
 
+    blender_config = {
+        "resolution": [1920, 1080],
+        "fps": 24,
+        "cameras": [
+            {
+                "name": shot_id,
+                "position": list(camera_position or [0.0, 0.0, 0.0]),
+                "rotation": list(camera_rotation or [0.0, 0.0, 0.0]),
+                "look_at": [0.0, 0.0, 0.0],
+                "lens_mm": lens_mm,
+                "aspect_ratio": aspect_ratio,
+            }
+        ],
+    }
 
-# ---------------------------------------------------------------------------
+    blender_path = shutil.which("blender")
+    render_result = None
+
+    if blender_path:
+        config_path = cam_dir / f"{shot_id}_config.json"
+        write_json(config_path, blender_config)
+
+        skills_dir = Path(__file__).resolve().parent.parent / "skills" / "brandly-3d-spatial" / "scripts"
+        blender_script_path = skills_dir / "playblast_renderer.py"
+
+        if blender_script_path.exists():
+            try:
+                result = subprocess.run(
+                    [
+                        blender_path,
+                        "--background",
+                        "--python",
+                        str(blender_script_path),
+                        "--",
+                        "--config",
+                        str(config_path),
+                        "--output",
+                        str(cam_dir),
+                        "--mode",
+                        "single",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if result.returncode == 0:
+                    render_summary_path = cam_dir / "render_summary.json"
+                    if render_summary_path.exists():
+                        render_result = json.loads(render_summary_path.read_text())
+                else:
+                    print(
+                        f"[yellow]⚠ Blender render failed: {result.stderr[:200]}[/yellow]"
+                    )
+            except Exception as e:
+                print(f"[yellow]⚠ Blender execution failed: {e}[/yellow]")
+        else:
+            print(
+                "[yellow]⚠ Blender not found. Install Blender for 3D spatial rendering.[/yellow]"
+            )
+
+    spatial = SpatialFrame(
+        shot_id=shot_id,
+        camera_position=list(camera_position or [0.0, 0.0, 0.0]),
+        camera_rotation=list(camera_rotation or [0.0, 0.0, 0.0]),
+        lens_mm=lens_mm,
+        aspect_ratio=aspect_ratio,
+        depth_map_path=depth_map_path,
+        keyframe_path=keyframe_path,
+        blocking_notes=blocking_notes,
+        created_at=now_iso(),
+    )
+    path = cam_dir / f"{shot_id}.json"
+    write_json(path, spatial.model_dump())
+    return {
+        "project_id": project_id,
+        "shot_id": shot_id,
+        "camera_position": spatial.camera_position,
+        "camera_rotation": spatial.camera_rotation,
+        "lens_mm": lens_mm,
+        "aspect_ratio": aspect_ratio,
+        "path": str(path),
+        "blender_script": blender_script,
+        "blender_render_result": render_result,
+    }# ---------------------------------------------------------------------------
 # Tool registry — pre_production domain
 # ---------------------------------------------------------------------------
 

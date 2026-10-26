@@ -387,6 +387,7 @@ def stitch(
     fit: str,
     force: bool,
     root: str | None,
+    captions: str | None = None,
 ) -> None:
     """Stitch multiple video clips with transitions and color grading.
 
@@ -447,6 +448,7 @@ def stitch(
             color_grade=color_grade,
             ratio=ratio,
             fit=fit,
+            captions=captions,
         )
     )
     if "error" in result:

@@ -42,7 +42,7 @@ def _ffprobe_available() -> bool:
 # Transitions & color grades
 # ---------------------------------------------------------------------------
 
-TRANSITIONS = ("fade", "dissolve", "wipe", "slide")
+TRANSITIONS = ("fade", "dissolve", "wipe", "slide", "iris")
 
 COLOR_GRADES: dict[str, str] = {
     "cinematic": "eq=brightness=0.02:contrast=1.1:saturation=1.2",
@@ -143,6 +143,25 @@ def ratio_pad_filter(w: int, h: int, target: str) -> str:
     )
 
 
+def iris_filter(w: int, h: int, progress: float) -> str:
+    """Iris wipe — circular reveal from center.
+
+    progress: 0.0 (fully closed) to 1.0 (fully open).
+    Returns a filtergraph expression that draws a circular iris opening
+    from the center of the frame.
+    """
+    cx, cy = w / 2.0, h / 2.0
+    r = min(w, h) / 2.0
+    r2 = r * r * progress * progress
+    return (
+        f"format=rgba,"
+        f"geq='r='if(gt((X-{cx})*(X-{cx})+(Y-{cy})*(Y-{cy}),{r2}),255,0)':"
+        f"g='if(gt((X-{cx})*(X-{cx})+(Y-{cy})*(Y-{cy}),{r2}),255,0)':"
+        f"b='if(gt((X-{cx})*(X-{cx})+(Y-{cy})*(Y-{cy}),{r2}),255,0)':"
+        f"a='if(gt((X-{cx})*(X-{cx})+(Y-{cy})*(Y-{cy}),{r2}),255,0)'"
+    )
+
+
 def get_clip_duration(path: Path) -> float:
     """Return the duration of a clip in seconds using ffprobe."""
     if not _ffprobe_available():
@@ -177,13 +196,14 @@ async def stitch_videos(
     root: Path | None = None,
     ratio: str | None = None,
     fit: str = "crop",
+    captions: str | None = None,
 ) -> dict[str, Any]:
     """Concatenate video clips with transitions and color grading.
 
     Args:
         clips: Ordered list of input video paths.
         output: Destination file path.
-        transition: One of fade | dissolve | wipe | slide.
+        transition: One of fade | dissolve | wipe | slide | iris.
         transition_duration: Duration of each transition in seconds.
         color_grade: One of cinematic | warm | cool | desaturated | none.
         root: Optional project root (used for resolving relative outputs).
@@ -191,6 +211,7 @@ async def stitch_videos(
             Cropping/letterboxing happens here — never in production.
         fit: How to reach ``ratio`` — ``"crop"`` (center-crop, default) or
             ``"pad"`` (letterbox/pillarbox with black bars).
+        captions: Optional SRT subtitle file path to burn into the video.
 
     Returns:
         Dict with output metadata, or an ``{"error": ...}`` dict on failure.
@@ -212,6 +233,12 @@ async def stitch_videos(
         return {"error": f"Unknown color grade: {color_grade}. Choose from {list(COLOR_GRADES)}."}
     if fit not in FIT_MODES:
         return {"error": f"Unknown fit mode: {fit}. Choose from {list(FIT_MODES)}."}
+    if captions is not None:
+        caption_path = Path(captions)
+        if not caption_path.exists():
+            return {"error": f"Caption file not found: {captions}"}
+        if caption_path.suffix.lower() not in (".srt", ".ass", ".vtt"):
+            return {"error": f"Unsupported caption format: {caption_path.suffix}. Use .srt, .ass, or .vtt."}
 
     # G4 ratio policy: the crop/pad is applied exactly once, here in assembly.
     ratio_filters: list[str] = []
@@ -234,7 +261,9 @@ async def stitch_videos(
         grade_filter = COLOR_GRADES.get(color_grade, "")
         ratio_filter = ratio_filters[0] if ratio_filters else ""
         vf_parts = [f for f in (ratio_filter, grade_filter) if f]
-        # ratio filter first, then grade (the grade sees the final frame)
+        if captions:
+            vf_parts.append(f"subtitles={captions}")
+        # ratio filter first, then grade, then captions (captions on top)
         cmd = [
             "ffmpeg", "-y", "-i", str(clips[0]),
             "-vf", ",".join(vf_parts) if vf_parts else "null",
@@ -310,6 +339,8 @@ async def stitch_videos(
 
     if grade_filter:
         vf_chain += f";[vout]{grade_filter}[final_v]"
+    if captions:
+        vf_chain += f";[vout]subtitles={captions}[final_v]"
 
     # Detect whether ALL clips have audio. If any are audio-less, drop the
     # acrossfade chain and output video-only (no silent-audio injection needed).

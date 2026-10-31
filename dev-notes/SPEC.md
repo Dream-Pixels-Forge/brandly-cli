@@ -240,6 +240,19 @@ All API clients implement:
 - **Graceful fallbacks** — clear error messages with actionable next steps
 - **Budget gates** — `CostTracker` prevents spending beyond project budget
 
+### 7.1 Web API error contract (timeline / clips / cast / docs routes)
+
+Web route handlers **must not** mask failures as HTTP 200 with an `error` body. Every route must return the proper HTTP status code:
+
+| Situation | Status | Mechanism |
+|-----------|--------|-----------|
+| Resource not found | 404 | `raise HTTPException(status_code=404, detail=...)` |
+| Invalid input / budget exceeded | 400 | `raise HTTPException(status_code=400, detail=...)` |
+| Server/provider failure | 500 | `raise HTTPException(status_code=500, detail=...)` or let the exception propagate |
+| Success | 200 | Return the response model directly |
+
+Routes must **not** catch `Exception` and return `{"error": ...}` with the default 200 status. The response model's `error` field is retained for backwards compatibility but must be paired with the correct status code when an error occurs.
+
 ---
 
 *Specification v0.2.0 — brandly-cli is aligned with DPF standards.*

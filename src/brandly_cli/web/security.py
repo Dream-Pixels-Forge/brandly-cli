@@ -70,7 +70,15 @@ def _token_from_scope(scope: Scope, headers: dict[str, str]) -> str | None:
     query = parse_qs(scope.get("query_string", b"").decode())
     if "token" in query:
         return query["token"][0]
-    return headers.get(_TOKEN_HEADER.decode())
+    header_token = headers.get(_TOKEN_HEADER.decode())
+    if header_token:
+        return header_token
+    cookie = headers.get("cookie", "")
+    for part in cookie.split(";"):
+        part = part.strip()
+        if part.startswith("brandly_token="):
+            return part[len("brandly_token=") :]
+    return None
 
 
 class LocalGuardMiddleware:

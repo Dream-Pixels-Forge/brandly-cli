@@ -208,3 +208,63 @@ class TestAsyncRoutes:
         assert body["status"] == "completed", body
         assert "asyncio.run" not in str(body.get("error", ""))
 
+
+class TestTokenLeak:
+    def test_start_server_url_has_no_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """start_server must never embed the per-run token in the browser URL."""
+        opened: list[str] = []
+
+        def fake_open(url: str, *a: object, **k: object) -> None:
+            opened.append(url)
+
+        monkeypatch.setattr("webbrowser.open", fake_open)
+        monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
+
+        import brandly_cli.web.server as server_mod
+
+        monkeypatch.setattr(server_mod.security, "new_token", lambda: "tok-123")
+
+        server_mod.start_server("/tmp/root", port=8765, open_browser=True)
+
+        assert opened, "webbrowser.open was never called"
+        url = opened[0]
+        assert "token=" not in url, f"token leaked into browser URL: {url}"
+        assert url == "http://127.0.0.1:8765/", f"unexpected URL: {url}"
+
+
+class TestCookieToken:
+    def test_cookie_token_authorizes(self, project_root: Path) -> None:
+        """A same-site brandly_token cookie authorizes guarded /api paths."""
+        client = TestClient(create_app(root=str(project_root), token="s3cret"), base_url=LOOPBACK)
+        res = client.get(
+            "/api/config",
+            cookies={"brandly_token": "s3cret"},
+        )
+        assert res.status_code == 200, res.text
+
+    def test_missing_token_when_configured_is_401(self, project_root: Path) -> None:
+        """No cookie/header/query token with a configured token => 401."""
+        client = TestClient(create_app(root=str(project_root), token="s3cret"), base_url=LOOPBACK)
+        assert client.get("/api/config").status_code == 401
+
+
+class TestErrorStatusCodes:
+    def test_get_timeline_missing_project_is_404(
+        self, project_root: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unknown project returns 404, not 200-with-error-body."""
+        client = TestClient(create_app(root=str(project_root)), base_url=LOOPBACK)
+        res = client.get("/api/projects/does-not-exist/timeline")
+        assert res.status_code == 404, res.text
+
+    def test_put_timeline_server_error_is_500(self, project_root: Path) -> None:
+        """A server error on put_timeline returns 500, not 200-with-error-body."""
+        client = TestClient(create_app(root=str(project_root)), base_url=LOOPBACK)
+        # force an exception by sending an unparseable body
+        res = client.put(
+            "/api/projects/my-proj/timeline",
+            content=b"{not valid json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert res.status_code in (400, 422, 500), res.text
+

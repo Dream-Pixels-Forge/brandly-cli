@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, status
 
 from brandly_cli.web import deps
 from brandly_cli.web.models import (
@@ -23,7 +23,7 @@ async def get_timeline(project_id: str, request: Request) -> dict:
         timeline = TimelineState(project_id, root).load()
         return TimelineResponse(timeline=timeline).model_dump()
     except Exception as e:
-        return TimelineResponse(error=str(e)).model_dump()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
 
 
 @router.put("/timeline", response_model=dict)
@@ -39,4 +39,4 @@ async def put_timeline(project_id: str, patch: TimelinePatch, request: Request) 
             state.set_color_grade(patch.color_grade)
         return TimelineResponse(timeline=state.timeline).model_dump()
     except Exception as e:
-        return TimelineResponse(error=str(e)).model_dump()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e

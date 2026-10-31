@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, status
 
 from brandly_cli import layout
 from brandly_cli.constants import DEFAULT_AGNES_VIDEO_MODEL, VIDEO_MODEL_INFO
@@ -145,11 +145,10 @@ async def regenerate_clip(
         if not job_id:
             state.regenerate_clip_status(clip_id, "failed")
             _mark_plan_failed(root, project_id, plan, model, clip_id)
-            return ClipRegenerateResponse(
-                clip_id=clip_id,
-                status="failed",
-                error="No job ID returned from API",
-            ).model_dump()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="No job ID returned from API",
+            )
 
         # poll_video returns a remote `url`, never a local `video_path` — so
         # download the finished clip into the project's videos/scenes/ folder.
@@ -192,18 +191,16 @@ async def regenerate_clip(
         await _broadcast({"type": "generation_error", "error": result.get("error", "Generation failed")})
         state.regenerate_clip_status(clip_id, "failed")
         _mark_plan_failed(root, project_id, plan, model, clip_id)
-        return ClipRegenerateResponse(
-            clip_id=clip_id,
-            status="failed",
-            error=result.get("error", "Generation failed"),
-        ).model_dump()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result.get("error", "Generation failed"),
+        )
 
     except Exception as e:
         await _broadcast({"type": "generation_error", "error": f"{type(e).__name__}: {e}"})
         state.regenerate_clip_status(clip_id, "failed")
         _mark_plan_failed(root, project_id, plan, model, clip_id)
-        return ClipRegenerateResponse(
-            clip_id=clip_id,
-            status="failed",
-            error=f"{type(e).__name__}: {e}",
-        ).model_dump()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"{type(e).__name__}: {e}",
+        ) from e

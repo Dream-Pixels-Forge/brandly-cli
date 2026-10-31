@@ -209,7 +209,7 @@ class TestRegenerateGuardrails:
         monkeypatch.setattr(agnes, "poll_video", fake_poll)
 
         res = client.post("/api/projects/my-proj/clips/Scene-01-Shot-1-1/regenerate")
-        assert res.json()["status"] == "failed", res.text
+        assert res.status_code == 500, res.text
 
         from brandly_cli.planning import _read_production_plan_rows, production_plan_path
 

@@ -63,6 +63,7 @@ def create_app(root: str | Path | None = None, *, token: str | None = None) -> F
         lifespan=lifespan,
     )
     app.state.root = Path(root).resolve() if root else _discover_root()
+    app.state.brandly_token = token
     app.add_middleware(security.LocalGuardMiddleware, token=token)
 
     # Register routers
@@ -92,11 +93,23 @@ def create_app(root: str | Path | None = None, *, token: str | None = None) -> F
     # SPA fallback
     @app.get("/")
     @app.get("/index.html")
-    async def spa() -> HTMLResponse:
+    async def spa(request: Request) -> HTMLResponse:
         static_dir = Path(__file__).parent / "static"
         index = static_dir / "index.html"
         if index.exists():
-            return HTMLResponse(content=index.read_text(encoding="utf-8"))
+            response = HTMLResponse(content=index.read_text(encoding="utf-8"))
+            # Same-site per-run token cookie — read by LocalGuardMiddleware.
+            # Never embedded in the browser URL (see start_server).
+            token = getattr(request.app.state, "brandly_token", None)
+            if token:
+                response.set_cookie(
+                    "brandly_token",
+                    token,
+                    httponly=True,
+                    samesite="lax",
+                    path="/",
+                )
+            return response
         return HTMLResponse(content=_placeholder_html())
 
     # Clip preview + thumbnail — located via the timeline, never via a raw path
@@ -174,13 +187,18 @@ def _placeholder_html() -> str:
 # ---------------------------------------------------------------------------
 
 def start_server(root: str, port: int = 8765, open_browser: bool = True) -> None:
-    """Start the FastAPI server (blocking) with a fresh per-run token."""
+    """Start the FastAPI server (blocking) with a fresh per-run token.
+
+    The token is set as a same-site cookie on the SPA index page — it is
+    **never** embedded in the browser URL (which would leak it into browser
+    history, server access logs, and Referer headers).
+    """
     import uvicorn
 
     token = security.new_token()
     app = create_app(root=root, token=token)
 
     if open_browser:
-        webbrowser.open(f"http://127.0.0.1:{port}/?token={token}")
+        webbrowser.open(f"http://127.0.0.1:{port}/")
 
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")

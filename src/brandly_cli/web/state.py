@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from brandly_cli import layout
@@ -77,12 +79,11 @@ class TimelineState:
         if self._timeline is None:
             return
         path = self._timeline_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         data = self._timeline.model_dump()
         # Remove internal _start_time fields
         for clip in data.get("clips", []):
             clip.pop("_start_time", None)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        _write_atomic(path, json.dumps(data, indent=2))
         self._write_shots()
 
     def _write_shots(self) -> None:
@@ -101,9 +102,7 @@ class TimelineState:
             return
         proj_dir = layout.project_dir(self.root, self.project_id)
         proj_dir.mkdir(parents=True, exist_ok=True)
-        (proj_dir / SHOTS_FILENAME).write_text(
-            json.dumps(shots, indent=2), encoding="utf-8"
-        )
+        _write_atomic(proj_dir / SHOTS_FILENAME, json.dumps(shots, indent=2))
 
     def reload(self) -> ProjectTimeline:
         """Discard in-memory state and reload from disk."""
@@ -324,6 +323,27 @@ class TimelineState:
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
+
+def _write_atomic(path: Path, data: str) -> None:
+    """Write ``data`` to ``path`` atomically.
+
+    Writes to a temp file in the same directory, then ``os.replace()`` into
+    place. On POSIX this is atomic: a crash mid-write never leaves a truncated
+    or half-written file at ``path``. No temp files are left behind on success.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(data)
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
 
 def _now_iso() -> str:
     from datetime import datetime, timezone

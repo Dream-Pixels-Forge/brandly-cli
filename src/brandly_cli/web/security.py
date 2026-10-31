@@ -32,6 +32,21 @@ _GUARDED_PREFIXES = ("/api", "/ws")
 
 _TOKEN_HEADER = b"x-brandly-token"
 
+#: Content-Security-Policy: same-origin only, no inline scripts/eval, no
+#: plugins, block mixed content. The SPA talks only to its own loopback API.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self'; "
+    "img-src 'self' data:; "
+    "connect-src 'self' ws: wss:; "
+    "font-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self';"
+)
+
 
 def new_token() -> str:
     """Return a fresh per-run token for the local server."""
@@ -119,3 +134,39 @@ class LocalGuardMiddleware:
             await send({"type": "websocket.close", "code": 1008})
             return
         await JSONResponse({"detail": detail}, status_code=status)(scope, receive, send)
+
+
+class SecurityHeadersMiddleware:
+    """Defense-in-depth response headers for the local server.
+
+    Applied to every response so even error bodies carry the protective
+    headers. Order in the middleware stack matters: this runs *after*
+    ``LocalGuardMiddleware`` (closer to the app) so it can decorate every
+    response that actually gets produced.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: dict) -> None:
+            if message.get("type") == "http.response.start":
+                headers = dict(message.get("headers", []))
+                headers[b"content-security-policy"] = _CSP.encode()
+                headers[b"x-frame-options"] = b"DENY"
+                headers[b"x-content-type-options"] = b"nosniff"
+                headers[b"referrer-policy"] = b"no-referrer"
+                headers[b"permissions-policy"] = (
+                    b"camera=(), microphone=(), geolocation=(), "
+                    b"payment=(), usb=(), bluetooth=()"
+                )
+                message["headers"] = [
+                    (k.lower(), v) for k, v in headers.items()
+                ]
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)

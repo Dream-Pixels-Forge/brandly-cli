@@ -209,6 +209,44 @@ class TestAsyncRoutes:
         assert "asyncio.run" not in str(body.get("error", ""))
 
 
+class TestSecurityHeaders:
+    def test_csp_header_present(self, project_root: Path) -> None:
+        """A Content-Security-Policy header defends against XSS/data exfiltration."""
+        client = TestClient(create_app(root=str(project_root)), base_url=LOOPBACK)
+        res = client.get("/health")
+        csp = res.headers.get("content-security-policy", "")
+        assert csp, "Content-Security-Policy header is missing"
+        assert "default-src 'self'" in csp
+
+    def test_x_frame_options_deny(self, project_root: Path) -> None:
+        """X-Frame-Options DENY blocks clickjacking via embedding."""
+        client = TestClient(create_app(root=str(project_root)), base_url=LOOPBACK)
+        res = client.get("/health")
+        assert res.headers.get("x-frame-options") == "DENY"
+
+    def test_x_content_type_options_nosniff(self, project_root: Path) -> None:
+        """X-Content-Type-Options nosniff blocks MIME sniffing."""
+        client = TestClient(create_app(root=str(project_root)), base_url=LOOPBACK)
+        res = client.get("/health")
+        assert res.headers.get("x-content-type-options") == "nosniff"
+
+    def test_referrer_policy_no_referrer(self, project_root: Path) -> None:
+        """Referrer-Policy no-referrer prevents token leakage via Referer header."""
+        client = TestClient(create_app(root=str(project_root)), base_url=LOOPBACK)
+        res = client.get("/health")
+        assert res.headers.get("referrer-policy") == "no-referrer"
+
+    def test_permissions_policy_restrictive(self, project_root: Path) -> None:
+        """Permissions-Policy disables powerful features the SPA doesn't use."""
+        client = TestClient(create_app(root=str(project_root)), base_url=LOOPBACK)
+        res = client.get("/health")
+        pp = res.headers.get("permissions-policy", "")
+        assert pp, "Permissions-Policy header is missing"
+        assert "camera=()" in pp
+        assert "microphone=()" in pp
+        assert "geolocation=()" in pp
+
+
 class TestTokenLeak:
     def test_start_server_url_has_no_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """start_server must never embed the per-run token in the browser URL."""

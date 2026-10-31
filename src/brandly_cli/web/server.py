@@ -65,6 +65,7 @@ def create_app(root: str | Path | None = None, *, token: str | None = None) -> F
     app.state.root = Path(root).resolve() if root else _discover_root()
     app.state.brandly_token = token
     app.add_middleware(security.LocalGuardMiddleware, token=token)
+    app.add_middleware(security.SecurityHeadersMiddleware)
 
     # Register routers
     from brandly_cli.web.routes import config as config_route

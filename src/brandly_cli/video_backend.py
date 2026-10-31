@@ -9,6 +9,7 @@ without changing the shot_runner or other pipeline code.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -31,13 +32,26 @@ class VideoBackendCapabilities:
 
 @dataclass(frozen=True)
 class VideoTaskResult:
-    """Result of a video generation task."""
+    """Result of a video generation task.
+
+    ``downloaded``/``local_path``/``checksum``/``requested_s``/``measured_s``/
+    ``delta_s``/``duration_status`` are the G7 duration-truth fields and are
+    populated by ``poll()`` when a project root is supplied so the completed
+    clip is downloaded and measured against the requested duration.
+    """
     video_id: str
     status: str
     url: str | None = None
     progress: int = 0
     error: str | None = None
     metadata: dict[str, Any] | None = None
+    downloaded: bool = False
+    local_path: str = ""
+    checksum: str = ""
+    requested_s: int | None = None
+    measured_s: float | None = None
+    delta_s: float | None = None
+    duration_status: str | None = None
 
 
 @runtime_checkable
@@ -78,8 +92,16 @@ class VideoBackend(Protocol):
         max_wait_seconds: int = 300,
         interval_seconds: int = 5,
         model_name: str | None = None,
+        project_id: str | None = None,
+        requested_duration: int | None = None,
+        root: str | Path | None = None,
     ) -> VideoTaskResult:
-        """Poll until video generation completes or times out."""
+        """Poll until video generation completes or times out.
+
+        When ``project_id`` (and ``root``) are supplied, a completed clip is
+        downloaded and measured against ``requested_duration`` (G7 duration
+        truth); the results surface on the returned ``VideoTaskResult``.
+        """
         ...
 
     async def fetch(self, video_id: str) -> bytes:
@@ -155,6 +177,9 @@ class AgnesVideoBackend:
         max_wait_seconds: int = 300,
         interval_seconds: int = 5,
         model_name: str | None = None,
+        project_id: str | None = None,
+        requested_duration: int | None = None,
+        root: str | Path | None = None,
     ) -> VideoTaskResult:
         from brandly_cli.agnes_client import poll_video
 
@@ -163,6 +188,9 @@ class AgnesVideoBackend:
             max_wait_seconds=max_wait_seconds,
             interval_seconds=interval_seconds,
             model_name=model_name,
+            project_id=project_id,
+            requested_duration=requested_duration,
+            root=root,
         )
 
         return VideoTaskResult(
@@ -171,6 +199,13 @@ class AgnesVideoBackend:
             url=result.get("url"),
             progress=result.get("progress", 0),
             error=result.get("error"),
+            downloaded=bool(result.get("downloaded", False)),
+            local_path=result.get("local_path", "") or "",
+            checksum=result.get("checksum", "") or "",
+            requested_s=result.get("requested_s"),
+            measured_s=result.get("measured_s"),
+            delta_s=result.get("delta_s"),
+            duration_status=result.get("duration_status"),
             metadata=result,
         )
 
@@ -265,12 +300,14 @@ class ProviderRouter:
         reference_images: list[str] | None = None,
         reference_audios: list[str] | None = None,
         reference_roles: list[str] | None = None,
+        **kwargs: Any,
     ) -> VideoTaskResult:
         """Submit a video generation task, trying backends in priority order.
 
         On failure (transient error, rate limit, or provider outage),
         automatically falls back to the next backend. The first successful
-        submission wins.
+        submission wins. Unknown ``kwargs`` are forwarded to every backend
+        (backends that don't accept them will simply raise during failover).
         """
         last_error: Exception | None = None
         for backend, _priority in self._backends:
@@ -289,6 +326,7 @@ class ProviderRouter:
                     reference_images=reference_images,
                     reference_audios=reference_audios,
                     reference_roles=reference_roles,
+                    **kwargs,
                 )
                 return result
             except Exception as e:
@@ -306,11 +344,16 @@ class ProviderRouter:
         max_wait_seconds: int = 300,
         interval_seconds: int = 5,
         model_name: str | None = None,
+        project_id: str | None = None,
+        requested_duration: int | None = None,
+        root: str | Path | None = None,
+        **kwargs: Any,
     ) -> VideoTaskResult:
         """Poll a video generation task.
 
         The backend to poll is determined by the video_id prefix (the first
-        segment before the first hyphen encodes the backend name).
+        segment before the first hyphen encodes the backend name). Extra
+        kwargs are forwarded to the backend's poll.
         """
         # Extract backend name from video_id prefix
         backend_name = video_id.split("-")[0]
@@ -325,12 +368,17 @@ class ProviderRouter:
             max_wait_seconds=max_wait_seconds,
             interval_seconds=interval_seconds,
             model_name=model_name,
+            project_id=project_id,
+            requested_duration=requested_duration,
+            root=root,
+            **kwargs,
         )
 
-    async def fetch(self, video_id: str) -> bytes:
+    async def fetch(self, video_id: str, **kwargs: Any) -> bytes:
         """Fetch a video's raw bytes.
 
         The backend to fetch from is determined by the video_id prefix.
+        Extra kwargs are forwarded to the backend's fetch.
         """
         backend_name = video_id.split("-")[0]
         backend = self._find_backend_by_name(backend_name)
@@ -339,7 +387,7 @@ class ProviderRouter:
                 f"No backend found for video_id {video_id!r} "
                 f"(expected prefix matching a backend name)"
             )
-        return await backend.fetch(video_id=video_id)
+        return await backend.fetch(video_id=video_id, **kwargs)
 
     def _find_backend_by_name(self, name: str) -> VideoBackend | None:
         """Find a backend by its class name."""

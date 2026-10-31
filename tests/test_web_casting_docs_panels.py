@@ -18,6 +18,8 @@ from fastapi.testclient import TestClient
 
 from brandly_cli.web.server import create_app
 
+LOOPBACK = "http://127.0.0.1:8765"
+
 WEB_SRC = Path(__file__).resolve().parent.parent / "web" / "src"
 PANELS_DIR = WEB_SRC / "components" / "panels"
 
@@ -136,7 +138,7 @@ def client(tmp_path: Path):
     _make_project(tmp_path)
     _write_cast_images(tmp_path)
     _write_docs(tmp_path)
-    with TestClient(create_app(root=str(tmp_path))) as c:
+    with TestClient(create_app(root=str(tmp_path)), base_url=LOOPBACK) as c:
         yield c, tmp_path
 
 
@@ -190,7 +192,7 @@ class TestCastRoutes:
 
     def test_cast_empty_project_returns_no_items(self, tmp_path: Path) -> None:
         _make_project(tmp_path, "empty-proj")
-        with TestClient(create_app(root=str(tmp_path))) as c:
+        with TestClient(create_app(root=str(tmp_path)), base_url=LOOPBACK) as c:
             res = c.get("/api/projects/empty-proj/cast")
             assert res.status_code == 200
             assert res.json()["items"] == []
@@ -200,7 +202,7 @@ class TestCastRoutes:
         legacy = tmp_path / ".brandly" / "legacy-proj" / "images" / "character"
         legacy.mkdir(parents=True)
         (legacy / "char_old_001.png").write_bytes(b"legacy-bytes")
-        with TestClient(create_app(root=str(tmp_path))) as c:
+        with TestClient(create_app(root=str(tmp_path)), base_url=LOOPBACK) as c:
             items = c.get("/api/projects/legacy-proj/cast").json()["items"]
             assert [i["filename"] for i in items] == ["char_old_001.png"]
 
@@ -269,7 +271,7 @@ class TestDocsRoutes:
 
     def test_docs_empty_project_returns_no_items(self, tmp_path: Path) -> None:
         _make_project(tmp_path, "empty-docs")
-        with TestClient(create_app(root=str(tmp_path))) as c:
+        with TestClient(create_app(root=str(tmp_path)), base_url=LOOPBACK) as c:
             res = c.get("/api/projects/empty-docs/docs")
             assert res.status_code == 200
             assert res.json()["items"] == []

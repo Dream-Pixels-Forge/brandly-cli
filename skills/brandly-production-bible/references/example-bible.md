@@ -68,12 +68,22 @@ warm, intimate, aspirational, dreamy, luxurious
 
 ### Character 1: Maya
 - Sheet file: assets/characters/maya.png
+- Actor: Sofia Boutella (reference)
 - Physic: 50kg weight, 156cm heigh and slinder
 - Key anchor traits: Olive skin (warm undertone), emerald green almond eyes,
   long dark brown hair in loose braids, subtle freckles across nose
 - Must never change: Eye color, skin tone, hair color, braid style in this campaign
 - Can vary: Expression, outfit (all outfits must be neutral/cream tones)
 - Wardrobe variants: Cream silk slip dress (primary), white linen (optional B-roll)
+
+### Character 2: Lina
+- Sheet file: assets/characters/lina.png
+- Actor: Jenna Ortega (reference)
+- Physic: 50kg weight, 151cm height and petite
+- Key anchor traits: Porcelain skin, hazel eyes, dark wavy bob, delicate frame
+- Must never change: Eye color, hair color, height, build
+- Can vary: Expression, outfit (earth tones only)
+- Wardrobe variants: Olive knit sweater (primary), rust corduroy jacket (optional)
 
 ───────────────────────────────────────
 

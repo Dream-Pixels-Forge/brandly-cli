@@ -14,7 +14,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from brandly_cli.agnes_client import create_video_task
 from brandly_cli.async_compat import run_async
 from brandly_cli.io import now_iso, write_json
 from brandly_cli.layout import project_dir
@@ -28,6 +27,7 @@ from brandly_cli.types import (
     Fighter,
     ShotDirection,
 )
+from brandly_cli.video_backend import AgnesVideoBackend
 
 # ---------------------------------------------------------------------------
 # Film-action fight choreography — beat patterns for AI video.
@@ -236,6 +236,7 @@ def _director(
     lighting_notes: str = "",
     sound_notes: str = "",
     root: str | None = None,
+    backend=None,
 ) -> dict[str, Any]:
     """Director's shot-by-shot direction — creates a video task with full
     directorial control (camera, lighting, sound, references, style).
@@ -245,6 +246,9 @@ def _director(
     # Cinematic-category styles enforce 21:9 by default.
     if style in ("cinematic", "short-film") and aspect_ratio == "16:9":
         aspect_ratio = "21:9"
+
+    if backend is None:
+        backend = AgnesVideoBackend()
 
     try:
         direction = ShotDirection(
@@ -264,9 +268,9 @@ def _director(
             sound_notes=sound_notes,
             created_at=now_iso(),
         )
-        result = run_async(
-            create_video_task(
-                prompt,
+        task_result = run_async(
+            backend.submit(
+                prompt=prompt,
                 model=model,
                 mode="reference" if reference_images else "text",
                 duration=duration,
@@ -281,9 +285,9 @@ def _director(
             "project_id": project_id,
             "shot_id": shot_id,
             "scene_id": scene_id,
-            "video_id": result.get("video_id"),
-            "status": result.get("status"),
-            "mode": result.get("mode"),
+            "video_id": task_result.video_id,
+            "status": task_result.status,
+            "mode": "reference" if reference_images else "text",
             "aspect_ratio": aspect_ratio,
             "direction": direction.model_dump(),
         }

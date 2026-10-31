@@ -101,7 +101,7 @@ export interface ReviewItem {
   modified: string;
 }
 
-export type PanelKind = 'preview' | 'timeline' | 'asset_manifest' | 'props' | 'color' | 'audio' | 'render' | 'monitor' | 'review' | 'agnes_ai';
+export type PanelKind = 'preview' | 'timeline' | 'asset_manifest' | 'props' | 'color' | 'audio' | 'render' | 'monitor' | 'review' | 'agnes_ai' | 'casting' | 'docs';
 
 export type TransitionType = 'fade' | 'dissolve' | 'wipe' | 'slide';
 

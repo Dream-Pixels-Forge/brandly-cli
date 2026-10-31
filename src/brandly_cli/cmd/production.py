@@ -1981,6 +1981,9 @@ def batch(
         if reference_images:
             imgs = [u.strip() for u in reference_images.split(",") if u.strip()]
 
+        # G14: Create the video backend for batch
+        backend: VideoBackend = AgnesVideoBackend()
+
         console.print(f"[bold]Batch generating {count} variant{'s' if count > 1 else ''}[/bold]")
         console.print(f"  Project: {project_id}")
         console.print(f"  Style: {style} | Model: {model}")

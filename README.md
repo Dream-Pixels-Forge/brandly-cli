@@ -450,3 +450,31 @@ If Brandly helps you create better product videos, please consider starring the 
 ## License
 
 MIT — Dream Pixels Forge
+
+---
+
+## EGM Contract
+
+### System Overview
+AI product video orchestrator — plan, generate, and publish professional product videos with CLI and agent tools.
+
+### Subdirectories & System Boundaries
+- src/brandly_cli: Core Python CLI, agent surface, MCP server, web server
+- web/: React 19 + TypeScript + Vite SPA
+- tests/: pytest source-contract tests
+- dev-notes/: Pipeline governance
+- skills/: Bundled Agent Skills
+
+### Global Invariants
+- State lives on disk in `.brandly/<project>/` for resumability
+- Phases are fail-closed; approval gates are human
+- Verification command: `python -m pytest tests/ -q`
+
+### Global Side Effects
+- Writes project artifacts to disk, generates video/audio/media via external providers
+- Modifies local config and credentials
+
+### System Verification
+- Run: `python -m pytest tests/ -q`
+- Run: `npm --prefix web run lint`
+- Run: `npm --prefix web run build`

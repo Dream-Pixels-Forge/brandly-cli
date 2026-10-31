@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -421,7 +422,7 @@ class TestDownloadAndVerifyVideo:
         )
 
         assert result["downloaded"] is False
-        assert result["output_path"] == ""
+        assert result["local_path"] == ""
         assert result["duration_status"] == "download_failed"
         assert "network down" in result["download_error"]
 

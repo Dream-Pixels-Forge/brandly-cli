@@ -71,6 +71,7 @@ Copy this template and fill in each section as you build your campaign.
 
 ### Character 1: [Name]
 - Sheet file: assets/characters/[name].png
+- Actor: [actor name or reference]
 - Physic: [weight in (kg)], [height in (cm)]
 - Key anchor traits: [trait 1], [trait 2], [trait 2]
 - Must never change: 

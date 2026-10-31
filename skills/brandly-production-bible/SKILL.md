@@ -114,6 +114,7 @@ The production bible is the **single source of truth** for a campaign. It lives 
 ### Character 1: [Name]
 - Sheet file: `assets/character-sheets/[name].png`
 - Key anchor traits: [3–5 features that never change]
+- Actor: [actor name or reference]
 - Weight:[weight of the character]
 - Height:[Height of the character]
 - Wardrobe variants: [list if multiple outfits]
@@ -264,6 +265,7 @@ brandly video <project_id> --prompt "SHOT 1..." --wait
 3. **One source of truth** — the bible overrides any ad-hoc notes or conversations
 4. **Version tag** — add a version number at the top, increment on changes
 5. **Share with team** — this document travels with the project at every handoff
+6. **Character physique propagates verbatim** — the actor/physique fields declared in Section 4 flow through the director into downstream sheet/video prompts without alteration; every generated asset (character sheet, wardrobe try-on, casting call) must reflect the bible's values exactly
 
 ---
 

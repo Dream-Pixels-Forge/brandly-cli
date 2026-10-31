@@ -30,3 +30,30 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+---
+
+## EGM Contract
+
+### Overview
+React 19 + TypeScript + Vite SPA built into `src/brandly_cli/web/static`.
+
+### Interface
+- Public entry: `index.html`, `src/main.tsx`
+- Routes generated via file-based routing
+- Subdirectories:
+  - ./src/README.md
+  - ./public/README.md
+
+### Invariants
+- Build output must land in `src/brandly_cli/web/static`
+- TypeScript strict mode enabled
+- ESLint zero warnings
+
+### Side Effects
+- Writes build artifacts to `dist`
+- Serves dev server on port 5173
+
+### Verification
+- Run: `npm run lint`
+- Run: `npm run build`

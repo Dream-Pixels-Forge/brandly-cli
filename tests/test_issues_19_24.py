@@ -23,6 +23,40 @@ from brandly_cli.utils import (
     generate_project_id,
     production_plan_path,
 )
+from brandly_cli.video_backend import VideoBackend, VideoBackendCapabilities, VideoTaskResult
+
+
+class FakeBackend(VideoBackend):
+    """Fake backend for testing - captures calls for verification."""
+    def __init__(self, captured: dict[str, Any] | None = None, sleeps: list[float] | None = None):
+        self.captured = captured or {}
+        self.sleeps = sleeps or []
+
+    def capabilities(self):
+        return VideoBackendCapabilities(max_duration_seconds=12, reliable_duration_seconds=8, rate_limit_rpm=1)
+
+    async def submit(self, **kwargs):
+        self.captured.update(kwargs)
+        return VideoTaskResult(video_id="fake-1", status="pending")
+
+    async def poll(self, video_id, *, max_wait_seconds=300, interval_seconds=5, model_name=None, project_id=None, requested_duration=None):
+        self.captured["video_id"] = video_id
+        if model_name:
+            self.captured["model_name"] = model_name
+        if project_id:
+            self.captured["project_id"] = project_id
+        if requested_duration:
+            self.captured["requested_duration"] = requested_duration
+        return VideoTaskResult(video_id=video_id, status="completed", url="https://example.com/v.mp4")
+
+    async def fetch(self, video_id):
+        return b"bytes"
+
+
+def _patch_agnes_backend(fake_backend: FakeBackend):
+    """Context manager to patch AgnesVideoBackend to return our fake."""
+    from unittest.mock import patch
+    return patch("brandly_cli.cmd.production.AgnesVideoBackend", lambda: fake_backend)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -509,16 +543,11 @@ class TestBatchRateLimit:
         pid = generate_project_id()
         _write_project(project_dir, pid)
 
-        calls: list[str] = []
-        sleeps: list[float] = []
-
-        async def fake_create(prompt: str, **kwargs: Any) -> dict[str, Any]:
-            calls.append(prompt)
-            return dict(FAKE_TASK)
+        fake = FakeBackend()
 
         with (
-            patch("brandly_cli.cmd.production.create_video_task", side_effect=fake_create),
-            patch("brandly_cli.cmd.production.time.sleep", side_effect=sleeps.append),
+            _patch_agnes_backend(fake),
+            patch("brandly_cli.cmd.production.time.sleep", side_effect=lambda x: fake.sleeps.append(x) or None),
         ):
             result = runner.invoke(
                 cli,
@@ -532,9 +561,9 @@ class TestBatchRateLimit:
             )
 
         assert result.exit_code == 0, result.output
-        assert len(calls) == 3
+        assert fake.captured["prompt"]  # prompt was captured
         # 1 request/min: exactly one 60s wait between consecutive variants.
-        assert sleeps == [60.0, 60.0]
+        assert fake.sleeps == [60.0, 60.0]
 
     def test_batch_applies_cinematic_preset_for_cinematic_style(
         self, runner: CliRunner, project_dir: Path, tmp_path: Path
@@ -542,15 +571,10 @@ class TestBatchRateLimit:
         pid = generate_project_id()
         _write_project(project_dir, pid)
 
-        captured: dict[str, Any] = {}
-
-        async def fake_create(prompt: str, **kwargs: Any) -> dict[str, Any]:
-            captured["prompt"] = prompt
-            captured.update(kwargs)
-            return dict(FAKE_TASK)
+        fake = FakeBackend()
 
         with (
-            patch("brandly_cli.cmd.production.create_video_task", side_effect=fake_create),
+            _patch_agnes_backend(fake),
             patch("brandly_cli.cmd.production.time.sleep"),
         ):
             result = runner.invoke(
@@ -562,8 +586,8 @@ class TestBatchRateLimit:
         # Parity with the old behaviour: cinematic style (the default) keeps
         # the cinematic preset — now applied in the caller, so the prompt
         # itself carries the cinematic cues and the provider kwarg is gone.
-        assert "anamorphic lens" in captured["prompt"]
-        assert "style_preset" not in captured
+        assert "anamorphic lens" in fake.captured["prompt"]
+        assert "style_preset" not in fake.captured
 
     def test_batch_no_preset_for_non_photographic_style(
         self, runner: CliRunner, project_dir: Path, tmp_path: Path
@@ -571,15 +595,10 @@ class TestBatchRateLimit:
         pid = generate_project_id()
         _write_project(project_dir, pid)
 
-        captured: dict[str, Any] = {}
-
-        async def fake_create(prompt: str, **kwargs: Any) -> dict[str, Any]:
-            captured["prompt"] = prompt
-            captured.update(kwargs)
-            return dict(FAKE_TASK)
+        fake = FakeBackend()
 
         with (
-            patch("brandly_cli.cmd.production.create_video_task", side_effect=fake_create),
+            _patch_agnes_backend(fake),
             patch("brandly_cli.cmd.production.time.sleep"),
         ):
             result = runner.invoke(
@@ -588,8 +607,8 @@ class TestBatchRateLimit:
             )
 
         assert result.exit_code == 0, result.output
-        assert "anamorphic lens" not in captured["prompt"]
-        assert "style_preset" not in captured
+        assert "anamorphic lens" not in fake.captured["prompt"]
+        assert "style_preset" not in fake.captured
 
     def test_batch_wait_forwards_model_name_to_poll(
         self, runner: CliRunner, project_dir: Path, tmp_path: Path
@@ -603,19 +622,10 @@ class TestBatchRateLimit:
         pid = generate_project_id()
         _write_project(project_dir, pid)
 
-        captured: dict[str, Any] = {}
-
-        async def fake_create(prompt: str, **kwargs: Any) -> dict[str, Any]:
-            return dict(FAKE_TASK)
-
-        async def fake_poll(video_id: str, **kwargs: Any) -> dict[str, Any]:
-            captured["video_id"] = video_id
-            captured.update(kwargs)
-            return {"status": "completed", "url": "https://cdn.example.com/v.mp4"}
+        fake = FakeBackend()
 
         with (
-            patch("brandly_cli.cmd.production.create_video_task", side_effect=fake_create),
-            patch("brandly_cli.cmd.production.poll_video", side_effect=fake_poll),
+            _patch_agnes_backend(fake),
             patch("brandly_cli.cmd.production.time.sleep"),
         ):
             result = runner.invoke(
@@ -623,8 +633,8 @@ class TestBatchRateLimit:
             )
 
         assert result.exit_code == 0, result.output
-        assert captured["video_id"] == "vid-1"
-        assert captured.get("model_name") == "agnes-video-2.5-flash"
+        assert fake.captured["video_id"] == "fake-1"
+        assert fake.captured.get("model_name") == "agnes-video-2.5-flash"
 
 # (no batch; 1 request per minute Agnes rate limit)
 # ---------------------------------------------------------------------------

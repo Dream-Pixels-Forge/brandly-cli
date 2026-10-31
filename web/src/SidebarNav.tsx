@@ -12,6 +12,8 @@ const PANELS: { kind: PanelKind; label: string; icon: string; badge?: string; ke
   { kind: 'monitor', label: PANEL_LABELS.monitor, icon: 'monitor_heart', key: PANEL_SHORTCUTS.monitor },
   { kind: 'review', label: PANEL_LABELS.review, icon: 'fact_check', key: PANEL_SHORTCUTS.review },
   { kind: 'agnes_ai', label: PANEL_LABELS.agnes_ai, icon: 'auto_awesome', key: PANEL_SHORTCUTS.agnes_ai },
+  { kind: 'casting', label: PANEL_LABELS.casting, icon: 'person', key: PANEL_SHORTCUTS.casting },
+  { kind: 'docs', label: PANEL_LABELS.docs, icon: 'article', key: PANEL_SHORTCUTS.docs },
 ];
 
 export default function SidebarNav() {

@@ -18,6 +18,8 @@ export const PANEL_LABELS: Record<PanelKind, string> = {
   monitor: 'Production Monitor',
   review: 'Review Queue',
   agnes_ai: 'Agnes AI Synthesizer',
+  casting: 'Casting',
+  docs: 'Project Docs',
 };
 
 /** Keyboard-shortcut hints shown on each sidebar nav row (design §6). */
@@ -32,4 +34,6 @@ export const PANEL_SHORTCUTS: Record<PanelKind, string> = {
   monitor: 'M',
   review: 'Q',
   agnes_ai: 'G',
+  casting: 'B',
+  docs: 'D',
 };

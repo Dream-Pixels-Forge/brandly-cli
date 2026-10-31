@@ -1411,7 +1411,7 @@ def _measure_and_maybe_continue(
     shot.duration_status = duration_status(requested, measured)
 
 
-def run_shots(config: RunnerConfig) -> int:
+def run_shots(config: RunnerConfig, backend=None) -> int:
     """Run every pending shot; stop on first unrecovered failure by default.
 
     Returns 0 when all pending shots finished. Returns 1 when a shot failed:
@@ -1420,6 +1420,8 @@ def run_shots(config: RunnerConfig) -> int:
     at the first failure. Completed shots are always recorded in the
     progress file either way.
     """
+    if backend is None:
+        backend = AgnesVideoBackend()
     shots = config.shots
     if config.gate_ai not in ("off", "scene-first", "all"):
         raise ValueError(

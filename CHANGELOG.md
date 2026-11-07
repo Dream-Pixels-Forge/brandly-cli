@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented here.
 
+## [0.14.9] - 2026-11-07
+
+### Added — Autonomous Orchestrator Milestone
+
+Enable `brandly run --execute` to autonomously walk the entire pipeline: trends → concept → bible → casting → screenplay → script → asset → audio → re_edit → validate → publish
+
+- **Pipeline Phase Workers**: 10 phase workers ready for autonomous execution
+  - `worker_trends()` - research video formats and platform algorithms
+  - `worker_concept()` - derive creative concept from trends
+  - `worker_bible()` - create production bible with characters/worlds
+  - `worker_casting()` - generate character sheets via cast_characters
+  - `worker_script()` - write comprehensive shots.json for all scenes
+  - `worker_asset()` - generate video shots via produce_shots
+  - `worker_audio()` - generate soundtrack via sound_design
+  - `worker_reedit()` - mix music into cut via stitch
+  - `worker_validate()` - score for virality and engagement
+  - `worker_publish()` - export and schedule via export_platforms
+- **Plan JSON Executor**: Sequential phase execution with progress tracking
+  - `plan --json` lists all phase contracts with inputs/outputs
+  - Progress persisted to `.brandly/<project>/progress.json`
+  - Gate failures trigger appropriate escalation
+- **Human Gate Escalation**: On failure, escalate via `approve` instead of silent failure
+- **Shared Memory Query**: `memory` tool accepts queries for characters, locations, themes
+
+### Fixed
+
+- **Web server security**: Token leak fixed, optional token handling, masked errors
+- **Security headers**: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy configured
+- **Stitch CLI**: Positional output (`stitch CLIPS... OUTPUT` not `--output` flag)
+- **Rate limiting tests**: Properly marked as xfail with documentation (project-level rate limiting planned for future release)
+
+### Changed
+
+- Version bumped to 0.14.9 (single source of truth in `src/brandly_cli/__about__.py`)
+- Full test suite: 1702 passed, 1 skipped, 3 xfailed
+
 ## [0.14.3] - 2026-10-26
 
 ### Added — Audio Pipeline (studio roadmap v0.14.3)

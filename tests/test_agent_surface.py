@@ -79,7 +79,8 @@ class TestBuildCommand:
         argv = agent_surface.build_command(
             "stitch", {"clips": ["a.mp4", "b.mp4"], "output": "final.mp4"}
         )
-        assert argv[3:] == ["stitch", "a.mp4", "b.mp4", "--output", "final.mp4"]
+        # Output is positional, not --output flag (CLI: stitch CLIPS... OUTPUT)
+        assert argv[3:] == ["stitch", "a.mp4", "b.mp4", "final.mp4"]
 
     def test_job_poll_always_asks_for_machine_output(self) -> None:
         argv = agent_surface.build_command("job_poll", {"job_id": "job-1"})

@@ -306,3 +306,97 @@ class TestErrorStatusCodes:
         )
         assert res.status_code in (400, 422, 500), res.text
 
+
+class TestRateLimiting:
+    def test_regenerate_rate_limit_allows_burst(self, project_root: Path) -> None:
+        """10 regenerate requests per 60s window are allowed."""
+        import brandly_cli.agnes_client as agnes
+
+        call_count: list[int] = []
+
+        async def fake_create(prompt, **kwargs):
+            call_count.append(1)
+            return {"video_id": "vid-1"}
+
+        async def fake_poll(video_id, **kwargs):
+            return {"status": "completed", "url": "http://example.com/v.mp4"}
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(agnes, "create_video_task", fake_create)
+        monkeypatch.setattr(agnes, "poll_video", fake_poll)
+        from brandly_cli.web.routes import clips as clips_route
+
+        async def fake_download(url, dest):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"fake")
+        monkeypatch.setattr(clips_route, "download_file", fake_download)
+
+        client = TestClient(create_app(root=str(project_root)), base_url=LOOPBACK)
+        allowed = 0
+        for _ in range(10):
+            res = client.post(
+                "/api/projects/my-proj/clips/Scene-01-Shot-1-1/regenerate"
+            )
+            if res.status_code == 200:
+                allowed += 1
+        monkeypatch.undo()
+        assert allowed == 10, f"expected 10 allowed, got {allowed}"
+
+    def test_regenerate_rate_limit_blocks_11th(self, project_root: Path) -> None:
+        """The 11th regenerate request within 60s returns 429 + Retry-After."""
+        import brandly_cli.agnes_client as agnes
+
+        async def fake_create(prompt, **kwargs):
+            return {"video_id": "vid-1"}
+
+        async def fake_poll(video_id, **kwargs):
+            return {"status": "completed", "url": "http://example.com/v.mp4"}
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(agnes, "create_video_task", fake_create)
+        monkeypatch.setattr(agnes, "poll_video", fake_poll)
+        from brandly_cli.web.routes import clips as clips_route
+
+        async def fake_download(url, dest):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"fake")
+        monkeypatch.setattr(clips_route, "download_file", fake_download)
+
+        client = TestClient(create_app(root=str(project_root)), base_url=LOOPBACK)
+        for _ in range(10):
+            client.post("/api/projects/my-proj/clips/Scene-01-Shot-1-1/regenerate")
+        res = client.post("/api/projects/my-proj/clips/Scene-01-Shot-1-1/regenerate")
+        monkeypatch.undo()
+        assert res.status_code == 429, res.text
+        assert "retry-after" in {k.lower() for k in res.headers}, res.headers
+
+    def test_projects_have_independent_rate_limits(self, project_root: Path) -> None:
+        """Project A hitting its limit does not affect project B."""
+        import brandly_cli.agnes_client as agnes
+
+        async def fake_create(prompt, **kwargs):
+            return {"video_id": "vid-1"}
+
+        async def fake_poll(video_id, **kwargs):
+            return {"status": "completed", "url": "http://example.com/v.mp4"}
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(agnes, "create_video_task", fake_create)
+        monkeypatch.setattr(agnes, "poll_video", fake_poll)
+        from brandly_cli.web.routes import clips as clips_route
+
+        async def fake_download(url, dest):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"fake")
+        monkeypatch.setattr(clips_route, "download_file", fake_download)
+
+        client = TestClient(create_app(root=str(project_root)), base_url=LOOPBACK)
+        for _ in range(10):
+            client.post("/api/projects/my-proj/clips/Scene-01-Shot-1-1/regenerate")
+        # Project B is unaffected
+        res_b = client.post(
+            "/api/projects/other-proj/clips/Scene-01-Shot-1-1/regenerate"
+        )
+        monkeypatch.undo()
+        assert res_b.status_code == 200, res_b.text
+

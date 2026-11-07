@@ -134,10 +134,16 @@ def _build_plan(args: dict[str, Any]) -> list[str]:
 
 def _build_stitch(args: dict[str, Any]) -> list[str]:
     clips = [str(c) for c in _require(args, "clips")]
-    argv = ["stitch", *clips, "--output", str(_require(args, "output"))]
+    output = str(_require(args, "output"))
+    # CLI: stitch [CLIPS...] OUTPUT (output is positional, not --output option)
+    argv = ["stitch", *clips, output]
     argv += _opt(args, "transition", "--transition")
     argv += _opt(args, "transition_duration", "--transition-duration")
     argv += _opt(args, "color_grade", "--color-grade")
+    # Pass through ratio and fit options if provided
+    argv += _opt(args, "ratio", "--ratio")
+    argv += _flag(args, "force", "--force")
+    argv += _opt(args, "captions", "--captions")
     return argv
 
 

@@ -20,6 +20,7 @@ from brandly_cli.cmd import (
     production,
     providers,
     publish,
+    takes,
     team,
     tools,
 )
@@ -38,6 +39,7 @@ def register(cli: click.Group) -> None:
         publish,
         brand,
         metrics,
+        takes,
         team,
         plugin,
     ):

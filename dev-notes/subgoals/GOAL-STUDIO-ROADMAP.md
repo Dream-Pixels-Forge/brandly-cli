@@ -265,6 +265,30 @@ Ship every studio-grade improvement identified in the deep brainstorm as a **ver
 
 ---
 
+### v0.15.4 — Per-Take Prompt Files (prompt pack)
+
+| Tool / surface | Skill | What it does |
+|------|-------|--------------|
+| `brandly takes export` | `brandly-video-generation` | Projects `shots.json` prompts to `prompts/Scene N/Scene N.T.md` (opt-in, manifest-hashed) |
+| `brandly takes apply` | `brandly-video-generation` | Writes edited take files back into `shots.json` (scoped by `--scene/--take`, `--clear S.T`) |
+| `brandly takes status` | `brandly-video-generation` | Drift matrix + exit 0/1/2 gate |
+| `brandly produce` | `brandly-video-generation` | Fail-closed: refuses to generate while the pack is out of sync (`--ignore-prompt-pack` bypass) |
+
+**Deliverables:**
+- One reviewable Markdown file per take, synchronized with `shots.json`
+- `edited`/`drifted`/`conflict`/`missing`/`orphan`/`invalid` states block `produce` before any provider call
+- Projects without `prompts/` behave exactly as before
+
+**Acceptance criteria:**
+- A 5-scene/20-take plan exports to the exact tree and reports 20 `in-sync`
+- Editing one file and running `takes apply` changes exactly one prompt in `shots.json`
+- `produce` on a drifted pack exits 2 with zero backend calls
+
+**Spec:** `dev-notes/subgoals/v0-15-4-per-take-prompts.md`  
+**Domain:** `pre_production`
+
+---
+
 ## 3. How Each Version Stands Out
 
 | Version | Competitor does | brandly does |
@@ -281,6 +305,7 @@ Ship every studio-grade improvement identified in the deep brainstorm as a **ver
 | v0.15.1 | Hidden subscription costs | Credit ledger with hard budget stop + multi-day scheduling |
 | v0.15.2 | Manual shot list | Auto script breakdown + storyboard contact sheet |
 | v0.15.3 | Manual continuity tracking | Wardrobe/prop continuity warnings + plate auto-conversion |
+| v0.15.4 | One unreviewable JSON prompt blob | One reviewable Markdown file per take, fail-closed `produce` |
 
 ---
 
@@ -314,6 +339,7 @@ Ship every studio-grade improvement identified in the deep brainstorm as a **ver
 | Credit ledger enforcement | v0.15.1 | Planned |
 | Script breakdown + storyboard | v0.15.2 | Planned |
 | Wardrobe continuity + plate conversion | v0.15.3 | Planned |
+| Per-take prompt files (prompt pack) | v0.15.4 | Implemented (PR pending) |
 
 **End state:** brandly-cli is a complete agentic film studio CLI — script → casting → storyboard → asset (with gate) → audio → lip-sync → stitch → publish → metrics — where every frame is measured, every shot is gated, every credit is tracked, and every version is shippable.
 
@@ -323,5 +349,5 @@ Ship every studio-grade improvement identified in the deep brainstorm as a **ver
 
 - Current version: `0.14.2` (`src/brandly_cli/__about__.py`)
 - Version bumps follow the single-source-of-truth rule: bump `__about__.py`, hatch propagates to wheel/sdist metadata, CLI `--version`, MCP server info, and web config API
-- Each version maps to a `dev-notes/GOAL-*.md` file following the repo convention
+- Each version maps to a `dev-notes/subgoals/GOAL-*.md` file following the repo convention
 - Releases follow the DPF delivery pipeline: commit → review → stage → deploy → deliver (Section 6 of `AGENTS.md`)

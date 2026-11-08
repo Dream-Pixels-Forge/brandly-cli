@@ -23,6 +23,13 @@ assets split by pipeline stage in the project workspace:
             project.json     (the director shot list ``shots.json`` lives here
                              too — the timeline editor's path, load-bearing)
             cost.json
+            prompts/         per-take prompt files (``Scene 1/Scene 1.1.md`` =
+                             Take 1 of Scene 1) + ``prompt-manifest.json``.
+                             OPT-IN: created only by ``brandly takes export``,
+                             never by :func:`ensure_project_tree`. When present
+                             it is the prompt source of truth and
+                             ``brandly produce`` refuses to run while it is out
+                             of sync with ``shots.json``.
     pre-production/
         {project}/
             images categories (prop/ location/ character/ vehicle/ mecha/
@@ -115,6 +122,11 @@ ALL_MEDIA_CATEGORIES: tuple[str, ...] = (
 #: from :func:`discover_project_plates` so masters are never re-injected.
 HQ_DIRNAME = "hq"
 
+#: Per-take prompt pack (v0.15.4). Created lazily by ``brandly takes export``
+#: and NEVER by :func:`ensure_project_tree` — the folder's presence activates
+#: the fail-closed prompt contract in ``brandly produce``.
+PROMPTS_DIRNAME = "prompts"
+
 
 def _check(category: str, allowed: tuple[str, ...], default: str = "general") -> str:
     """Return ``category`` if it is in ``allowed`` else ``default``."""
@@ -139,6 +151,17 @@ def project_dir(root: str | Path, project_id: str) -> Path:
 def resolve_project_dir(root: str | Path, project_id: str) -> Path:
     """Return the canonical project dir: ``.brandly/{project_id}/``."""
     return project_dir(root, project_id)
+
+
+def prompts_dir(root: str | Path, project_id: str) -> Path:
+    """Return ``.brandly/{project_id}/prompts`` — the per-take prompt pack.
+
+    Deliberately **not** created by :func:`ensure_project_tree`: the pack is
+    opt-in, and its presence turns on the fail-closed prompt contract in
+    ``brandly produce`` (see ``take_prompts``). Only ``brandly takes export``
+    creates it.
+    """
+    return project_dir(root, project_id) / PROMPTS_DIRNAME
 
 
 # ---------------------------------------------------------------------------

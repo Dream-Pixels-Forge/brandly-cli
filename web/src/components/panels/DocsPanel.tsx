@@ -4,12 +4,11 @@ import type { PanelDocItem } from '../../types';
 
 interface DocRowProps {
   item: PanelDocItem;
-  projectId: string;
   isActive: boolean;
   onSelect: (item: PanelDocItem) => void;
 }
 
-function DocRow({ item, projectId, isActive, onSelect }: DocRowProps) {
+function DocRow({ item, isActive, onSelect }: DocRowProps) {
   return (
     <button
       onClick={() => onSelect(item)}
@@ -62,8 +61,6 @@ const DOC_GROUPS: { key: string; label: string }[] = [
   { key: 'tmp', label: 'Working' },
 ];
 
-let activeProjectId: string | undefined;
-
 export default function DocsPanel() {
   const { activeProject } = useAppStore();
   const [items, setItems] = useState<PanelDocItem[]>([]);
@@ -72,7 +69,6 @@ export default function DocsPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  activeProjectId = activeProject?.id;
   const projectId = activeProject?.id;
 
   const fetchDocs = useCallback(async () => {
@@ -168,7 +164,6 @@ export default function DocsPanel() {
                   <DocRow
                     key={item.path}
                     item={item}
-                    projectId={projectId}
                     isActive={false}
                     onSelect={fetchContent}
                   />
@@ -187,7 +182,6 @@ export default function DocsPanel() {
   }
 
   // Document viewer (right side) + rail (left side)
-  const railItems = items.filter((i) => i.category !== 'tmp');
   const tmpItems = items.filter((i) => i.category === 'tmp');
 
   return (
@@ -237,7 +231,6 @@ export default function DocsPanel() {
                     <DocRow
                       key={item.path}
                       item={item}
-                      projectId={projectId}
                       isActive={selected?.path === item.path}
                       onSelect={fetchContent}
                     />
@@ -262,7 +255,6 @@ export default function DocsPanel() {
                   <DocRow
                     key={item.path}
                     item={item}
-                    projectId={projectId}
                     isActive={selected?.path === item.path}
                     onSelect={fetchContent}
                   />

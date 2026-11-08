@@ -5,7 +5,7 @@
 * ``brandly sync`` no longer writes provider keys by default (audit F2): the raw-key
   behaviour must be explicitly requested via ``--legacy-provider-keys``.
 
-Written test-first (RED) — see dev-notes/GOAL-AGENTIC-PIPELINE.md Goal 1.
+Written test-first (RED) — see dev-notes/subgoals/GOAL-AGENTIC-PIPELINE.md Goal 1.
 """
 
 from __future__ import annotations

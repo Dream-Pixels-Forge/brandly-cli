@@ -2,6 +2,62 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added — Per-take prompt files (`brandly takes`)
+
+- **Prompt pack:** `.brandly/<id>/prompts/Scene N/Scene N.T.md` — one Markdown
+  file per take, projecting `shots.json` prompts to a reviewable tree.
+  **Opt-in:** created only by `brandly takes export`, never by project init.
+- **`brandly takes` group:** `list` (state/clip/prompt preview), `export`
+  (`--missing-only`, `--force`, `--prune`, `--dry-run`), `apply`
+  (`--scene/--take` scope, `--clear S.T`, `--force`, `--dry-run`) and
+  `status` (exit 0/1/2).
+- **Fail-closed produce:** when `prompts/` exists, `brandly produce` runs the
+  sync check before any provider call and refuses on `edited`/`drifted`/
+  `conflict`/`missing`/`orphan`/`invalid`; `--ignore-prompt-pack` is the
+  explicit bypass. Projects without `prompts/` are unchanged.
+- Deferred (see `dev-notes/PROGRESS.md`): scene-level direction files (P1),
+  MCP `take_prompts` tool (P2), web take editor (P3), per-take parameters
+  (P4), automatic renumbering (P5), YAML frontmatter (P6).
+
+### Fixed — CI
+
+- **Releases can no longer publish unverified code.** The PyPI workflow now has
+  a `verify` job (checkout pinned to the release tag, `ruff`, `mypy`, `pytest`)
+  that `publish` depends on. CI never ran on tags, so `v0.14.9` shipped from a
+  commit whose CI push had failed.
+- **Partial uploads fail loudly.** The post-publish verifier requires both a
+  wheel and an sdist on the version-specific PyPI endpoint, not just any file.
+- **No workflow can cancel another.** Both workflows use workflow-scoped
+  concurrency groups; `release.yml` gained one (keyed on the tag) so two
+  `published` events cannot race the same version.
+- **Every job has `timeout-minutes`** (was: 360-minute default), and `ci.yml`
+  declares `permissions: contents: read` instead of inheriting the repo default.
+
+### Fixed — Brandly Studio (web)
+
+Restores the `web-quality` job, which was failing on `main` before any of the
+above could be validated.
+
+- **`web/src/types.ts` exports `PanelCastItem` and `PanelDocItem`** — the item
+  shapes emitted by `GET /api/projects/{id}/cast` and `/docs`. `CastingPanel`
+  and `DocsPanel` imported them while they did not exist (`TS2305`), so `tsc`
+  could not build the SPA at all.
+- **No more render-time module state:** both panels dropped the
+  `activeProjectId` global reassigned during render; the project id is passed
+  down as a prop (`oxlint react(globals)`, 0 warnings now).
+- **Bundle freshness is achievable again:** the committed SPA was rebuilt from
+  the fixed sources, and the two directory READMEs moved from
+  `src/brandly_cli/web/static/` to `web/public/` — Vite's `emptyOutDir: true`
+  deletes everything in the build output, so the only tracked files there are
+  now real build products or copies of `web/public/` (same rule the empty-state
+  plate follows). `git diff --exit-code -- src/brandly_cli/web/static/` is clean
+  after a build.
+- **`SecurityHeadersMiddleware`** types its ASGI `send` callable as
+  `MutableMapping[str, Any]`, clearing the `mypy` `arg-type` error that failed
+  `quality` on all three Python versions.
+
 ## [0.14.9] - 2026-11-07
 
 ### Added — Autonomous Orchestrator Milestone

@@ -18,7 +18,9 @@ boundary honest:
 from __future__ import annotations
 
 import secrets
+from collections.abc import MutableMapping
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from starlette.responses import JSONResponse
@@ -153,9 +155,9 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
 
-        async def send_with_headers(message: dict) -> None:
+        async def send_with_headers(message: MutableMapping[str, Any]) -> None:
             if message.get("type") == "http.response.start":
-                headers = dict(message.get("headers", []))
+                headers: MutableMapping[bytes, bytes] = dict(message.get("headers", []))
                 headers[b"content-security-policy"] = _CSP.encode()
                 headers[b"x-frame-options"] = b"DENY"
                 headers[b"x-content-type-options"] = b"nosniff"

@@ -4,7 +4,7 @@ Behaviour under test: one dispatch layer that (a) exposes the brandly capability
 set as a machine-readable manifest, (b) routes library tools to the existing
 ``agent_tools`` handlers, and (c) routes pipeline tools to real CLI commands.
 
-Written test-first (RED) — see dev-notes/GOAL-AGENTIC-PIPELINE.md Goal 1.
+Written test-first (RED) — see dev-notes/subgoals/GOAL-AGENTIC-PIPELINE.md Goal 1.
 """
 
 from __future__ import annotations

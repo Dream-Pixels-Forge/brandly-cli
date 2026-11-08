@@ -6,8 +6,16 @@ on:
   push:
     branches: [main]
 
-# Cancel superseded runs on the same ref (for PRs); keep main runs to
-# avoid clobbering a long build when a new commit lands mid-run.
+# Least privilege: the repo default may be write-all. Artifact uploads use the
+# Actions runtime token, not GITHUB_TOKEN, so `contents: read` is enough.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref (for PRs). For main pushes the running
+# job is never cancelled — but GitHub still allows only one running + one
+# pending run per group, so a third rapid push drops the pending one. Branch
+# protection is not configured here; do not read a missing run as a pass.
+# The group is workflow-scoped so no other workflow can cancel these runs.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -15,10 +23,11 @@ concurrency:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v5
 
@@ -47,8 +56,14 @@ jobs:
       - name: Type check
         run: mypy src/
 
+      # Upgrade the runner's bundled build tooling so pip-audit's scan flags
+      # brandly-cli's own dependencies, not stale CVEs in CI toolchain
+      # packages (e.g. setuptools bundled with the Python image).
+      - name: Upgrade CI toolchain packages
+        run: pip install --upgrade setuptools
+
       - name: Dependency vulnerability scan
-        run: pip-audit --desc on --severity low
+        run: pip-audit --desc on
 
       - name: Syntax check
         run: python -m py_compile src/brandly_cli/*.py
@@ -82,6 +97,7 @@ jobs:
 
   web-quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 

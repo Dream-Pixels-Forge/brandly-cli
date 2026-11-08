@@ -101,6 +101,23 @@ export interface ReviewItem {
   modified: string;
 }
 
+/** One cast plate as emitted by `GET /api/projects/{id}/cast` (routes/cast.py). */
+export interface PanelCastItem {
+  category: string;
+  filename: string;
+  size_bytes: number;
+  modified: string;
+}
+
+/** One project document as emitted by `GET /api/projects/{id}/docs` (routes/docs.py). */
+export interface PanelDocItem {
+  path: string;
+  category: string;
+  filename: string;
+  size_bytes: number;
+  modified: string;
+}
+
 export type PanelKind = 'preview' | 'timeline' | 'asset_manifest' | 'props' | 'color' | 'audio' | 'render' | 'monitor' | 'review' | 'agnes_ai' | 'casting' | 'docs';
 
 export type TransitionType = 'fade' | 'dissolve' | 'wipe' | 'slide';

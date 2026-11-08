@@ -4,11 +4,12 @@ import type { PanelCastItem } from '../../types';
 
 interface CastCardProps {
   item: PanelCastItem;
+  projectId: string;
 }
 
-function CastCard({ item }: CastCardProps) {
+function CastCard({ item, projectId }: CastCardProps) {
   const [zoomed, setZoomed] = useState(false);
-  const src = withToken(`/api/projects/${activeProjectId}/cast/media/${item.category}/${encodeURIComponent(item.filename)}`);
+  const src = withToken(`/api/projects/${projectId}/cast/media/${item.category}/${encodeURIComponent(item.filename)}`);
 
   return (
     <div
@@ -72,15 +73,11 @@ function CastCard({ item }: CastCardProps) {
   );
 }
 
-let activeProjectId: string | undefined;
-
 export default function CastingPanel() {
   const { activeProject } = useAppStore();
   const [items, setItems] = useState<PanelCastItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  activeProjectId = activeProject?.id;
 
   const projectId = activeProject?.id;
 
@@ -142,7 +139,7 @@ export default function CastingPanel() {
                 Characters
               </div>
               {characters.map((item) => (
-                <CastCard key={`${item.category}/${item.filename}`} item={item} />
+                <CastCard key={`${item.category}/${item.filename}`} item={item} projectId={projectId} />
               ))}
             </>
           )}
@@ -152,7 +149,7 @@ export default function CastingPanel() {
                 Wardrobe
               </div>
               {wardrobe.map((item) => (
-                <CastCard key={`${item.category}/${item.filename}`} item={item} />
+                <CastCard key={`${item.category}/${item.filename}`} item={item} projectId={projectId} />
               ))}
             </>
           )}

@@ -7,9 +7,51 @@ on:
 permissions:
   contents: read
 
+# One publish at a time per tag: two `published` events (unpublish → republish,
+# or back-to-back tags) must never race the same version onto PyPI. Not
+# cancelling, because a cancelled publish can leave a partial upload behind.
+# Workflow-scoped group so this can never cancel a CI run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
 jobs:
-  publish:
+  # Gate: a release must never publish code that has not passed lint, typing and
+  # the test suite. CI only runs on PRs and pushes to main (no tag trigger), so
+  # this job re-verifies the tag commit itself — the tag is the thing being shipped.
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,web]" types-PyYAML
+
+      - name: Lint
+        run: ruff check src/ tests/
+
+      - name: Type check
+        run: mypy src/
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+  publish:
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment:
       name: pypi
       url: https://pypi.org/p/brandly-cli
@@ -70,23 +112,43 @@ jobs:
               with urllib.request.urlopen(req, timeout=30) as resp:
                   return json.load(resp)
 
-          # Hard gate: version-specific endpoint must list upload files.
-          # This is the source of truth for "did the publish land?"
+          # Hard gate: the version-specific endpoint must list BOTH artifacts.
+          # "some file exists" is not enough — a partial upload (sdist only, or
+          # wheel only) must fail loudly instead of passing as a release.
+          REQUIRED = {"bdist_wheel", "sdist"}
+
+          def kinds(urls: list) -> set:
+              found = set()
+              for entry in urls:
+                  kind = entry.get("packagetype")
+                  name = entry.get("filename") or ""
+                  if not kind:
+                      if name.endswith(".whl"):
+                          kind = "bdist_wheel"
+                      elif name.endswith((".tar.gz", ".zip")):
+                          kind = "sdist"
+                  if kind:
+                      found.add(kind)
+              return found
+
           deadline = time.time() + 180
           last_err = "unknown"
           while time.time() < deadline:
               try:
                   data = fetch(version_url)
                   urls = data.get("urls") or []
-                  if urls:
+                  present = kinds(urls)
+                  if REQUIRED <= present:
                       print(f"OK: {pkg}=={version} has {len(urls)} file(s) on PyPI")
                       break
-                  last_err = "response had no files"
+                  last_err = f"missing {sorted(REQUIRED - present)} (present: {sorted(present) or 'none'})"
               except (urllib.error.URLError, TimeoutError) as exc:
                   last_err = str(exc)
               time.sleep(10)
           else:
-              sys.exit(f"::error::{pkg}=={version} not found on PyPI after retries: {last_err}")
+              sys.exit(
+                  f"::error::{pkg}=={version} is not complete on PyPI after retries: {last_err}"
+              )
 
           # Soft check: project-level JSON can lag CDN (~15-60 min). Warn only —
           # `pip install {pkg}=={version}` works as soon as the hard gate passes.

@@ -56,6 +56,12 @@ jobs:
       - name: Type check
         run: mypy src/
 
+      # Upgrade the runner's bundled build tooling so pip-audit's scan flags
+      # brandly-cli's own dependencies, not stale CVEs in CI toolchain
+      # packages (e.g. setuptools bundled with the Python image).
+      - name: Upgrade CI toolchain packages
+        run: pip install --upgrade setuptools
+
       - name: Dependency vulnerability scan
         run: pip-audit --desc on
 

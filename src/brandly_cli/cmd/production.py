@@ -19,7 +19,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from brandly_cli import assemble as assemble_mod
-from brandly_cli import layout, scenes, shot_runner, stitch
+from brandly_cli import layout, scenes, shot_runner, stitch, take_prompts
 from brandly_cli.agnes_client import (
     generate_image,
 )
@@ -778,6 +778,14 @@ def _print_missing_references(
     help="Bypass the require-reference check for shots without references.",
 )
 @click.option(
+    "--ignore-prompt-pack",
+    "ignore_prompt_pack",
+    is_flag=True,
+    default=False,
+    help="Generate from shots.json even when the per-take prompt pack is out of "
+    "sync. Recovery escape hatch — prints a loud warning.",
+)
+@click.option(
     "--max-wait",
     "max_wait",
     default=600,
@@ -987,6 +995,7 @@ def produce(
     i2v_attempts: int,
     text_fallback_attempts: int,
     no_text_fallback: bool,
+    ignore_prompt_pack: bool,
     video_backend: str = "agnes",
 ) -> None:
     """Generate a multi-shot film shot by shot from the production plan.
@@ -1035,6 +1044,46 @@ def produce(
     except ValueError as e:
         console.print(f"[red]Invalid shot list: {e}[/red]")
         sys.exit(1)
+
+    # v0.15.4 — the per-take prompt pack is opt-in and, when present, is the
+    # prompt source of truth. Refuse the run while it disagrees with the shot
+    # list: generating would silently use stale direction. No provider call is
+    # made past this point. `--ignore-prompt-pack` is the recovery hatch.
+    if take_prompts.pack_exists(root, project_id):
+        if ignore_prompt_pack:
+            console.print(
+                "[yellow]⚠ generating from shots.json, prompt pack ignored[/yellow]"
+            )
+        else:
+            pack_report = take_prompts.status(project_id, shots, root=root)
+            if pack_report["verdict"] != "pass":
+                console.print(
+                    "[red]Prompt pack is out of sync with shots.json — "
+                    "refusing to generate.[/red]"
+                )
+                for entry in pack_report.get("takes", []):
+                    if entry["state"] in {"in-sync", "unscripted", "unsupported"}:
+                        continue
+                    detail = f" — {entry['error']}" if entry.get("error") else ""
+                    console.print(
+                        f"  [yellow]{entry['state']}[/yellow] {entry['key']} "
+                        f"({entry.get('file') or 'no file'}){detail}"
+                    )
+                for entry in pack_report.get("orphans", []):
+                    console.print(
+                        f"  [red]orphan[/red] {entry['file']} — {entry['error']}"
+                    )
+                for entry in pack_report.get("invalid", []):
+                    console.print(
+                        f"  [red]invalid[/red] {entry['file']} — {entry['error']}"
+                    )
+                console.print(
+                    f"[dim]Fix: edit the take files, then `brandly takes apply "
+                    f"{project_id}` (file wins) or `brandly takes export "
+                    f"{project_id}` (shots.json wins). Or bypass with "
+                    f"`--ignore-prompt-pack`.[/dim]"
+                )
+                sys.exit(2)
 
     # Pre-flight reference check: surface EVERY unresolvable reference in the
     # whole shot list up front. A single missing plate used to abort the run

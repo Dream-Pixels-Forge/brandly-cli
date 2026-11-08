@@ -1,5 +1,38 @@
 # Pipeline Progress — brandly-cli
 
+## Round 37/256 — v0.15.4 Per-Take Prompt Files (prompt pack)
+
+- [x] **Spec frozen:** `dev-notes/subgoals/v0-15-4-per-take-prompts.md`
+      (§8.1–§8.5). Version claimed as v0.15.4 because v0.15.0–v0.15.3 are
+      already allocated in `GOAL-STUDIO-ROADMAP.md`.
+- [x] **§8.1 Layout + take model:** `layout.PROMPTS_DIRNAME` / `prompts_dir`,
+      new `take_prompts.py` (canonical naming, `iter_takes` mirroring
+      `scenes.build_scenes`, §5.3 state matrix, manifest).
+      `tests/test_take_prompts.py` — 56 passed.
+- [x] **§8.2 CLI group:** `brandly takes list|export|apply|status` registered
+      via `cmd/takes.py`; `--scene/--take` scoping on `apply`.
+      `tests/test_take_prompts_cli.py` — 24 passed.
+- [x] **§8.3 Produce gate:** fail-closed pre-flight when `prompts/` exists +
+      `--ignore-prompt-pack` escape hatch.
+      `tests/test_take_prompts_produce.py` — 10 passed.
+- [x] **§8.4 Docs:** `layout.py` docstring, `agent_surface.py` layout block,
+      `skills/brandly-video-generation/SKILL.md` "Per-take prompt pack",
+      `skills/brandly-init/SKILL.md` phase table, `CHANGELOG.md` `[Unreleased]`.
+- [x] **§8.5 Gates:** `pytest tests/test_take_prompts*.py` 99 passed (with
+      entrypoints), full suite `1796 passed, 1 skipped, 3 xfailed`, web suite
+      `151 passed, 1 skipped, 3 xfailed`, `ruff check src/ tests/` clean.
+
+### DEFERRED (v0.15.4 §12)
+
+| ID | Item | Why deferred |
+|---|---|---|
+| P1 | Scene-level direction file `Scene N/Scene N.md` inherited by takes | Needs its own inheritance/precedence design |
+| P2 | MCP tool `take_prompts` | Files are directly editable; `brandly takes` covers sync |
+| P3 | Web/Paper take editor | No frozen Paper artboard (AGENTS.md §4) |
+| P4 | Per-take parameters (duration/refs/model/beat) | v1 moves prompt text only |
+| P5 | Automatic renumber/remap after structural edits | Destructive; orphans are surfaced instead |
+| P6 | YAML frontmatter inside take files | No YAML convention; JSON manifest is machine-written |
+
 ## Round 36/256 — v0.14.9 Autonomous Orchestrator Release
 
 - [x] **v0.14.9 released:** `__about__.py` 0.14.8 → 0.14.9; CHANGELOG `[0.14.9]` section added; tag `v0.14.9` pushed; **GitHub release v0.14.9 published**; **Release-to-PyPI workflow success**; post-release CI on `main` green.
@@ -160,7 +193,7 @@
 
 ## Round 27/256 — GOAL-OPEN-ISSUES-270-283: all 13 open issues (#270–#283) fixed
 
-Goal: `dev-notes/GOAL-OPEN-ISSUES-270-283.md`. Pipeline-orchestrator session
+Goal: `dev-notes/subgoals/GOAL-OPEN-ISSUES-270-283.md`. Pipeline-orchestrator session
 (2026-10-09/10): Phase 0 recon (all 13 issue bodies fetched + every code site
 verified) → Phase 2 govern (goal frozen with gates + anti-drift rules) →
 Phase 3 engineer (six RED→GREEN increments on `fix/open-issues-270-283`).
@@ -517,7 +550,7 @@ Goal: handoff item 1 — "Fix mypy errors → CI green → merge PR #264".
 
 ## Round 21/256 — GOAL-ALL-OPEN-ISSUES P1: land in-flight fixes (#246 #249 #245 #252 #250 #248 #251 #253)
 
-Goal: `dev-notes/GOAL-ALL-OPEN-ISSUES.md` (16 open issues: #245–#253 + #255–#261).
+Goal: `dev-notes/subgoals/GOAL-ALL-OPEN-ISSUES.md` (16 open issues: #245–#253 + #255–#261).
 
 - [x] **Recon (verified, not assumed):** origin/main @ f632931 has PR #263
       (async_compat) + #254 merged — production.py on main still had ~15
@@ -597,7 +630,7 @@ Goal: `dev-notes/GOAL-ALL-OPEN-ISSUES.md` (16 open issues: #245–#253 + #255–
 
 - [x] Loaded `pipeline-orchestrator` + `test-driven-development` skills
 - [x] Deep audit of the agentic system → `dev-notes/AUDIT-AGENTIC-PIPELINE.md` (F1–F9)
-- [x] Goal program (6 goals, ordered) → `dev-notes/GOAL-AGENTIC-PIPELINE.md`
+- [x] Goal program (6 goals, ordered) → `dev-notes/subgoals/GOAL-AGENTIC-PIPELINE.md`
 - [x] Housekeeping: removed phantom `.brandly/untitled` + `.brandly/undefined` (21 files)
 - [x] **G1** Agent-native tool surface — COMPLETE (3 PRs)
   - [x] PR 1: `agent_surface.py` dispatch layer + `brandly tools --json` manifest
@@ -652,7 +685,7 @@ Goal: `dev-notes/GOAL-ALL-OPEN-ISSUES.md` (16 open issues: #245–#253 + #255–
 
 ### Round 4/256 — G7: agentic orchestration — orchestrator + subagent contract layer
 
-**Current Phase:** Phase 3 (Engineer) — Goal G7 (`dev-notes/GOAL-AGENTIC-ORCHESTRATION.md`)
+**Current Phase:** Phase 3 (Engineer) — Goal G7 (`dev-notes/subgoals/GOAL-AGENTIC-ORCHESTRATION.md`)
 
 - [x] **PR E** (PR #90, squash @ `da62aff`): `phase_handoffs()` data-only dispatch
       contracts (inputs/outputs/gate/est_cost per phase) + `brandly plan <id>
@@ -785,7 +818,7 @@ Goal: `dev-notes/GOAL-ALL-OPEN-ISSUES.md` (16 open issues: #245–#253 + #255–
 - [x] CHANGELOG 0.3.26 entry: G1 tool surface, G2 real director orchestration, G3 scene model + gate
 - [x] Commit `a750d4e` pushed to main; tag `v0.3.26` pushed; GitHub release v0.3.26 published → `release.yml` → PyPI
 - [x] **v0.3.26 is the rollback point for G7**: `git reset --hard v0.3.26` / `pip install brandly-cli==0.3.26`
-- [x] Created `dev-notes/GOAL-AGENTIC-ORCHESTRATION.md` (G7: orchestrator + subagent contract layer; PR E/F/G; ships v0.4.0)
+- [x] Created `dev-notes/subgoals/GOAL-AGENTIC-ORCHESTRATION.md` (G7: orchestrator + subagent contract layer; PR E/F/G; ships v0.4.0)
 - [ ] NEXT: G7 PR E — TDD `phase_handoffs()` + `brandly plan --json` + agent_surface manifest entry
 
 ### Round 7/256 — v0.5.0 release (G4 + G5 + G6 PR 1/3 shipped)
@@ -801,7 +834,7 @@ Goal: `dev-notes/GOAL-ALL-OPEN-ISSUES.md` (16 open issues: #245–#253 + #255–
 
 Decision gates DEV-G7-001..003 + DEV-G8-001..003 all confirmed on
 defaults; shipped as four TDD PRs behind one release, per
-`dev-notes/GOAL-BRAND-KIT-METRICS.md` (PR #105 plan).
+`dev-notes/subgoals/GOAL-BRAND-KIT-METRICS.md` (PR #105 plan).
 
 - [x] **G7 PR 1 (#106)** — `brand_kit.py` model (palette / claim allowlist /
   style lock / overlay spec, `.brandly/<project>/brand.json`, F2
@@ -939,7 +972,7 @@ defaults; shipped as four TDD PRs behind one release, per
       (Phase 1 skipped — existing project), resumed at Phase 2.
 - [x] Phase 2 governance: `dev-notes/DESIGN-STUDIO-SHELL.md` (frozen spec from
       Paper file `01M3VWT0PHVWKPN9JSECCES8T4`, page `p-3-0`) +
-      `dev-notes/GOAL-WEB-UI-DESIGN.md` (scope, anti-drift constraints, gates).
+      `dev-notes/subgoals/GOAL-WEB-UI-DESIGN.md` (scope, anti-drift constraints, gates).
 - [x] **Anti-drift decisions recorded:**
       - Paper MCP was rate-limited (“Weekly MCP limit reached”) → the design was
         frozen into the spec doc from the authored spec instead of being guessed.
@@ -1715,7 +1748,7 @@ defaults; shipped as four TDD PRs behind one release, per
   - the gate fails open: no `AGNES_API_KEY` ⇒ `skipped`, never a failure, so a
     project can finish `PASS` while nothing was verified.
   - no closed loop: nothing scores the finished film and re-plans.
-- New artifact **`dev-notes/GOAL-ACCURACY.md`** (G7-G14), dependency-ordered:
+- New artifact **`dev-notes/subgoals/GOAL-ACCURACY.md`** (G7-G14), dependency-ordered:
   G7 duration truth (keystone) → G8 continuation take; G9 wire the vision gate;
   G10 scene scorecard + bounded rework (needs G9); G11 `UNVERIFIED` is never
   `PASS`; G12 narrative beats; G13 quota-aware multi-day planning;

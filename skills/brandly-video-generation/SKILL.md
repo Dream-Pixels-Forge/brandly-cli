@@ -322,6 +322,59 @@ Duration: [N]s.
 [Continue for each shot...]
 ```
 
+## Per-take prompt pack (`brandly takes`)
+
+The shot list (`shots.json`) is one big JSON document, so reviewing a single
+prompt means diffing the whole file. The **prompt pack** projects it to one
+Markdown file per take — opt-in, and authoritative once created:
+
+```
+.brandly/<project>/prompts/
+    Scene 1/Scene 1.1.md   ← Take 1 of Scene 1 (the shot's own prompt, verbatim)
+    Scene 1/Scene 1.2.md
+    Scene 2/Scene 2.1.md
+    ...
+    prompt-manifest.json   ← machine-written sync hashes (do not hand-edit)
+```
+
+- **Take** = one prompt slot = a shot position inside a scene. A **redo**
+  (`produce --only`) regenerates that take's clip; it does **not** create a
+  new `.md`.
+- `Scene N` is the scene's project-unique ordinal (`S01`, `S02` … in
+  `docs/general/scenes.json`), not the raw `scene` key.
+- The file body is the shot's own prompt; act-level `prefix`/`style` stay in
+  `shots.json` and are applied at generation time.
+
+Loop:
+
+```
+brandly takes export <id>          # create/refresh files from shots.json
+#   ... edit Scene 1/Scene 1.2.md ...
+brandly takes apply  <id>          # write file bodies back into shots.json
+brandly produce <id> --shots .brandly/<id>/shots.json
+```
+
+Inspect and gate:
+
+```
+brandly takes list   <id> [--scene N] [--json]   # state + clip + prompt preview
+brandly takes status <id> [--json]               # exit 0 pass / 1 warn / 2 fail
+brandly takes apply  <id> --scene 1 --take 2     # scope the apply
+brandly takes apply  <id> --clear 1.2            # remove one take's direction
+```
+
+**Fail-closed:** when `prompts/` exists, `produce` runs the status check before
+any provider call and refuses (exit 2) on `edited`, `drifted`, `conflict`,
+`missing`, `orphan` or `invalid` — printing the offending takes and the exact
+remediation command. `in-sync` and `unscripted` proceed. Bypass deliberately with
+`--ignore-prompt-pack`; it prints a loud warning —
+`⚠ generating from shots.json, prompt pack ignored`.
+
+Safety: `export` never overwrites an edited file without `--force`; `--prune`
+also requires `--force`; `apply` refuses `conflict`/`drifted` without
+`--force`; `--clear S.T` is the only deletion path. A project with **no**
+`prompts/` folder behaves exactly as before (zero warning).
+
 ## Recommended Workflow Order
 
 For production-quality campaigns, follow this sequence:

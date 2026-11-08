@@ -67,6 +67,7 @@ trends → concept → bible → casting → screenplay → script → asset →
 | casting | cast images, sheets, location sheets, wardrobe | `pre-production/<id>/character\|mecha/\|location/\|wardrobe/` | `gate` then `approve <id> casting` |
 | screenplay | `screenplay.md` | `docs/screenplay/screenplay.md` | `approve <id> screenplay` |
 | script | `shots.json` | `.brandly/<id>/shots.json` | `status <id>` |
+| script (optional) | per-take prompt files | `.brandly/<id>/prompts/Scene N/Scene N.T.md` — created only by `brandly takes export`, never auto-created | `takes status <id>` |
 | asset | scene clip files | `production/<id>/` | `gate --all-scenes` then `approve <id> asset` |
 | audio | `music.mp3` | `production/<id>/audio/` | `status <id>` |
 | re_edit | `final.mp4` | `videos/final.mp4` | `stitch` exit 0 |

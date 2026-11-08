@@ -27,7 +27,7 @@ import sys
 
 from brandly_cli import agent_surface
 
-COMMANDS = ("init", "run", "plan", "director", "gate", "tools")
+COMMANDS = ("init", "run", "plan", "director", "gate", "tools", "takes")
 
 
 def _run_python(*args: str) -> subprocess.CompletedProcess[str]:

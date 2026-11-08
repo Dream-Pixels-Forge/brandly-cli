@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added — Per-take prompt files (`brandly takes`)
+
+- **Prompt pack:** `.brandly/<id>/prompts/Scene N/Scene N.T.md` — one Markdown
+  file per take, projecting `shots.json` prompts to a reviewable tree.
+  **Opt-in:** created only by `brandly takes export`, never by project init.
+- **`brandly takes` group:** `list` (state/clip/prompt preview), `export`
+  (`--missing-only`, `--force`, `--prune`, `--dry-run`), `apply`
+  (`--scene/--take` scope, `--clear S.T`, `--force`, `--dry-run`) and
+  `status` (exit 0/1/2).
+- **Fail-closed produce:** when `prompts/` exists, `brandly produce` runs the
+  sync check before any provider call and refuses on `edited`/`drifted`/
+  `conflict`/`missing`/`orphan`/`invalid`; `--ignore-prompt-pack` is the
+  explicit bypass. Projects without `prompts/` are unchanged.
+- Deferred (see `dev-notes/PROGRESS.md`): scene-level direction files (P1),
+  MCP `take_prompts` tool (P2), web take editor (P3), per-take parameters
+  (P4), automatic renumbering (P5), YAML frontmatter (P6).
+
 ## [0.14.9] - 2026-11-07
 
 ### Added — Autonomous Orchestrator Milestone

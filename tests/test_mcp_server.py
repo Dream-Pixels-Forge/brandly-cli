@@ -4,7 +4,7 @@ The server speaks JSON-RPC 2.0 over newline-delimited stdio and exposes exactly 
 ``agent_surface`` manifest, so an external AI tool can call brandly instead of
 inventing its own tools (audit F1).
 
-Written test-first (RED) — see dev-notes/GOAL-AGENTIC-PIPELINE.md Goal 1.
+Written test-first (RED) — see dev-notes/subgoals/GOAL-AGENTIC-PIPELINE.md Goal 1.
 """
 
 from __future__ import annotations

@@ -12,7 +12,7 @@ Contract:
 * ``brandly scenes status`` reports the matrix; ``brandly gate --scene/--all-scenes``
   FAILs naming the missing/stale/gate-failed shots.
 
-Written test-first (RED) — see dev-notes/GOAL-AGENTIC-PIPELINE.md Goal 3.
+Written test-first (RED) — see dev-notes/subgoals/GOAL-AGENTIC-PIPELINE.md Goal 3.
 """
 
 from __future__ import annotations

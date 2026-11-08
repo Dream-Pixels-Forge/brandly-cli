@@ -57,7 +57,7 @@ jobs:
         run: mypy src/
 
       - name: Dependency vulnerability scan
-        run: pip-audit --desc on --severity low
+        run: pip-audit --desc on
 
       - name: Syntax check
         run: python -m py_compile src/brandly_cli/*.py

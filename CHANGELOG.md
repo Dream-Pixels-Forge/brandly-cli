@@ -35,6 +35,29 @@ All notable changes to this project are documented here.
 - **Every job has `timeout-minutes`** (was: 360-minute default), and `ci.yml`
   declares `permissions: contents: read` instead of inheriting the repo default.
 
+### Fixed — Brandly Studio (web)
+
+Restores the `web-quality` job, which was failing on `main` before any of the
+above could be validated.
+
+- **`web/src/types.ts` exports `PanelCastItem` and `PanelDocItem`** — the item
+  shapes emitted by `GET /api/projects/{id}/cast` and `/docs`. `CastingPanel`
+  and `DocsPanel` imported them while they did not exist (`TS2305`), so `tsc`
+  could not build the SPA at all.
+- **No more render-time module state:** both panels dropped the
+  `activeProjectId` global reassigned during render; the project id is passed
+  down as a prop (`oxlint react(globals)`, 0 warnings now).
+- **Bundle freshness is achievable again:** the committed SPA was rebuilt from
+  the fixed sources, and the two directory READMEs moved from
+  `src/brandly_cli/web/static/` to `web/public/` — Vite's `emptyOutDir: true`
+  deletes everything in the build output, so the only tracked files there are
+  now real build products or copies of `web/public/` (same rule the empty-state
+  plate follows). `git diff --exit-code -- src/brandly_cli/web/static/` is clean
+  after a build.
+- **`SecurityHeadersMiddleware`** types its ASGI `send` callable as
+  `MutableMapping[str, Any]`, clearing the `mypy` `arg-type` error that failed
+  `quality` on all three Python versions.
+
 ## [0.14.9] - 2026-11-07
 
 ### Added — Autonomous Orchestrator Milestone

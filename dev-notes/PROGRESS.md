@@ -23,10 +23,27 @@
       `pytest tests/test_workflow_contract.py tests/test_warning_free_stack.py`
       green, `ruff check src/ tests/` clean, YAML parses, verifier heredoc
       compiles and is unit-simulated for full/sdist-only/empty payloads.
-- [ ] **Blocking:** the new release gate will stay RED until main's inherited
-      failures are fixed (`src/brandly_cli/web/security.py:172` mypy
-      `arg-type`, web `PanelCastItem`/`PanelDocItem` exports). Working as
-      designed — do not bypass.
+- [x] **Main repaired (the gate's own prerequisite).** Three inherited
+      `web-quality` failures, all found to be real and not fixable by
+      bypassing:
+      * `security.py` ASGI `send` callable typed `MutableMapping[str, Any]`
+        (clears the `mypy arg-type` that failed `quality` on 3.10–3.12);
+      * `types.ts` now exports `PanelCastItem` / `PanelDocItem` (TS2305 made
+        `tsc -b` fail outright) and both panels dropped the module-scope
+        `activeProjectId` reassigned during render (3 × TS6133 + 2 ×
+        `react(globals)`);
+      * the **committed bundle was stale** (`index-Ch5sAQOh.js` vs a fresh
+        `index-DbjPPKpv.js` from HEAD sources) and `static/README.md` +
+        `static/assets/README.md` were tracked inside vite's
+        `emptyOutDir: true` output, so the freshness diff could never be clean.
+        READMEs moved to `web/public/` (the rule already pinned by
+        `test_web_empty_state_preview.py` for `preview.jpg`); bundle rebuilt.
+- [x] **Gates:** `tests/test_web_panel_types.py` (3, RED first) +
+      `tests/test_web_bundle_freshness.py` (3, RED first); full suite
+      `1808 passed, 1 skipped, 3 xfailed`; `npm --prefix web run lint` 0
+      warnings; `npm --prefix web run build` OK; snapshot gate
+      `git diff --exit-code -- src/brandly_cli/web/static/` **clean** after a
+      rebuild; `mypy src/` clean; `ruff` clean.
 
 ## Round 37/256 — v0.15.4 Per-Take Prompt Files (prompt pack)
 

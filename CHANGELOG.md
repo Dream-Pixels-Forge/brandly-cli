@@ -21,6 +21,20 @@ All notable changes to this project are documented here.
   MCP `take_prompts` tool (P2), web take editor (P3), per-take parameters
   (P4), automatic renumbering (P5), YAML frontmatter (P6).
 
+### Fixed — CI
+
+- **Releases can no longer publish unverified code.** The PyPI workflow now has
+  a `verify` job (checkout pinned to the release tag, `ruff`, `mypy`, `pytest`)
+  that `publish` depends on. CI never ran on tags, so `v0.14.9` shipped from a
+  commit whose CI push had failed.
+- **Partial uploads fail loudly.** The post-publish verifier requires both a
+  wheel and an sdist on the version-specific PyPI endpoint, not just any file.
+- **No workflow can cancel another.** Both workflows use workflow-scoped
+  concurrency groups; `release.yml` gained one (keyed on the tag) so two
+  `published` events cannot race the same version.
+- **Every job has `timeout-minutes`** (was: 360-minute default), and `ci.yml`
+  declares `permissions: contents: read` instead of inheriting the repo default.
+
 ## [0.14.9] - 2026-11-07
 
 ### Added — Autonomous Orchestrator Milestone

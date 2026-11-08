@@ -1,5 +1,33 @@
 # Pipeline Progress — brandly-cli
 
+## Round 38/256 — CI workflow hardening (release gate + no collisions)
+
+- [x] **Audit:** `.github/workflows/ci.yml` + `release.yml` share no concurrency
+      group (`github.workflow` prefix), have disjoint triggers, and no artifact
+      name clash. Findings recorded below.
+- [x] **Release can no longer publish red code:** `release.yml` gains a
+      `verify` job (checkout pinned to the release tag → ruff → mypy → pytest)
+      and `publish` declares `needs: [verify]`. Proven needed by v0.14.9
+      (`8c47435`): CI push **failed** at 18:51:57Z, release published at
+      18:55:39Z.
+- [x] **Partial-upload gate:** the PyPI verifier now requires **both**
+      `bdist_wheel` and `sdist` (was: any file), so an sdist-only upload fails
+      instead of passing.
+- [x] **Race protection:** `release.yml` gets a workflow-scoped `concurrency`
+      group keyed on the tag, plus `timeout-minutes` on every job in both
+      workflows (was: 360-min default).
+- [x] **Least privilege + honest comment:** `ci.yml` declares
+      `permissions: contents: read`; the main-push concurrency comment no
+      longer claims runs are kept (GitHub allows one running + one pending).
+- [x] **Gates:** `tests/test_workflow_contract.py` (6 tests, RED first),
+      `pytest tests/test_workflow_contract.py tests/test_warning_free_stack.py`
+      green, `ruff check src/ tests/` clean, YAML parses, verifier heredoc
+      compiles and is unit-simulated for full/sdist-only/empty payloads.
+- [ ] **Blocking:** the new release gate will stay RED until main's inherited
+      failures are fixed (`src/brandly_cli/web/security.py:172` mypy
+      `arg-type`, web `PanelCastItem`/`PanelDocItem` exports). Working as
+      designed — do not bypass.
+
 ## Round 37/256 — v0.15.4 Per-Take Prompt Files (prompt pack)
 
 - [x] **Spec frozen:** `dev-notes/subgoals/v0-15-4-per-take-prompts.md`

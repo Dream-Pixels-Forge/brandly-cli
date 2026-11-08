@@ -474,7 +474,7 @@ def status(
         }
 
     if not pack.is_dir():
-        entries = [
+        no_pack_entries: list[dict[str, Any]] = [
             {
                 "scene": take.scene,
                 "take": take.take,
@@ -487,13 +487,13 @@ def status(
             }
             for take in takes
         ]
-        for entry in entries:
-            counts[entry["state"]] += 1
+        for no_pack_entry in no_pack_entries:
+            counts[no_pack_entry["state"]] += 1
         return {
             "pack_exists": False,
             "project_id": project_id,
             "verdict": "pass",
-            "takes": entries,
+            "takes": no_pack_entries,
             "counts": counts,
             "orphans": [],
             "invalid": [],
@@ -678,10 +678,10 @@ def export(
         manifest_entries[take.key] = _entry_for(take, take.prompt, meta=meta)
 
     if not dry_run:
-        for key in list(manifest_entries):
-            take = take_by_key.get(key)
-            if take is None or take.prompt is None:
-                manifest_entries.pop(key, None)
+        for manifest_key in list(manifest_entries):
+            remaining = take_by_key.get(manifest_key)
+            if remaining is None or remaining.prompt is None:
+                manifest_entries.pop(manifest_key, None)
 
     if not dry_run and actions:
         pack.mkdir(parents=True, exist_ok=True)
@@ -775,17 +775,19 @@ def apply(
     )
 
     if clear is not None:
-        key = _parse_key(clear)
-        take = take_by_key.get(f"{key[0]}.{key[1]}")
-        if take is None:
+        pair = _parse_key(clear)
+        cleared = take_by_key.get(f"{pair[0]}.{pair[1]}")
+        if cleared is None:
             report["verdict"] = "fail"
             report["error"] = f"no take {clear} in the shot list"
             return report
-        path = pack / take.relpath
-        take.shot["prompt"] = ""
-        manifest_entries.pop(take.key, None)
+        path = pack / cleared.relpath
+        cleared.shot["prompt"] = ""
+        manifest_entries.pop(cleared.key, None)
         if path.exists():
-            actions.append({"action": "delete", "key": take.key, "path": str(path)})
+            actions.append(
+                {"action": "delete", "key": cleared.key, "path": str(path)}
+            )
             if not dry_run:
                 path.unlink()
                 try:
@@ -837,26 +839,26 @@ def apply(
     meta = _scene_meta(project_id, root)
 
     for entry in selected:
-        take = take_by_key.get(entry["key"])
-        if take is None or take.prompt is None:
+        target = take_by_key.get(entry["key"])
+        if target is None or target.prompt is None:
             continue
         if entry["state"] in {"missing", "unscripted", "unsupported", "in-sync"}:
             continue
-        path = pack / take.relpath
+        path = pack / target.relpath
         text, read_error = _read_text(path)
         if read_error or text is None:
             report["verdict"] = "fail"
             report["error"] = f"take {entry['key']}: {read_error or 'unreadable'}"
             return report
         prompt = normalize_prompt(text)
-        take.shot["prompt"] = prompt
-        actions.append({"action": "apply", "key": take.key, "path": str(path)})
-        manifest_entries[take.key] = {
-            "scene": take.scene,
-            "take": take.take,
-            "scene_id": _scene_id_for(take, meta),
-            "clip": _clip_for(take, meta),
-            "file": take.relpath,
+        target.shot["prompt"] = prompt
+        actions.append({"action": "apply", "key": target.key, "path": str(path)})
+        manifest_entries[target.key] = {
+            "scene": target.scene,
+            "take": target.take,
+            "scene_id": _scene_id_for(target, meta),
+            "clip": _clip_for(target, meta),
+            "file": target.relpath,
             "synced_file_sha256": prompt_sha256(text),
             "synced_prompt_sha256": prompt_sha256(prompt),
         }

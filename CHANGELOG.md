@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added — Scene direction files + MCP `take_prompts` (v0.15.5)
+
+- **Scene direction files:** `.brandly/<id>/prompts/Scene N/Scene N.md` — an
+  optional, authored direction file per scene. `flatten_shots` prepends it to
+  every take of that scene (`direction + "\n\n" + take_prompt`); `brandly
+  produce` loads scene directions and threads them into generation. Pack tools
+  never create or write them, and the scan exempts them (not invalid, never an
+  orphan). Closes deferral P1.
+- **MCP `take_prompts` tool:** `take_prompts_status`, `take_prompts_list`,
+  `take_prompts_export`, `take_prompts_apply` registered on the agent surface,
+  each backed by the real `brandly takes` CLI command. `status`/`list` are
+  read-only. Closes deferral P2.
+
 ## [0.15.4] - 2026-11-09
 
 ### Added — Per-take prompt files (`brandly takes`)

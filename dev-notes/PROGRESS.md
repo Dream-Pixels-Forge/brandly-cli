@@ -1,5 +1,13 @@
 # Pipeline Progress — brandly-cli
 
+## Round 39/256 — v0.15.5 Scene Direction Files + MCP `take_prompts` (closes P1/P2)
+
+- [x] **Spec frozen:** `dev-notes/subgoals/v0-15-5-scene-direction-mcp.md` (P1 scene direction, P2 MCP tool; P3/P5/P6 remain deferred).
+- [x] **P1 — Scene direction files:** `.brandly/<id>/prompts/Scene N/Scene N.md` readable via `take_prompts.load_scene_direction`; pack scan exempts direction files (not invalid, never an orphan); `flatten_shots` gains `scene_direction` and prepends `direction + "\n\n" + take_prompt` per scene; `brandly produce` loads scene directions and threads them into generation. Tests: `tests/test_scene_direction.py` — 8 passed.
+- [x] **P2 — MCP `take_prompts` tool:** `take_prompts_status`/`list`/`export`/`apply` registered in `agent_surface` (CLI_TOOLS + builders + TOOL_ANNOTATIONS + `takes` domain); `take_prompts_status`/`list` added to read-only set; `agent_tools.__init__` read-only set extended. Tests: `tests/test_agent_surface_takes.py` — 15 passed.
+- [x] **Gates:** full suite `1810 passed, 1 skipped, 3 xfailed` (21 pre-existing failures unchanged vs baseline — zero regressions); `ruff check src/ tests/` clean; `mypy` clean (pre-existing PIL import-untyped only).
+- [x] **Ledger:** this Round 39 entry; P3 (web/Paper editor) stays deferred per AGENTS.md §4 (no artboard), P5 auto-renumbering and P6 YAML frontmatter remain explicit v1 non-goals.
+
 ## Round 38/256 — CI workflow hardening (release gate + no collisions)
 
 - [x] **Audit:** `.github/workflows/ci.yml` + `release.yml` share no concurrency

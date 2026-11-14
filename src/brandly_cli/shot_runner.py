@@ -723,12 +723,20 @@ def flatten_shots(
     data: dict[str, Any] | list[dict[str, Any]],
     images_dir: Path,
     character: str | None = None,
+    scene_direction: dict[int, str] | None = None,
 ) -> list[Shot]:
     """Flatten a flat or structured shot list into production order.
 
     ``acts`` are iterated in their JSON key order; per-act ``prefix`` is
     prepended to each shot prompt, per-act ``style``/``folder`` default the
-    shot, and a character identity string is attached as the anchor
+    shot, a character identity string is attached as the anchor, and an
+    optional per-scene direction (v0.15.5, closes P1) is prepended to every
+    shot in that scene::
+
+        effective prompt = scene_direction[scene] + "\\n\\n" + take_prompt
+
+    Scene direction is read from ``.brandly/<id>/prompts/Scene N/Scene N.md``
+    by the caller (``brandly produce``); this function only applies it.
     whenever the shot's resolved references include a character plate
     (shots with no character plate are left anchor-free). The anchor comes
     from the explicit ``character`` argument, else the shot list's
@@ -812,18 +820,24 @@ def flatten_shots(
 
             environment = _env(shot) or _env(act)
 
+            shot_scene = as_int(shot.get("scene"), act_scene)
+            final_prompt = prefix + str(raw_prompt)
+            if scene_direction:
+                direction = scene_direction.get(shot_scene)
+                if direction:
+                    final_prompt = f"{direction}\n\n{final_prompt}"
             shots.append(
                 Shot(
                     id=shot_id,
                     act=act_name,
                     style=str(shot.get("style", default_style)),
                     folder=str(shot.get("folder", default_folder)),
-                    prompt=prefix + str(raw_prompt),
+                    prompt=final_prompt,
                     duration=int(shot.get("duration", 5)),
                     refs=refs,
                     dropped_references=dropped_refs,
                     character=character_anchor,
-                    scene=as_int(shot.get("scene"), act_scene),
+                    scene=shot_scene,
                     index_in_scene=shot_position,
                     environment=environment,
                     structured=structured,

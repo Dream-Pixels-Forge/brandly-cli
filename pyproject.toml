@@ -47,6 +47,11 @@ dev = [
     "mypy>=1.0",
     "import-linter>=2.0",
 ]
+# Automatic speech-to-text / translation for `brandly dub` (src/brandly_cli/dubbing.py).
+# Heavy (pulls ctranslate2 + av), so it stays opt-in.
+stt = [
+    "faster-whisper>=1.0",
+]
 
 [project.scripts]
 brandly = "brandly_cli.cli:main"

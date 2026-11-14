@@ -1,5 +1,17 @@
 # Pipeline Progress — brandly-cli
 
+## Round 40/256 — v0.15.6 Automatic STT / Translation (`brandly voice-match`)
+
+- [x] **Spec frozen:** `dev-notes/subgoals/v0-15-6-dubbing-stt.md` — closes the last remaining code TODO (`src/brandly_cli/dubbing.py:234`, "transcription/translation not implemented").
+- [x] **Implementation:** `dub_video()` transcribes the extracted audio automatically via `faster-whisper` when no `transcript` is supplied — Whisper `task="translate"` for a cross-language target, `task="transcribe"` otherwise, VAD filter on, inference off the event loop via `run_in_executor`. Model load is lazy (never at import time) and per-call; a construction failure degrades to `None` instead of raising.
+- [x] **Optional dependency:** `faster-whisper` ships as the new `stt` extra (`pip install brandly-cli[stt]`) — it pulls `ctranslate2` + `av`, so it is **not** a core dependency. `brandly_cli.dubbing` imports cleanly with or without it (`FASTER_WHISPER_AVAILABLE` guard).
+- [x] **CLI:** `brandly voice-match --transcript TEXT` added and forwarded to `dub_video` — the escape hatch named in the error message is now reachable from the CLI (it previously was not).
+- [x] **Data honesty:** no transcript is ever fabricated. When automatic STT cannot run, the error names both remedies (pass `transcript`, or install `brandly-cli[stt]`).
+- [x] **Bug found by the new tests (RED→GREEN):** a whitespace-only transcription returned `""` instead of `None`, which would have sent an empty transcript into the TTS stage. Fixed with `text.strip() or None`.
+- [x] **Tests:** `tests/test_dubbing_transcription.py` — 13 passed (RED observed first for the blank-transcript case and for the missing `--transcript` option; the CLI case was re-verified RED by stashing the option away).
+- [x] **Gates:** full suite `1852 passed, 1 skipped, 3 xfailed`; `ruff check src/ tests/` clean; `mypy src/` clean for the touched files. The 6 local mypy `PIL` `import-untyped` findings are a pre-existing local-environment artifact (local Pillow 10.2.0 has no `py.typed`; CI installs a newer Pillow and reports "Success: no issues found").
+- [x] **CI repair — `web-quality` bundle freshness:** root cause was a toolchain mismatch, not a stale bundle. `web/` tracks `package-lock.json` (npm), but the committed bundle had been built from a pnpm-installed `node_modules` (vite 8.3.6); CI's `npm ci` installs the lockfile-pinned vite 8.3.0 → different content hash → the freshness diff could never be clean. Fix: restore `.github/workflows/ci.yml` to the npm convention ratified in AGENTS.md §3 (`npm ci` / `npm run lint` / `npm run build`) and rebuild the bundle with Node 22 + `npm ci` → `index-DXaFK9qQ.js`. Verified reproducible across two clean builds; CI run `43637458509` = all 3 jobs green.
+
 ## Round 39/256 — v0.15.5 Scene Direction Files + MCP `take_prompts` (closes P1/P2)
 
 - [x] **Spec frozen:** `dev-notes/subgoals/v0-15-5-scene-direction-mcp.md` (P1 scene direction, P2 MCP tool; P3/P5/P6 remain deferred).

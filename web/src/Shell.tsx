@@ -165,7 +165,7 @@ function NoProjectSelected() {
           inset: 0,
           width: '100%',
           height: '100%',
-          backgroundImage: 'url(/static/preview.jpg)',
+          backgroundImage: 'url(/static/color_bar.png)',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           opacity: 0.6,

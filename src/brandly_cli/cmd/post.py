@@ -594,6 +594,11 @@ def thumbnail(project_id: str, count: int, style: str, root: str | None) -> None
     help="Target language code (en, es, fr, de, ja, ko, zh, pt, ar, hi)",
 )
 @click.option("--voice-style", default="professional", help="Voice style")
+@click.option(
+    "--transcript",
+    default=None,
+    help="Source-language text; skips automatic transcription",
+)
 @click.option("--output", default=None, help="Output path")
 @click.option("--root", default=None, help="Working directory")
 def voice_match(
@@ -601,6 +606,7 @@ def voice_match(
     source: str,
     target: str,
     voice_style: str,
+    transcript: str | None,
     output: str | None,
     root: str | None,
 ) -> None:
@@ -613,6 +619,7 @@ def voice_match(
             source,
             target,
             voice_style=voice_style,
+            transcript=transcript,
             output_path=Path(output) if output else None,
             root=Path(root) if root else None,
         )

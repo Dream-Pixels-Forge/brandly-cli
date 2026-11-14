@@ -4,6 +4,41 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.15.6] - 2026-11-14
+
+### Added — Automatic transcription/translation for `brandly voice-match`
+
+- **Automatic STT:** `dub_video()` no longer requires a hand-written
+  transcript. When none is supplied it transcribes the source audio with
+  `faster-whisper` and asks Whisper to translate directly into the target
+  language (`task="translate"`), otherwise transcribes in the source language.
+  This closes the last remaining code TODO in the dubbing module.
+- **Optional `stt` extra:** `pip install brandly-cli[stt]` installs
+  `faster-whisper`. The dependency is **not** core — it pulls `ctranslate2` +
+  `av`, so it stays opt-in. `brandly_cli.dubbing` imports cleanly with or
+  without it, and the model is loaded lazily (never at import time).
+- **`brandly voice-match --transcript TEXT`:** new option to supply the
+  transcript explicitly and skip automatic STT — the escape hatch the error
+  message names is now actually reachable from the CLI.
+
+### Fixed
+
+- **No blank transcript reaches the TTS stage.** A whitespace-only
+  transcription now normalises to "no transcript" instead of an empty string.
+- **Honest failure.** When automatic transcription cannot run, the error names
+  both remedies (pass `transcript`, or install `brandly-cli[stt]`) instead of
+  fabricating placeholder text.
+
+### Fixed — CI
+
+- **The SPA bundle-freshness gate can pass again.** `web/` tracks
+  `package-lock.json` (npm), but the committed bundle had been built from a
+  pnpm-installed `node_modules` (vite 8.3.6). CI's `npm ci` installs the
+  lockfile-pinned vite 8.3.0, producing a different content hash — so
+  `web-quality` failed on every push. The bundle was rebuilt with the
+  lockfile-pinned toolchain (Node 22 + `npm ci`) and the job now verifies
+  clean.
+
 ## [0.15.5] - 2026-11-14
 
 ### Added — Scene direction files + MCP `take_prompts` (v0.15.5)

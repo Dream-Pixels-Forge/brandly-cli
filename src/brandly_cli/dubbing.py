@@ -159,7 +159,7 @@ async def _transcribe_audio(
 
         loop = asyncio.get_event_loop()
         text = await loop.run_in_executor(None, _transcribe)
-        return text.strip() if text else None
+        return text.strip() or None
 
     except Exception:
         return None
@@ -302,7 +302,9 @@ async def dub_video(
 
     Pipeline:
         1. Extract audio from video using FFmpeg
-        2. Transcribe / translate source audio to target language (TODO stub)
+        2. Transcribe / translate source audio to target language — either from
+           the ``transcript`` argument, or automatically via faster-whisper
+           (``pip install brandly-cli[stt]``)
         3. Generate new TTS audio using MiniMax
         4. Replace the original audio track in the video
 
@@ -378,7 +380,8 @@ async def dub_video(
                 "error": (
                     "Automatic transcription/translation failed. "
                     "Provide a `transcript` argument with the source-language text "
-                    "to translate, or install faster-whisper for automatic STT."
+                    "to translate, or install faster-whisper "
+                    "('pip install brandly-cli[stt]') for automatic STT."
                 )
             }
     else:

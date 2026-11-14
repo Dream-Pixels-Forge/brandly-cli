@@ -53,7 +53,7 @@ const PANELS: Record<PanelKind, PanelComponent> = {
 };
 
 export default function Shell() {
-  const { activePanel, activeProject, wsEvent, fetchProjects } = useAppStore();
+  const { activePanel, activeProject, wsEvent, fetchProjects, error } = useAppStore();
   const [wsReady, setWsReady] = useState(false);
 
   // Boot: load the project list once on mount so the sidebar is
@@ -98,6 +98,37 @@ export default function Shell() {
     <div className="shell-root">
       <Header wsReady={wsReady} wsEvent={wsEvent} />
       <Toolbar />
+      {error && (
+        <div
+          style={{
+            padding: '6px 12px',
+            background: 'rgba(248,113,113,0.1)',
+            border: '1px solid var(--md-danger, #f87171)',
+            color: 'var(--md-danger, #f87171)',
+            fontSize: 11,
+            fontFamily: 'var(--md-font-code-inline)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>error</span>
+          {error}
+          <button
+            onClick={() => useAppStore.setState({ error: null })}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--md-danger, #f87171)',
+              cursor: 'pointer',
+              fontSize: 10,
+              padding: 0,
+            }}
+          >
+            dismiss
+          </button>
+        </div>
+      )}
       <SidebarNav />
       <main className="main">
         {activeProject ? (

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useAppStore } from '../store';
+import { useAppStore, API } from '../store';
 import type { WaveformPoint } from '../types';
 
 interface UseWaveformReturn {
@@ -10,16 +10,18 @@ interface UseWaveformReturn {
 
 export function useWaveform(clipId: string): UseWaveformReturn {
   const [loading, setLoading] = useState(false);
+  const { activeProject } = useAppStore();
   const waveforms = useAppStore((s) => s.waveforms);
   const setWaveform = useAppStore((s) => s.setWaveform);
 
   const waveform = waveforms[clipId] ?? null;
+  const projectId = activeProject?.id;
 
   const doFetch = useCallback(async () => {
-    if (waveform !== null) return;
+    if (waveform !== null || !projectId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/projects/clips/${clipId}/waveform`);
+      const res = await fetch(API(`/projects/${projectId}/clips/${clipId}/waveform`));
       if (!res.ok) {
         setLoading(false);
         return;
@@ -31,7 +33,7 @@ export function useWaveform(clipId: string): UseWaveformReturn {
     } finally {
       setLoading(false);
     }
-  }, [clipId, waveform, setWaveform]);
+  }, [clipId, waveform, setWaveform, projectId]);
 
   return { waveform, loading, fetch: doFetch };
 }

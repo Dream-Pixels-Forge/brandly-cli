@@ -107,8 +107,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: Install pnpm
-        run: corepack enable pnpm
+      - name: Setup pnpm
+        run: corepack enable pnpm && corepack prepare pnpm@latest --activate
 
       - name: Install frontend dependencies
         working-directory: web

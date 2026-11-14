@@ -53,15 +53,15 @@ class TestLocalProvider:
 
 
 class TestS3Provider:
-    """Tests for S3 share provider (stub)."""
+    """Tests for S3 share provider (unavailable without boto3)."""
 
-    def test_upload_returns_placeholder(self) -> None:
-        """S3 provider returns placeholder URL."""
+    def test_upload_returns_error(self) -> None:
+        """S3 provider returns an error — boto3 is not installed."""
         provider = sharing.S3ShareProvider("test-bucket")
         result = asyncio.run(provider.upload(Path("/fake/path.mp4")))
         assert result["provider"] == "s3"
-        assert "share_url" in result
-        assert "Stub" in result.get("note", "")
+        assert "error" in result
+        assert "boto3" in result["error"].lower()
 
 
 class TestShareFile:

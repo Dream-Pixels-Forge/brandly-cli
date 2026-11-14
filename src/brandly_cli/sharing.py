@@ -45,20 +45,20 @@ class LocalShareProvider(ShareProvider):
 
 
 class S3ShareProvider(ShareProvider):
-    """AWS S3 sharing (stub for future implementation)."""
+    """AWS S3 sharing (unavailable — boto3 not installed)."""
 
     def __init__(self, bucket: str, region: str = "us-east-1"):
         self.bucket = bucket
         self.region = region
 
     async def upload(self, file_path: Path) -> dict[str, Any]:
-        """Upload to S3 (stub — returns placeholder URL)."""
-        # TODO: Implement real S3 upload with boto3
+        """S3 upload is not available — boto3 is not installed."""
         return {
             "provider": "s3",
-            "share_url": f"https://{self.bucket}.s3.{self.region}.amazonaws.com/{file_path.name}",
-            "bucket": self.bucket,
-            "note": "Stub implementation - S3 upload not yet integrated",
+            "error": (
+                "S3 upload not implemented — boto3 is not installed. "
+                "Install boto3 to enable S3 sharing, or use the 'local' provider."
+            ),
         }
 
 

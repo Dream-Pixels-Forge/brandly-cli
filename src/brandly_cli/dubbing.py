@@ -297,17 +297,20 @@ async def dub_video(
     if rc != 0:
         return {"error": f"Audio extraction failed: {stderr[:300]}"}
 
-    # Stage 2: Transcribe and translate (TODO stub)
-    # TODO: Replace with real transcription (Whisper etc.) + translation pipeline.
-    #       For now we assume the source transcript is provided externally or
-    #       we use a placeholder text for testing.
-    #       The transcription/translation step is intentionally left as a stub
-    #       until the upstream speech-to-text service is integrated.
-    translated_text = (
-        transcript
-        if transcript is not None
-        else f"[dubbed_to_{target_lang}]"  # placeholder label
-    )
+    # Stage 2: Transcribe and translate source audio to target language.
+    # Transcription/translation is not yet implemented (no STT dependency).
+    # Callers must supply `transcript` explicitly; we never fabricate text.
+    if transcript is None:
+        extracted_audio.unlink(missing_ok=True)
+        return {
+            "error": (
+                "Transcription/translation not implemented. "
+                "Provide a `transcript` argument with the source-language text "
+                "to translate, or install an STT backend (e.g. Whisper) and "
+                "implement Stage 2."
+            )
+        }
+    translated_text = transcript
 
     # Stage 3: Generate TTS audio via MiniMax
     voice_id = LANGUAGES[target_lang][1]

@@ -240,6 +240,9 @@ _READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "estimate",
         "read_bible",
         "read_screenplay",
+        # Per-take prompt pack reads (v0.15.5): status/list never write state.
+        "take_prompts_status",
+        "take_prompts_list",
     }
 )
 

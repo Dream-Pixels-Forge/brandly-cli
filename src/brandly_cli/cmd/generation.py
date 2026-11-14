@@ -17,7 +17,7 @@ from typing import Any
 import click
 from rich.table import Table
 
-from brandly_cli import inflight, layout, shot_runner
+from brandly_cli import inflight, layout, shot_runner, take_prompts
 from brandly_cli.agnes_client import (
     create_video_task,
     generate_image,
@@ -2402,7 +2402,23 @@ def _run_produce_runner(
     progress = shot_runner.ProgressLog(
         layout.docs_dir(project_dir, "tmp") / shot_runner.PROGRESS_FILENAME
     )
-    shots = shot_runner.flatten_shots(data, images_dir, character=character)
+    # v0.15.5 (P1): per-scene direction files opt into the generation prompt.
+    # ``Scene N/Scene N.md`` is prepended to every take of scene N (see
+    # ``flatten_shots``). Absent files change nothing.
+    scene_direction: dict[int, str] = {}
+    try:
+        pack = layout.prompts_dir(root, project_id)
+        for take in take_prompts.iter_takes(data):
+            if take.scene in scene_direction:
+                continue
+            direction = take_prompts.load_scene_direction(pack, take.scene)
+            if direction:
+                scene_direction[take.scene] = direction
+    except take_prompts.TakePromptError:
+        scene_direction = {}
+    shots = shot_runner.flatten_shots(
+        data, images_dir, character=character, scene_direction=scene_direction
+    )
 
     # Issue #35: duration validation at plan time. Agnes clamps every take
     # to ~5-6s regardless of the requested duration, so shots longer than

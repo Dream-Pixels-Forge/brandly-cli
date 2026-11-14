@@ -81,6 +81,11 @@ TOOL_ANNOTATIONS: dict[str, dict[str, Any]] = {
     "approve":            {"readOnlyHint": False, "destructiveHint": True,  "idempotentHint": False},
     "record_cost":        {"readOnlyHint": False, "destructiveHint": True,  "idempotentHint": False},
     "memory":             {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    # Per-take prompt pack (read-only reads; export/apply write state)
+    "take_prompts_status": {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "take_prompts_list":   {"readOnlyHint": True,  "destructiveHint": False, "idempotentHint": True},
+    "take_prompts_export": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    "take_prompts_apply":  {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
     "update_clip":        {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
     "reorder_timeline":   {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
     # Production (spend credits, create production assets)
@@ -222,6 +227,42 @@ def _build_memory(args: dict[str, Any]) -> list[str]:
     argv = ["memory", _require(args, "action")]
     if args.get("hook"):
         argv.append(str(args["hook"]))
+    return argv
+
+
+def _build_takes_status(args: dict[str, Any]) -> list[str]:
+    """Map a take_prompts_status tool call to `brandly takes status <id> [--json]`."""
+    argv = ["takes", "status", str(_require(args, "project_id"))]
+    argv += _flag(args, "json", "--json")
+    return argv
+
+
+def _build_takes_list(args: dict[str, Any]) -> list[str]:
+    """Map a take_prompts_list tool call to `brandly takes list <id> [--scene N] [--json]`."""
+    argv = ["takes", "list", str(_require(args, "project_id"))]
+    argv += _opt(args, "scene", "--scene")
+    argv += _flag(args, "json", "--json")
+    return argv
+
+
+def _build_takes_export(args: dict[str, Any]) -> list[str]:
+    """Map a take_prompts_export tool call to `brandly takes export <id> [...]`."""
+    argv = ["takes", "export", str(_require(args, "project_id"))]
+    argv += _flag(args, "missing_only", "--missing-only")
+    argv += _flag(args, "force", "--force")
+    argv += _flag(args, "prune", "--prune")
+    argv += _flag(args, "dry_run", "--dry-run")
+    return argv
+
+
+def _build_takes_apply(args: dict[str, Any]) -> list[str]:
+    """Map a take_prompts_apply tool call to `brandly takes apply <id> [...]`."""
+    argv = ["takes", "apply", str(_require(args, "project_id"))]
+    argv += _opt(args, "scene", "--scene")
+    argv += _opt(args, "take", "--take")
+    argv += _opt(args, "clear", "--clear")
+    argv += _flag(args, "force", "--force")
+    argv += _flag(args, "dry_run", "--dry-run")
     return argv
 
 
@@ -469,6 +510,82 @@ CLI_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["action"],
         },
     },
+    "take_prompts_status": {
+        "command": "takes",
+        "builder": _build_takes_status,
+        "description": (
+            "Read the per-take prompt pack state matrix for a project "
+            "(drift, edits, orphans — exit 0/1/2). Read-only."
+        ),
+        "parameters": {
+            "type": "object",
+            "title": "Take Prompts Status",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project id."},
+                "json": {"type": "boolean", "description": "Emit the raw matrix as JSON."},
+            },
+            "required": ["project_id"],
+        },
+    },
+    "take_prompts_list": {
+        "command": "takes",
+        "builder": _build_takes_list,
+        "description": (
+            "List per-take prompts with state, clip and preview for a project. "
+            "Read-only."
+        ),
+        "parameters": {
+            "type": "object",
+            "title": "Take Prompts List",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project id."},
+                "scene": {"type": "integer", "description": "Only takes of this scene folder."},
+                "json": {"type": "boolean", "description": "Emit the take inventory as JSON."},
+            },
+            "required": ["project_id"],
+        },
+    },
+    "take_prompts_export": {
+        "command": "takes",
+        "builder": _build_takes_export,
+        "description": (
+            "Create/refresh per-take prompt files from shots.json prompts "
+            "(opt-in pack; never overwrites edited files without --force)."
+        ),
+        "parameters": {
+            "type": "object",
+            "title": "Take Prompts Export",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project id."},
+                "missing_only": {"type": "boolean", "description": "Only write takes with no file."},
+                "force": {"type": "boolean", "description": "Overwrite edited/conflicting files."},
+                "prune": {"type": "boolean", "description": "Delete orphan take files (requires --force)."},
+                "dry_run": {"type": "boolean", "description": "Print planned writes, write nothing."},
+            },
+            "required": ["project_id"],
+        },
+    },
+    "take_prompts_apply": {
+        "command": "takes",
+        "builder": _build_takes_apply,
+        "description": (
+            "Write take-file bodies back into shots.json (file wins a conflict "
+            "with --force). Writes shots.json — confirm first."
+        ),
+        "parameters": {
+            "type": "object",
+            "title": "Take Prompts Apply",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project id."},
+                "scene": {"type": "integer", "description": "Only apply takes of this scene folder."},
+                "take": {"type": "integer", "description": "Only apply this take number."},
+                "clear": {"type": "string", "description": "Clear one take by key, e.g. '1.2'."},
+                "force": {"type": "boolean", "description": "Let the take file win a conflict."},
+                "dry_run": {"type": "boolean", "description": "Print planned writes, write nothing."},
+            },
+            "required": ["project_id"],
+        },
+    },
 }
 
 
@@ -490,6 +607,10 @@ TOOL_DOMAINS: dict[str, list[str]] = {
         "director", "cascade", "fight_choreography", "director_of_photography", "editor",
         "stitch", "export_platforms", "update_clip", "reorder_timeline", "run_gate",
         "approve", "record_cost", "memory",
+    ],
+    "takes": [
+        "take_prompts_status", "take_prompts_list",
+        "take_prompts_export", "take_prompts_apply",
     ],
 }
 

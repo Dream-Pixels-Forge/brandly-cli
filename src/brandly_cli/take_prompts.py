@@ -337,6 +337,24 @@ def pack_exists(root: Path | str | None, project_id: str) -> bool:
     return pack_dir(root, project_id).is_dir()
 
 
+def load_scene_direction(pack: Path, scene: int) -> str | None:
+    """Read the scene direction file ``Scene N/Scene N.md``, or ``None``.
+
+    Scene direction is authored directly (never written by pack tools). The
+    returned text has its trailing newline stripped so callers can join it to a
+    take prompt cleanly (``direction + "\\n\\n" + take_prompt``).
+    """
+    if scene < 1:
+        return None
+    path = pack / f"Scene {scene}" / f"Scene {scene}.md"
+    if not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8").rstrip("\n")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def _read_text(path: Path) -> tuple[str | None, str | None]:
     try:
         return path.read_text(encoding="utf-8"), None
@@ -371,6 +389,10 @@ def _scan_files(pack: Path) -> tuple[dict[tuple[int, int], Path], list[dict[str,
             rel = f"{entry.name}/{child.name}"
             if not child.is_file():
                 invalid.append({"file": rel, "error": "not a file"})
+                continue
+            # Scene direction file: ``Scene N/Scene N.md`` — scene metadata,
+            # authored directly, never a take file. Not invalid, not an orphan.
+            if child.name == f"Scene {scene}.md":
                 continue
             parsed = parse_take_relpath(rel)
             if parsed is None:

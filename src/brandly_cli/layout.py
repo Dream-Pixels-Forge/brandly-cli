@@ -164,6 +164,18 @@ def prompts_dir(root: str | Path, project_id: str) -> Path:
     return project_dir(root, project_id) / PROMPTS_DIRNAME
 
 
+def scene_direction_path(root: str | Path, project_id: str, scene: int) -> Path:
+    """Return ``.brandly/{project_id}/prompts/Scene N/Scene N.md``.
+
+    The optional per-scene direction file (v0.15.5, closes P1). It sits beside
+    the take files in the prompt pack and is **authored directly** — pack tools
+    never create or write it. Returns the path whether or not the file exists.
+    """
+    if scene < 1:
+        raise ValueError(f"scene must be >= 1, got {scene}")
+    return prompts_dir(root, project_id) / f"Scene {scene}" / f"Scene {scene}.md"
+
+
 # ---------------------------------------------------------------------------
 # Sub-folder helpers (relative to a resolved project dir)
 # ---------------------------------------------------------------------------

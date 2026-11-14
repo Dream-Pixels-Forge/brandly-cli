@@ -203,67 +203,82 @@ export default function PreviewPanel() {
           </div>
         ) : hasNoClips ? (
           /* No footage generated yet: show the still plate. It is labelled so
-             it can never be mistaken for a real clip (data honesty). */
+             it can never be mistaken for a real clip (data honesty).
+             The image is a card inside the viewport, not a full-page
+             background, so transport controls remain visible. */
           <div
             style={{
-              position: 'relative',
-              width: '100%',
-              height: '100%',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
+              height: '100%',
+              gap: 16,
+              padding: 24,
             }}
           >
-            <img
-              src="/static/preview.jpg"
-              alt="Placeholder still — no footage generated for this project yet"
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                opacity: 0.55,
-                filter: 'saturate(0.85)',
-              }}
-            />
             <div
               style={{
-                position: 'absolute',
-                inset: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 10,
-                pointerEvents: 'none',
+                position: 'relative',
+                width: '100%',
+                maxWidth: 560,
+                aspectRatio: '16/9',
+                background: 'var(--md-surface-container-lowest)',
+                border: '1px solid rgba(76,215,246,0.3)',
+                boxShadow: '0 0 40px rgba(0,0,0,0.6), inset 0 0 60px rgba(0,0,0,0.3)',
+                overflow: 'hidden',
               }}
             >
-              <span
+              <img
+                src="/static/preview.jpg"
+                alt="Placeholder still — no footage generated for this project yet"
                 style={{
-                  background: 'rgba(14,14,17,0.85)',
-                  border: '1px solid var(--md-primary)',
-                  color: 'var(--md-primary)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.12em',
-                  fontFamily: 'var(--md-font-code-inline)',
-                  padding: '4px 10px',
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  opacity: 0.55,
+                  filter: 'saturate(0.85)',
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  pointerEvents: 'none',
                 }}
               >
-                NO FOOTAGE YET
-              </span>
-              <span
-                style={{
-                  background: 'rgba(14,14,17,0.85)',
-                  border: '1px solid var(--md-surface-container-highest)',
-                  color: 'var(--md-on-surface-variant)',
-                  fontSize: 11,
-                  fontFamily: 'var(--md-font-code-inline)',
-                  padding: '4px 10px',
-                }}
-              >
-                Placeholder still — generate shots to see them here
-              </span>
+                <span
+                  style={{
+                    background: 'rgba(14,14,17,0.85)',
+                    border: '1px solid var(--md-primary)',
+                    color: 'var(--md-primary)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.12em',
+                    fontFamily: 'var(--md-font-code-inline)',
+                    padding: '4px 10px',
+                  }}
+                >
+                  NO FOOTAGE YET
+                </span>
+                <span
+                  style={{
+                    background: 'rgba(14,14,17,0.85)',
+                    border: '1px solid var(--md-surface-container-highest)',
+                    color: 'var(--md-on-surface-variant)',
+                    fontSize: 11,
+                    fontFamily: 'var(--md-font-code-inline)',
+                    padding: '4px 10px',
+                  }}
+                >
+                  Placeholder still — generate shots to see them here
+                </span>
+              </div>
             </div>
             {/* Transport controls available even in empty state for testing */}
             <TransportControls />

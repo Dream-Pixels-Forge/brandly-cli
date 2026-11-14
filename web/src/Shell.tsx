@@ -159,19 +159,6 @@ function NoProjectSelected() {
       position: 'relative',
       overflow: 'hidden',
     }}>
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          width: '100%',
-          height: '100%',
-          backgroundImage: 'url(/static/preview.jpg)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          opacity: 0.6,
-          zIndex: 0,
-        }}
-      />
       <div style={{
         position: 'relative',
         zIndex: 1,

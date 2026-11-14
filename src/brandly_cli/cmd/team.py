@@ -23,6 +23,7 @@ from brandly_cli import layout
 from brandly_cli.cli import _get_root, console
 from brandly_cli.team import (
     TEAM_ROLES,
+    accept_invitation,
     add_project_to_team,
     create_team,
     delete_team,
@@ -207,11 +208,12 @@ def team_invite(
             expires_days=expires_days,
         ))
 
-        console.print(f"[green]✓ Invitation sent:[/green] {email}")
+        console.print(f"[green]✓ Invitation created:[/green] {email}")
         console.print(f"  Role: [bold]{role}[/bold]")
         console.print(f"  Expires: {invitation.expires_at[:10] if invitation.expires_at else 'Never'}")
         console.print(f"  Invitation ID: [dim]{invitation.invitation_id}[/dim]")
-        console.print(f"  Have them accept with: [code]brandly team accept {invitation.invitation_id}[/code]")
+        console.print("  No email is sent — share this ID with them, then they run:")
+        console.print(f"    [code]brandly team accept {invitation.invitation_id}[/code]")
 
     except Exception as e:
         console.print(f"[red]Failed to send invitation:[/red] {e}")
@@ -222,7 +224,9 @@ def team_invite(
 @click.argument("invitation_id")
 @click.option("--username", default=None, help="Your username")
 @click.option("--root", default=None, help="Working directory")
+@click.pass_context
 def team_accept(
+    ctx: click.Context,
     invitation_id: str,
     username: str | None,
     root: str | None,
@@ -235,17 +239,22 @@ def team_accept(
         username = getpass.getuser()
 
     user_id = f"user_{username.replace(' ', '_').lower()}"
+    root_dir = Path(root) if root else _get_root(ctx)
 
-    # In a real implementation, we would load the invitation from storage
-    # For this stub version, we'll simulate acceptance
-    console.print("[yellow]Note: Invitation acceptance is a stub implementation.[/yellow]")
-    console.print("In a full implementation, this would:")
-    console.print("  1. Load the invitation from storage")
-    console.print("  2. Validate it hasn't expired")
-    console.print("  3. Add you to the team with the specified role")
-    console.print("  4. Mark the invitation as accepted")
-    console.print()
-    console.print(f"Would accept invitation {invitation_id} for user {username} ({user_id})")
+    try:
+        accepted = asyncio.run(accept_invitation(
+            invitation_id=invitation_id,
+            user_id=user_id,
+            username=username,
+            root=root_dir,
+        ))
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    console.print(f"[green]✓ Invitation accepted:[/green] {accepted.name}")
+    console.print(f"  Role: [bold]{accepted.members[user_id].role}[/bold]")
+    console.print(f"  Team ID: [dim]{accepted.team_id}[/dim]")
 
 
 @team_group.command("members")

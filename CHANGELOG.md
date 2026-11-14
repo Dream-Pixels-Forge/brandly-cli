@@ -4,6 +4,33 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.15.7] - 2026-11-14
+
+### Fixed — Team invitations actually work
+
+`brandly team` had a broken round trip: both halves were no-ops that reported
+success. This closes the last two no-op actions in the codebase.
+
+- **`brandly team invite` now persists the invitation.** It previously built a
+  `TeamInvitation` object, printed "✓ Invitation sent" and dropped it on the
+  floor — it could never be listed, loaded or accepted, and no email was sent
+  either. Invitations are stored at
+  `.brandly/teams/invitations/<invitation_id>.json`. The command now says
+  "✓ Invitation created" and states plainly that no email is sent, because
+  none is.
+- **`brandly team accept` now accepts.** It previously printed "Invitation
+  acceptance is a stub implementation", listed what it *would* do, and exited
+  **0** — a false success. It now loads the invitation, validates it, adds the
+  invitee to the team with the invitation's role and email, marks the
+  invitation accepted, persists both, and exits 0. Any invalid state (unknown
+  id, already accepted, expired, team gone) prints the reason and exits **1**.
+- **Expiry is enforced.** An invitation whose `expires_at` has passed is
+  rejected at accept time. A corrupt expiry fails closed. An invitation with
+  no expiry never expires.
+- **Path-traversal hardened.** Invitation ids are validated against
+  `^[A-Za-z0-9_-]{1,64}$` before they are used as a filename component, so an
+  id can never escape the invitations directory.
+
 ## [0.15.6] - 2026-11-14
 
 ### Added — Automatic transcription/translation for `brandly voice-match`

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -176,6 +177,54 @@ def _get_team_file(team_id: str, root: Path | None = None) -> Path:
     return _get_teams_dir(root) / f"{team_id}.json"
 
 
+#: Invitation ids are generated as ``uuid4().hex``. The charset is enforced so
+#: an id can never escape the invitations directory (path traversal).
+_INVITATION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _is_valid_invitation_id(invitation_id: str) -> bool:
+    """Return True when the id is safe to use as a filename component."""
+    return bool(_INVITATION_ID_RE.match(invitation_id))
+
+
+def _get_invitations_dir(root: Path | None = None) -> Path:
+    """Get the directory where team invitations are stored.
+
+    Invitations live in a sub-directory of ``.brandly/teams/`` so the
+    ``*.json`` glob used by :func:`list_teams_for_user` can never mistake an
+    invitation for a team.
+    """
+    invitations_dir = _get_teams_dir(root) / "invitations"
+    invitations_dir.mkdir(parents=True, exist_ok=True)
+    return invitations_dir
+
+
+async def save_invitation(invitation: TeamInvitation, root: Path | None = None) -> Path:
+    """Save a team invitation to disk."""
+    if not _is_valid_invitation_id(invitation.invitation_id):
+        raise ValueError(f"Invalid invitation id: {invitation.invitation_id!r}")
+    invitation_file = _get_invitations_dir(root) / f"{invitation.invitation_id}.json"
+    invitation_file.write_text(
+        json.dumps(invitation.to_dict(), indent=2, ensure_ascii=False),
+        encoding="utf-8"
+    )
+    return invitation_file
+
+
+async def load_invitation(invitation_id: str, root: Path | None = None) -> TeamInvitation | None:
+    """Load a team invitation by ID, or None when it does not exist."""
+    if not _is_valid_invitation_id(invitation_id):
+        return None
+    invitation_file = _get_invitations_dir(root) / f"{invitation_id}.json"
+    if not invitation_file.exists():
+        return None
+    try:
+        data = json.loads(invitation_file.read_text(encoding="utf-8"))
+        return TeamInvitation.from_dict(data)
+    except Exception:
+        return None
+
+
 async def create_team(
     name: str,
     owner_id: str,
@@ -273,8 +322,9 @@ async def invite_to_team(
         expires_at=(datetime.now() + timedelta(days=expires_days)).isoformat() if expires_days else None,
     )
 
-    # In a real implementation, we would save the invitation and send an email
-    # For now, we'll just return it
+    # The invitation is persisted so it can be accepted later. No mail service
+    # is wired — the caller shares the invitation id.
+    await save_invitation(invitation, root=root)
     return invitation
 
 
@@ -283,12 +333,45 @@ async def accept_invitation(
     user_id: str,
     username: str,
     root: Path | None = None,
-) -> Team | None:
-    """Accept a team invitation."""
-    # In a real implementation, we would load the invitation from storage
-    # For this stub, we'll simulate by creating a new team with the user
-    # This is simplified - a real implementation would have invitation storage
-    return None  # Placeholder for now
+) -> Team:
+    """Accept a team invitation and add the invitee to the team.
+
+    Raises:
+        ValueError: when the invitation is unknown, malformed, already
+            accepted, expired, or its team no longer exists.
+    """
+    if not _is_valid_invitation_id(invitation_id):
+        raise ValueError(f"Invalid invitation id: {invitation_id!r}")
+
+    invitation = await load_invitation(invitation_id, root=root)
+    if invitation is None:
+        raise ValueError(f"Invitation not found: {invitation_id}")
+    if invitation.is_accepted:
+        raise ValueError(f"Invitation already accepted: {invitation_id}")
+    if invitation.expires_at:
+        from datetime import datetime
+        try:
+            expires_at = datetime.fromisoformat(invitation.expires_at)
+        except ValueError:
+            # A corrupt expiry cannot be trusted — fail closed.
+            raise ValueError(f"Invitation expired: {invitation_id}") from None
+        if expires_at < datetime.now():
+            raise ValueError(f"Invitation expired: {invitation_id}")
+
+    team_obj = await load_team(invitation.team_id, root=root)
+    if team_obj is None:
+        raise ValueError(f"Team not found: {invitation.team_id}")
+
+    team_obj.add_member(
+        user_id=user_id,
+        username=username,
+        role=invitation.role,
+        email=invitation.email,
+    )
+    invitation.is_accepted = True
+    await save_invitation(invitation, root=root)
+    await save_team(team_obj, root=root)
+    return team_obj
 
 
 # ---------------------------------------------------------------------------

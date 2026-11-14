@@ -1,5 +1,17 @@
 # Pipeline Progress — brandly-cli
 
+## Round 41/256 — v0.15.7 Working Team Invitations (last two no-op actions)
+
+- [x] **Survey:** a codebase-wide sweep for `TODO`/`FIXME`/stub markers found only two remaining no-op actions, both in the team subsystem (`team.py`, `cmd/team.py`). Everything else that used to be a stub was already converted to honest errors in earlier Rounds.
+- [x] **Spec frozen:** `dev-notes/subgoals/v0-15-7-team-invitations.md`.
+- [x] **The bug:** `brandly team invite` printed "✓ Invitation sent" but `invite_to_team()` never persisted the invitation — a phantom that could not be listed, loaded or accepted (and no email was sent either). `brandly team accept` printed "Invitation acceptance is a stub implementation", listed what it *would* do, and exited **0** — a false success. `accept_invitation()` unconditionally returned `None`.
+- [x] **Implementation:** invitations persist to `.brandly/teams/invitations/<invitation_id>.json` (a sub-directory, so `list_teams_for_user()`'s `*.json` glob can never mistake an invitation for a team). New `save_invitation()` / `load_invitation()`. `accept_invitation()` loads, validates (exists → not already accepted → not expired → team exists), adds the member with the invitation's role **and** email, marks the invitation accepted, persists both, and returns the team. It raises `ValueError` for every invalid state.
+- [x] **Honesty:** `team invite` now says "✓ Invitation created" and states that no email is sent; `team accept` performs the action and exits 1 with the reason on any failure.
+- [x] **Security:** invitation ids are validated against `^[A-Za-z0-9_-]{1,64}$` before use as a filename component — a traversal id such as `../../../../tmp/pwned` is rejected (`Invalid invitation id`) and writes nothing outside the invitations directory.
+- [x] **Tests:** `tests/test_team_invitations.py` — 14 passed, RED observed first for all 13 initially-failing cases. One test was then tightened after it wrongly flagged the honest phrase "No email is sent" — the assertion now targets the false claim ("invitation sent") rather than the word.
+- [x] **Gates:** full suite `1866 passed, 1 skipped, 3 xfailed` (+14 vs v0.15.6); `ruff check src/ tests/` clean; `mypy` clean on the touched files; import-linter `2 kept, 0 broken`.
+- [x] **Manual verification:** the real CLI round trip was exercised end-to-end outside pytest — create → invite (invitation JSON observed on disk) → accept as a second user → `team members` shows the new member with the `editor` role and the invitation's email → `is_accepted: true`. Double-accept, unknown id and a path-traversal id each exit 1 with an honest message.
+
 ## Round 40/256 — v0.15.6 Automatic STT / Translation (`brandly voice-match`)
 
 - [x] **Spec frozen:** `dev-notes/subgoals/v0-15-6-dubbing-stt.md` — closes the last remaining code TODO (`src/brandly_cli/dubbing.py:234`, "transcription/translation not implemented").

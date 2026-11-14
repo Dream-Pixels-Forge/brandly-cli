@@ -11,6 +11,9 @@
 - [x] **Tests:** `tests/test_team_invitations.py` — 14 passed, RED observed first for all 13 initially-failing cases. One test was then tightened after it wrongly flagged the honest phrase "No email is sent" — the assertion now targets the false claim ("invitation sent") rather than the word.
 - [x] **Gates:** full suite `1866 passed, 1 skipped, 3 xfailed` (+14 vs v0.15.6); `ruff check src/ tests/` clean; `mypy` clean on the touched files; import-linter `2 kept, 0 broken`.
 - [x] **Manual verification:** the real CLI round trip was exercised end-to-end outside pytest — create → invite (invitation JSON observed on disk) → accept as a second user → `team members` shows the new member with the `editor` role and the invitation's email → `is_accepted: true`. Double-accept, unknown id and a path-traversal id each exit 1 with an honest message.
+- [x] **Delivery:** branch `fix/v0-15-7-team-invitations` → PR #329 → CI green (all 3 jobs) → squash-merged as `f6af381`; `main` CI green (`43643814973`).
+- [x] **Release:** tag `v0.15.7` on `main`; GitHub release v0.15.7 published; release workflow (`verify` → `publish`) success; PyPI `0.15.7` with wheel + sdist (2 files).
+- [x] **Three-way verification:** code `__version__` = tag = release = PyPI all `0.15.7` ✅. Published wheel inspected: `Version: 0.15.7`, and `brandly_cli/team.py` in the wheel contains the implemented acceptance path and invitation persistence.
 
 ## Round 40/256 — v0.15.6 Automatic STT / Translation (`brandly voice-match`)
 

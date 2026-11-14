@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.15.5] - 2026-11-14
+
 ### Added — Scene direction files + MCP `take_prompts` (v0.15.5)
 
 - **Scene direction files:** `.brandly/<id>/prompts/Scene N/Scene N.md` — an

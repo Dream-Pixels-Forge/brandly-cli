@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-11-09
+
 ### Added — Per-take prompt files (`brandly takes`)
 
 - **Prompt pack:** `.brandly/<id>/prompts/Scene N/Scene N.T.md` — one Markdown

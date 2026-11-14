@@ -104,20 +104,20 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install frontend dependencies
         working-directory: web
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Lint frontend
         working-directory: web
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Typecheck + build frontend
         working-directory: web
-        run: npm run build
+        run: pnpm run build
 
       - name: Verify bundled SPA is fresh
         run: |
@@ -125,6 +125,6 @@ jobs:
           grep -q "/static/assets/" src/brandly_cli/web/static/index.html
           test -n "$(ls src/brandly_cli/web/static/assets/index-*.js)"
           git diff --exit-code -- src/brandly_cli/web/static/ || (
-            echo "::error::Bundled SPA is stale — run 'npm run build' in web/ and commit src/brandly_cli/web/static/"
+            echo "::error::Bundled SPA is stale — run 'pnpm run build' in web/ and commit src/brandly_cli/web/static/"
             exit 1
           )

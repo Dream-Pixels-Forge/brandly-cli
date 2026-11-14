@@ -8,8 +8,10 @@ re-export shims for compatibility (deprecated).
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import socket
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -221,16 +223,83 @@ def write_json(path: Path | str, data: dict[str, Any]) -> None:
     write_atomic(path, json.dumps(data, indent=2, ensure_ascii=False))
 
 
+#: Maximum bytes downloaded in a single :func:`download_file` call — bounds
+#: disk-fill risk from a malicious or compromised provider URL.
+MAX_DOWNLOAD_BYTES = 1_000_000_000  # 1 GiB
+
+#: URL schemes permitted for downloads — blocks file://, ftp://, etc.
+_ALLOWED_URL_SCHEMES = {"http", "https"}
+
+
+def _url_resolves_to_private_address(url: str) -> bool:
+    """Return True when ``url`` resolves to a private/loopback/link-local address.
+
+    Defends against SSRF (CWE-918): a provider-controlled URL must not be able
+    to reach the loopback interface, link-local addresses, RFC1918 space, the
+    cloud metadata service (169.254.169.254), or other reserved ranges.
+
+    A host that cannot be resolved is **not** treated as private here — httpx
+    will fail to connect on its own, and refusing on resolution failure would
+    break legitimate downloads whose host simply isn't in DNS at guard time.
+    """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme not in _ALLOWED_URL_SCHEMES or not parsed.hostname:
+        return True  # unknown/non-http scheme: refuse
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, None, type=socket.SOCK_STREAM)
+    except (OSError, socket.gaierror):
+        return False  # unresolvable: let httpx report a connection error
+    for _family, _type, _proto, _canon, sockaddr in infos:
+        addr = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return True
+    return False
+
+
 async def download_file(url: str, dest_path: Path) -> Path:
-    """Download a file from url to dest_path (creates parent dirs). Returns dest_path."""
+    """Download a file from url to dest_path (creates parent dirs). Returns dest_path.
+
+    Hardened against SSRF (CWE-918): only http/https URLs are accepted, the
+    resolved host must be a public internet address (private/loopback/link-local
+    addresses are refused), and the body is capped at :data:`MAX_DOWNLOAD_BYTES`
+    so a malicious provider cannot fill the disk.
+    """
     import httpx
+
+    if _url_resolves_to_private_address(url):
+        from urllib.parse import urlparse
+
+        raise ValueError(f"refusing to download from non-public URL: {urlparse(url).hostname}")
 
     dest = Path(dest_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    async with httpx.AsyncClient(timeout=300) as client:
-        resp = await client.get(url, follow_redirects=True)
-        resp.raise_for_status()
-        dest.write_bytes(resp.content)
+    async with httpx.AsyncClient(timeout=300, follow_redirects=True) as client:
+        async with client.stream("GET", url) as resp:
+            resp.raise_for_status()
+            total = 0
+            with open(dest, "wb") as fh:
+                async for chunk in resp.aiter_bytes():
+                    total += len(chunk)
+                    if total > MAX_DOWNLOAD_BYTES:
+                        fh.close()
+                        dest.unlink(missing_ok=True)
+                        raise ValueError(
+                            f"download exceeds {MAX_DOWNLOAD_BYTES} bytes: {url}"
+                        )
+                    fh.write(chunk)
     return dest
 
 

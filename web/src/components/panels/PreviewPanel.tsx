@@ -216,8 +216,8 @@ export default function PreviewPanel() {
             }}
           >
             <img
-              src="/static/color_bar.png"
-              alt="Placeholder — no footage generated for this project yet"
+              src="/static/preview.jpg"
+              alt="Placeholder still — no footage generated for this project yet"
               style={{
                 width: '100%',
                 height: '100%',

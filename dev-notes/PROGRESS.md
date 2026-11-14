@@ -8,6 +8,9 @@
 - [x] **Correction:** `AGENTS.md` §4 now cites artboards `01`–`07`, records that 05/06 are designed **and** implemented, and states that the take/prompt editor (P3) — the only screen still without an artboard — remains out of scope.
 - [x] **Prevention layer:** `tests/test_design_doc_sync.py` — 3 passed, RED observed first for all three stale claims, so the docs cannot silently drift from the code again.
 - [x] **Gates:** full suite `1869 passed, 1 skipped, 3 xfailed` (+3 vs v0.15.7); `ruff check src/ tests/` clean.
+- [x] **Delivery:** branch `docs/v0-15-8-design-doc-sync` → PR #330 → CI green (all 3 jobs) → squash-merged as `4c408ee`; `main` CI green (`43646021238`).
+- [x] **Release:** tag `v0.15.8` on `main`; GitHub release v0.15.8 published; release workflow (`verify` → `publish`) success; PyPI `0.15.8` with wheel + sdist (2 files).
+- [x] **Three-way verification:** code `__version__` = tag = release = PyPI all `0.15.8` ✅. Published wheel inspected: `Version: 0.15.8`.
 
 ## Round 41/256 — v0.15.7 Working Team Invitations (last two no-op actions)
 

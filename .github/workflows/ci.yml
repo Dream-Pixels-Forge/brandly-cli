@@ -101,6 +101,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+          run_install: false
+
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
@@ -109,9 +114,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: web
-        run: |
-          corepack prepare pnpm@latest --activate
-          pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Lint frontend
         working-directory: web

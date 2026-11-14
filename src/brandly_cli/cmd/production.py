@@ -78,6 +78,7 @@ from brandly_cli.video_backend import (
     VideoBackend,
 )
 from brandly_cli.video_prompts import build_enhanced_video_prompt
+from brandly_cli.web import security
 
 
 @click.command()
@@ -4565,8 +4566,9 @@ def script(ctx: click.Context, project_id: str, shots_file: Path, strict: bool) 
 @click.command()
 @click.option("--port", "-p", default=8765, help="Port to serve the editor on (default: 8765)")
 @click.option("--no-browser", is_flag=True, help="Do not open browser automatically")
+@click.option("--no-auth", is_flag=True, help="Disable authentication (dev mode)")
 @click.pass_context
-def timeline(ctx: click.Context, port: int, no_browser: bool) -> None:
+def timeline(ctx: click.Context, port: int, no_browser: bool, no_auth: bool) -> None:
     """Open the visual timeline editor in a browser.
 
     Lists all .brandly/ projects and lets you view/edit the timeline
@@ -4584,4 +4586,5 @@ def timeline(ctx: click.Context, port: int, no_browser: bool) -> None:
     root = str(_get_root(ctx))
     console.print(f"[dim]Starting timeline editor on http://127.0.0.1:{port}[/dim]")
     console.print("[dim]Press Ctrl+C to stop[/dim]")
-    start_server(root, port=port, open_browser=not no_browser)
+    token = None if no_auth else security.new_token()
+    start_server(root, port=port, open_browser=not no_browser, token=token)

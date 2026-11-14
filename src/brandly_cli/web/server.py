@@ -187,19 +187,22 @@ def _placeholder_html() -> str:
 # CLI integration
 # ---------------------------------------------------------------------------
 
-def start_server(root: str, port: int = 8765, open_browser: bool = True) -> None:
+def start_server(root: str, port: int = 8765, open_browser: bool = True, token: str | None = None) -> None:
     """Start the FastAPI server (blocking) with a fresh per-run token.
 
     The token is set as a same-site cookie on the SPA index page — it is
     **never** embedded in the browser URL (which would leak it into browser
     history, server access logs, and Referer headers).
+
+    When ``token`` is None, authentication is disabled (dev mode).
     """
     import uvicorn
 
-    token = security.new_token()
     app = create_app(root=root, token=token)
 
-    if open_browser:
+    if open_browser and token:
+        webbrowser.open(f"http://127.0.0.1:{port}/?token={token}")
+    elif open_browser:
         webbrowser.open(f"http://127.0.0.1:{port}/")
 
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")

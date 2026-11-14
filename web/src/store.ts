@@ -69,7 +69,7 @@ const TOKEN = new URLSearchParams(window.location.search).get('token');
 export const withToken = (path: string) =>
   TOKEN ? `${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(TOKEN)}` : path;
 
-const API = (path: string) => withToken(`/api${path}`);
+export const API = (path: string) => withToken(`/api${path}`);
 
 /** Parse a fetch Response defensively. Non-OK statuses, empty bodies and
  * non-JSON payloads surface as readable errors instead of the cryptic

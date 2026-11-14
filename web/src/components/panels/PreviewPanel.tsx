@@ -210,6 +210,7 @@ export default function PreviewPanel() {
               width: '100%',
               height: '100%',
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
             }}
@@ -264,6 +265,8 @@ export default function PreviewPanel() {
                 Placeholder still — generate shots to see them here
               </span>
             </div>
+            {/* Transport controls available even in empty state for testing */}
+            <TransportControls />
           </div>
         ) : (
           <div style={{ textAlign: 'center', color: 'var(--md-on-surface-variant)', opacity: 0.5 }}>

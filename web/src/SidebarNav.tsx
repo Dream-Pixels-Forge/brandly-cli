@@ -8,6 +8,8 @@ const PANELS: { kind: PanelKind; label: string; icon: string; badge?: string; ke
   { kind: 'timeline', label: PANEL_LABELS.timeline, icon: 'view_timeline', key: PANEL_SHORTCUTS.timeline },
   { kind: 'asset_manifest', label: PANEL_LABELS.asset_manifest, icon: 'folder_zip', badge: 'clips', key: PANEL_SHORTCUTS.asset_manifest },
   { kind: 'props', label: PANEL_LABELS.props, icon: 'tune', key: PANEL_SHORTCUTS.props },
+  { kind: 'color', label: PANEL_LABELS.color, icon: 'color_lens', key: PANEL_SHORTCUTS.color },
+  { kind: 'audio', label: PANEL_LABELS.audio, icon: 'volume_up', key: PANEL_SHORTCUTS.audio },
   { kind: 'render', label: PANEL_LABELS.render, icon: 'cloud_sync', key: PANEL_SHORTCUTS.render },
   { kind: 'monitor', label: PANEL_LABELS.monitor, icon: 'monitor_heart', key: PANEL_SHORTCUTS.monitor },
   { kind: 'review', label: PANEL_LABELS.review, icon: 'fact_check', key: PANEL_SHORTCUTS.review },

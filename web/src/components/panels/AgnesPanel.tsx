@@ -152,10 +152,10 @@ export default function AgnesPanel() {
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               type="button"
+              disabled={!clip}
               onClick={() => {
-                if (!clip) return;
-                if (draft.trim() && draft !== clip.prompt) void updateClip(clip.id, { prompt: draft });
-                void regenerateClip(clip.id);
+                if (draft.trim() && draft !== clip!.prompt) void updateClip(clip!.id, { prompt: draft });
+                void regenerateClip(clip!.id);
               }}
               style={{ flex: 1, padding: '9px 0', background: 'var(--md-primary)', color: 'var(--md-on-primary)', border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 700, fontFamily: 'var(--md-font-code-inline)', cursor: clip ? 'pointer' : 'not-allowed', opacity: clip ? 1 : 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
             >

@@ -107,12 +107,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: Setup pnpm
-        run: corepack enable pnpm && corepack prepare pnpm@latest --activate
-
       - name: Install frontend dependencies
         working-directory: web
-        run: pnpm install --frozen-lockfile
+        run: |
+          corepack prepare pnpm@latest --activate
+          pnpm install --frozen-lockfile
 
       - name: Lint frontend
         working-directory: web

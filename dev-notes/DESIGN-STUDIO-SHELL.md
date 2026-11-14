@@ -18,9 +18,10 @@
 **Screen 05 / 06 (Review Queue / Agnes AI Synthesizer) — now DESIGNED**
 - Paper artboards `05 · Review Queue` (`1T8-0`) and `06 · Agnes AI
   Synthesizer` (`1T9-0`) are populated with the shared shell; screen
-  deltas are in §7. The SPA code contract tests for these two panels are
-  still pending (no JS test runner in CI; see issue #61) — this pass is
-  design-only; code is a separate TDD increment.
+  deltas are in §7. **The code has shipped** — `ReviewQueuePanel` and
+  `AgnesPanel` are wired in the SPA and pinned by the Python source-contract
+  tests (`tests/test_web_panels_wired.py`, `tests/test_web_agnes_panel.py`;
+  there is still no JS test runner in CI — see issue #61).
 
 **Screen 01 ↔ 07 split — now DESIGNED (Round 22)**
 - The original `01 · Preview Player` is reframed as `01 · Timeline
@@ -33,8 +34,8 @@
   overlay, plus a slim preview control strip — and **no timeline, no
   Clip Inspector**. The shared sidebar already carries both “Preview
   Player” and “Timeline Sequencer” nav items, so navigation stays
-  consistent. Design-only this pass; the code contract is a separate
-  increment (issue #61).
+  consistent. **The code has shipped** — see `tests/test_web_studio_preview.py`
+  and `tests/test_web_empty_state_preview.py`.
 
 ## 2. Shell metrics (1440×900 reference)
 

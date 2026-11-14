@@ -11,6 +11,9 @@
 - [x] **Tests:** `tests/test_dubbing_transcription.py` — 13 passed (RED observed first for the blank-transcript case and for the missing `--transcript` option; the CLI case was re-verified RED by stashing the option away).
 - [x] **Gates:** full suite `1852 passed, 1 skipped, 3 xfailed`; `ruff check src/ tests/` clean; `mypy src/` clean for the touched files. The 6 local mypy `PIL` `import-untyped` findings are a pre-existing local-environment artifact (local Pillow 10.2.0 has no `py.typed`; CI installs a newer Pillow and reports "Success: no issues found").
 - [x] **CI repair — `web-quality` bundle freshness:** root cause was a toolchain mismatch, not a stale bundle. `web/` tracks `package-lock.json` (npm), but the committed bundle had been built from a pnpm-installed `node_modules` (vite 8.3.6); CI's `npm ci` installs the lockfile-pinned vite 8.3.0 → different content hash → the freshness diff could never be clean. Fix: restore `.github/workflows/ci.yml` to the npm convention ratified in AGENTS.md §3 (`npm ci` / `npm run lint` / `npm run build`) and rebuild the bundle with Node 22 + `npm ci` → `index-DXaFK9qQ.js`. Verified reproducible across two clean builds; CI run `43637458509` = all 3 jobs green.
+- [x] **Delivery:** branch `feat/v0-15-6-dubbing-stt` → PR #328 → CI green (all 3 jobs) → squash-merged as `a510c59`; `main` CI green (`43640582066`).
+- [x] **Release:** tag `v0.15.6` on `main`; GitHub release v0.15.6 published; release workflow (`verify` → `publish`) success; PyPI `0.15.6` with wheel + sdist (2 files).
+- [x] **Three-way verification:** code `__version__` = tag = release = PyPI all `0.15.6` ✅. Published wheel inspected: `Version: 0.15.6`, `Provides-Extra: stt`, `Requires-Dist: faster-whisper>=1.0; extra == 'stt'`.
 
 ## Round 39/256 — v0.15.5 Scene Direction Files + MCP `take_prompts` (closes P1/P2)
 

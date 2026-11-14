@@ -1,5 +1,14 @@
 # Pipeline Progress — brandly-cli
 
+## Round 42/256 — v0.15.8 Governance-doc drift correction (AGENTS.md §4 + design spec)
+
+- [x] **Survey:** with the code TODO-free, the remaining risk was in the governance docs every agent must read. A Paper check for a take-editor artboard (deferral P3) was attempted but Paper Desktop was not running; the repo's own `dev-notes/DESIGN-STUDIO-SHELL.md` §7 enumerates artboards 01–07 and contains **no** take-editor screen, so P3's deferral is still correct.
+- [x] **The drift:** repo-level `AGENTS.md` §4 stated "Artboards **05/06 are empty** in Paper — those screens are out of scope until a design exists" and pointed at artboards `01`–`04`. In fact the design spec lists 01–07 (05 · Review Queue, 06 · Agnes AI Synthesizer), and `tests/test_web_panels_wired.py` pins `ReviewQueuePanel` and `AgnesPanel` as real, wired components (`tests/test_web_agnes_panel.py` covers the latter). An agent trusting the stale note would refuse to touch implemented panels — or re-implement them over working code.
+- [x] **Second drift:** the frozen design spec still said the 05/06 SPA contract tests were "still pending" and the pass was "design-only; code is a separate TDD increment"; the 01↔07 split carried the same note. Both shipped since. Only the **status annotations** were corrected — no design content was touched.
+- [x] **Correction:** `AGENTS.md` §4 now cites artboards `01`–`07`, records that 05/06 are designed **and** implemented, and states that the take/prompt editor (P3) — the only screen still without an artboard — remains out of scope.
+- [x] **Prevention layer:** `tests/test_design_doc_sync.py` — 3 passed, RED observed first for all three stale claims, so the docs cannot silently drift from the code again.
+- [x] **Gates:** full suite `1869 passed, 1 skipped, 3 xfailed` (+3 vs v0.15.7); `ruff check src/ tests/` clean.
+
 ## Round 41/256 — v0.15.7 Working Team Invitations (last two no-op actions)
 
 - [x] **Survey:** a codebase-wide sweep for `TODO`/`FIXME`/stub markers found only two remaining no-op actions, both in the team subsystem (`team.py`, `cmd/team.py`). Everything else that used to be a stub was already converted to honest errors in earlier Rounds.

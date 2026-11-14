@@ -61,9 +61,13 @@ no unresolved review threads.
 ## 4. Design source of truth
 
 - `dev-notes/DESIGN-STUDIO-SHELL.md` — **frozen** spec (Paper file
-  `01M3VWT0PHVWKPN9JSECCES8T4`, page `p-3-0`, artboards `01`–`04`).
-- Artboards **05/06 are empty** in Paper — those screens are out of scope
-  until a design exists.
+  `01M3VWT0PHVWKPN9JSECCES8T4`, page `p-3-0`, artboards `01`–`07`).
+- Artboards **05 · Review Queue** and **06 · Agnes AI Synthesizer** are
+  designed **and implemented** — contract-tested in
+  `tests/test_web_panels_wired.py` and `tests/test_web_agnes_panel.py`.
+  They are in scope, not out of scope.
+- The **take/prompt editor** (deferral P3) has no artboard in the frozen
+  spec, so it stays out of scope until a design exists. Do not improvise it.
 
 ## 5. Non-negotiables
 

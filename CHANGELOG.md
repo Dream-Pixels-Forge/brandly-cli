@@ -4,6 +4,30 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.15.8] - 2026-11-14
+
+### Fixed — Governance docs no longer contradict the code
+
+The repo-level `AGENTS.md` §4 and the frozen design spec both carried claims
+that had become false, and both are files every agent in this repository is
+required to read.
+
+- **`AGENTS.md` §4** said "Artboards 05/06 are empty in Paper — those screens
+  are out of scope until a design exists" and pointed at artboards `01`–`04`.
+  Both are wrong: the design spec lists artboards `01`–`07`, and
+  `tests/test_web_panels_wired.py` pins `ReviewQueuePanel` and `AgnesPanel`
+  as real, wired components. An agent trusting the stale note would either
+  refuse to touch implemented panels or re-implement them over working code.
+  The section now records that 05/06 are designed **and** implemented, and
+  that the **take/prompt editor** (deferral P3) — the only screen still
+  without an artboard — remains out of scope.
+- **The design spec** still said the 05/06 SPA contract tests were "still
+  pending" and that the pass was "design-only; code is a separate TDD
+  increment". Both shipped since. The status annotations now reflect that;
+  no design content was changed.
+- **Prevention layer:** `tests/test_design_doc_sync.py` pins both facts, so
+  the docs cannot silently drift from the code again.
+
 ## [0.15.7] - 2026-11-14
 
 ### Fixed — Team invitations actually work

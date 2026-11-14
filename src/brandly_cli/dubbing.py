@@ -11,6 +11,14 @@ from typing import Any
 
 from brandly_cli.io import async_run_ffmpeg, proc_output
 
+# Optional faster-whisper for transcription/translation
+try:
+    from faster_whisper import WhisperModel  # type: ignore[import-not-found]
+    FASTER_WHISPER_AVAILABLE = True
+except ImportError:
+    WhisperModel = None
+    FASTER_WHISPER_AVAILABLE = False
+
 # ---------------------------------------------------------------------------
 # Language & voice mappings
 # ---------------------------------------------------------------------------
@@ -92,6 +100,69 @@ def _get_duration(path: Path) -> float:
         return float(data.get("format", {}).get("duration", 0.0))
     except (ValueError, TypeError, FileNotFoundError):
         return 0.0
+
+
+def _load_whisper_model(model_size: str = "base") -> Any | None:
+    """Load a Whisper model for transcription/translation."""
+    if not FASTER_WHISPER_AVAILABLE:
+        return None
+    try:
+        # Use compute_type="int8" for faster inference on CPU
+        return WhisperModel(model_size, device="cpu", compute_type="int8")
+    except Exception:
+        return None
+
+
+async def _transcribe_audio(
+    audio_path: Path,
+    source_lang: str,
+    target_lang: str | None = None,
+) -> str | None:
+    """Transcribe audio and optionally translate to target language.
+
+    Args:
+        audio_path: Path to the audio file (wav/mp3/etc.)
+        source_lang: Source language code (ISO 639-1, e.g. "en")
+        target_lang: Optional target language for translation (e.g. "es")
+
+    Returns:
+        Transcribed/translated text, or None on failure.
+    """
+    if not FASTER_WHISPER_AVAILABLE:
+        return None
+
+    model = _load_whisper_model("base")
+    if model is None:
+        return None
+
+    try:
+        # Map language codes to Whisper format
+        lang_map = {
+            "en": "en", "es": "es", "fr": "fr", "de": "de",
+            "ja": "ja", "ko": "ko", "zh": "zh", "pt": "pt",
+            "ar": "ar", "hi": "hi",
+        }
+        src_lang = lang_map.get(source_lang, source_lang)
+        task = "translate" if target_lang and target_lang != source_lang else "transcribe"
+
+        # Run in executor to avoid blocking
+        def _transcribe():
+            segments, info = model.transcribe(
+                str(audio_path),
+                language=src_lang if task == "transcribe" else None,
+                task=task,
+                beam_size=5,
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 500},
+            )
+            return " ".join(seg.text for seg in segments)
+
+        loop = asyncio.get_event_loop()
+        text = await loop.run_in_executor(None, _transcribe)
+        return text.strip() if text else None
+
+    except Exception:
+        return None
 
 
 def _resolve_output(video_path: Path, target_lang: str, root: Path | None) -> Path:
@@ -298,19 +369,20 @@ async def dub_video(
         return {"error": f"Audio extraction failed: {stderr[:300]}"}
 
     # Stage 2: Transcribe and translate source audio to target language.
-    # Transcription/translation is not yet implemented (no STT dependency).
-    # Callers must supply `transcript` explicitly; we never fabricate text.
+    # Use faster-whisper for automatic transcription/translation if transcript not provided.
     if transcript is None:
-        extracted_audio.unlink(missing_ok=True)
-        return {
-            "error": (
-                "Transcription/translation not implemented. "
-                "Provide a `transcript` argument with the source-language text "
-                "to translate, or install an STT backend (e.g. Whisper) and "
-                "implement Stage 2."
-            )
-        }
-    translated_text = transcript
+        translated_text = await _transcribe_audio(extracted_audio, source_lang, target_lang)
+        if translated_text is None:
+            extracted_audio.unlink(missing_ok=True)
+            return {
+                "error": (
+                    "Automatic transcription/translation failed. "
+                    "Provide a `transcript` argument with the source-language text "
+                    "to translate, or install faster-whisper for automatic STT."
+                )
+            }
+    else:
+        translated_text = transcript
 
     # Stage 3: Generate TTS audio via MiniMax
     voice_id = LANGUAGES[target_lang][1]

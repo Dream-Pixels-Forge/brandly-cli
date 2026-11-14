@@ -7,6 +7,8 @@
 - [x] **P2 — MCP `take_prompts` tool:** `take_prompts_status`/`list`/`export`/`apply` registered in `agent_surface` (CLI_TOOLS + builders + TOOL_ANNOTATIONS + `takes` domain); `take_prompts_status`/`list` added to read-only set; `agent_tools.__init__` read-only set extended. Tests: `tests/test_agent_surface_takes.py` — 15 passed.
 - [x] **Gates:** full suite `1810 passed, 1 skipped, 3 xfailed` (21 pre-existing failures unchanged vs baseline — zero regressions); `ruff check src/ tests/` clean; `mypy` clean (pre-existing PIL import-untyped only).
 - [x] **Ledger:** this Round 39 entry; P3 (web/Paper editor) stays deferred per AGENTS.md §4 (no artboard), P5 auto-renumbering and P6 YAML frontmatter remain explicit v1 non-goals.
+- [x] **Release:** tag `v0.15.5` on `main`; GitHub release v0.15.5 published; release workflow (`verify` → `publish`) success; PyPI `0.15.5` with wheel + sdist (2 files).
+- [x] **Three-way verification:** code `__version__` = tag = release = PyPI all `0.15.5` ✅.
 
 ## Round 38/256 — CI workflow hardening (release gate + no collisions)
 
